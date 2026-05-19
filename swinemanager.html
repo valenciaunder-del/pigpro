@@ -191,6 +191,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <div class="nv" onclick="gp('performance',this)"><span class="ic">📈</span><span>成績分析</span></div>
   <div class="nv" onclick="gp('shipping',this)"><span class="ic">🚚</span><span>出荷管理</span></div>
   <div class="nv" onclick="gp('grading',this)"><span class="ic">📥</span><span>格付け取込</span></div>
+  <div class="nv" onclick="gp('carcass-analysis',this)"><span class="ic">📊</span><span>枝肉分析</span></div>
   <div class="sb-sec">収支管理</div>
   <div class="nv" onclick="gp('pnl',this)"><span class="ic">💹</span><span>収支比較</span></div>
   <div class="nv" onclick="gp('cost',this)"><span class="ic">💴</span><span>コスト管理</span></div>
@@ -509,6 +510,136 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     </div>
   </div>
 </div>
+
+<!-- CARCASS ANALYSIS -->
+<div class="page" id="page-carcass-analysis">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+    <div class="tabs" style="margin-bottom:0;border-bottom:none">
+      <div class="tab active" onclick="st('ca-t','ca-overview',this)">概要</div>
+      <div class="tab" onclick="st('ca-t','ca-grade',this)">格付け分布</div>
+      <div class="tab" onclick="st('ca-t','ca-trend',this)">推移グラフ</div>
+      <div class="tab" onclick="st('ca-t','ca-compare',this)">農場比較</div>
+      <div class="tab" onclick="st('ca-t','ca-detail',this)">明細一覧</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <select class="fs" style="width:auto;padding:4px 9px;font-size:12px" id="ca-farm" onchange="rCarcass()">
+        <option value="all">全農場</option><option value="farm1">第1農場</option><option value="farm2">第2農場</option>
+      </select>
+      <input class="fi" type="month" id="ca-from" style="width:130px" onchange="rCarcass()">
+      <span style="color:var(--muted)">〜</span>
+      <input class="fi" type="month" id="ca-to" style="width:130px" onchange="rCarcass()">
+      <button class="btn bs sm" onclick="clearCaFilter()">全期間</button>
+    </div>
+  </div>
+
+  <div class="ca-t-c active" id="ca-overview">
+    <div class="kgrid mb18" style="grid-template-columns:repeat(4,1fr)" id="ca-kpi"></div>
+    <div class="g2 mb18">
+      <div class="card" style="margin-bottom:0;border-top:3px solid var(--accent)">
+        <div class="ch"><span class="ct">格付け分布 サマリ</span></div>
+        <div class="cb" id="ca-grade-summary"></div>
+      </div>
+      <div class="card" style="margin-bottom:0;border-top:3px solid var(--accent2)">
+        <div class="ch"><span class="ct">農場別 平均値比較</span></div>
+        <div class="cb" id="ca-farm-compare"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch"><span class="ct">月別 集計サマリ</span></div>
+      <div class="tw"><table>
+        <thead><tr><th>年月</th><th>農場</th><th>頭数</th><th>平均枝肉重</th><th>平均背脂肪</th><th>上(%)</th><th>中(%)</th><th>並(%)</th><th>等外(%)</th><th>上+中(%)</th></tr></thead>
+        <tbody id="ca-monthly-tb"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="ca-t-c" id="ca-grade" style="display:none">
+    <div class="g2 mb18">
+      <div class="card" style="margin-bottom:0">
+        <div class="ch"><span class="ct">格付け分布（全体）</span></div>
+        <div class="cb" id="ca-grade-bars"></div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="ch"><span class="ct">農場別 格付け分布</span></div>
+        <div class="cb" id="ca-grade-farm-bars"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch"><span class="ct">出荷日別 格付け分布</span></div>
+      <div class="tw"><table>
+        <thead><tr><th>農場</th><th>出荷日</th><th>頭数</th><th>上</th><th>中</th><th>並</th><th>等外</th><th>上率</th><th>上+中率</th></tr></thead>
+        <tbody id="ca-grade-date-tb"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="ca-t-c" id="ca-trend" style="display:none">
+    <div class="card mb18">
+      <div class="ch"><span class="ct">平均枝肉重量 推移</span></div>
+      <div class="cb">
+        <div class="ca" style="height:200px"><svg id="ca-wt-svg" viewBox="0 0 600 180" preserveAspectRatio="none"></svg></div>
+        <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--f1)">── 第1農場</span>
+          <span style="font-size:11px;color:var(--f2)">── 第2農場</span>
+          <span style="font-size:11px;color:var(--muted2)">- - 目標(88kg)</span>
+        </div>
+      </div>
+    </div>
+    <div class="card mb18">
+      <div class="ch"><span class="ct">平均背脂肪厚 推移</span></div>
+      <div class="cb">
+        <div class="ca" style="height:200px"><svg id="ca-bf-svg" viewBox="0 0 600 180" preserveAspectRatio="none"></svg></div>
+        <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--f1)">── 第1農場</span>
+          <span style="font-size:11px;color:var(--f2)">── 第2農場</span>
+          <span style="font-size:11px;color:var(--warn)">- - 適正範囲(1.5〜2.5cm)</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch"><span class="ct">上+中率 推移</span></div>
+      <div class="cb">
+        <div class="ca" style="height:180px"><svg id="ca-gr-svg" viewBox="0 0 600 160" preserveAspectRatio="none"></svg></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ca-t-c" id="ca-compare" style="display:none">
+    <div class="g2 mb18">
+      <div class="card" style="margin-bottom:0;border-top:3px solid var(--f1)">
+        <div class="ch"><span class="ct" style="color:var(--f1)">第1農場（本場）</span></div>
+        <div class="cb" id="ca-f1-detail"></div>
+      </div>
+      <div class="card" style="margin-bottom:0;border-top:3px solid var(--f2)">
+        <div class="ch"><span class="ct" style="color:var(--f2)">第2農場（分場）</span></div>
+        <div class="cb" id="ca-f2-detail"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch"><span class="ct">農場別 詳細比較表</span></div>
+      <div class="tw"><table class="pt">
+        <thead><tr>
+          <th style="width:200px">項目</th>
+          <th class="th1 tr3">第1農場</th>
+          <th class="th2 tr3">第2農場</th>
+          <th class="tr3" style="color:var(--muted)!important">差異</th>
+        </tr></thead>
+        <tbody id="ca-compare-tb"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="ca-t-c" id="ca-detail" style="display:none">
+    <div class="card">
+      <div class="ch"><span class="ct">頭別明細一覧</span><span class="bdg gr" id="ca-detail-count">-</span></div>
+      <div class="tw"><table>
+        <thead><tr><th>農場</th><th>出荷日</th><th>番号</th><th>性別</th><th>格付け</th><th>枝肉重量</th><th>背脂肪厚</th><th>瑕疵</th></tr></thead>
+        <tbody id="ca-detail-tb"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
 <div class="page" id="page-pnl">
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
     <div class="tabs" style="margin-bottom:0;border-bottom:none">
@@ -1270,7 +1401,7 @@ function updateSBInfo() {
 // ══════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════
-const PTL = { dashboard:'ダッシュボード',lot:'ロット管理',performance:'成績分析',shipping:'出荷管理',grading:'格付け取込','production-cost':'生産コスト',pnl:'収支比較',cost:'コスト管理',sales:'売上・利益',accident:'事故損失・在庫評価',daily:'日次表','feed-master':'飼料単価設定','feed-purchase':'飼料購入記録',inventory:'在庫・飼料管理',report:'月次レポート' };
+const PTL = { dashboard:'ダッシュボード',lot:'ロット管理',performance:'成績分析',shipping:'出荷管理',grading:'格付け取込','carcass-analysis':'枝肉分析','production-cost':'生産コスト',pnl:'収支比較',cost:'コスト管理',sales:'売上・利益',accident:'事故損失・在庫評価',daily:'日次表','feed-master':'飼料単価設定','feed-purchase':'飼料購入記録',inventory:'在庫・飼料管理',report:'月次レポート' };
 
 function gp(id, el) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -1311,6 +1442,7 @@ function renderPage(id) {
   if(id==='performance') rPerf();
   if(id==='shipping')   rShip();
   if(id==='grading')    rGradingSaved();
+  if(id==='carcass-analysis') rCarcass();
   if(id==='pnl')        rPnL();
   if(id==='cost')       rCost();
   if(id==='sales')      rSales();
@@ -2644,6 +2776,325 @@ async function delGradingGroup(farm, date) {
     rGradingSaved(); notif('削除しました');
   } catch(e) { notif('削除エラー','r'); }
   finally { hideLoading(); }
+}
+
+// ══════════════════════════════════════════════
+// CARCASS ANALYSIS
+// ══════════════════════════════════════════════
+function caFilteredData() {
+  const farm = document.getElementById('ca-farm')?.value||'all';
+  const from = document.getElementById('ca-from')?.value||'';
+  const to   = document.getElementById('ca-to')?.value||'';
+  return DATA.grading.filter(r => {
+    if(farm!=='all' && r.farm!==farm) return false;
+    const m = (r.shipped_at||'').slice(0,7);
+    if(from && m < from) return false;
+    if(to   && m > to)   return false;
+    return true;
+  });
+}
+
+function clearCaFilter() {
+  document.getElementById('ca-from').value='';
+  document.getElementById('ca-to').value='';
+  rCarcass();
+}
+
+// グレード統計
+function gradeStats(rows) {
+  const total = rows.length||1;
+  const g = { '上':0,'中':0,'並':0,'等外':0 };
+  rows.forEach(r => { if(g[r.grade]!==undefined) g[r.grade]++; else g['等外']++; });
+  return {
+    total: rows.length,
+    上: g['上'], 中: g['中'], 並: g['並'], 等外: g['等外'],
+    上率: (g['上']/total*100).toFixed(1),
+    中率: (g['中']/total*100).toFixed(1),
+    並率: (g['並']/total*100).toFixed(1),
+    等外率: (g['等外']/total*100).toFixed(1),
+    上中率: ((g['上']+g['中'])/total*100).toFixed(1),
+  };
+}
+
+// 平均計算
+function avg(rows, key) {
+  if(!rows.length) return 0;
+  return (rows.reduce((a,r)=>a+(r[key]||0),0)/rows.length);
+}
+
+function rCarcass() {
+  const rows = caFilteredData();
+  if(!rows.length) {
+    document.getElementById('ca-kpi').innerHTML = '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">格付けデータがありません。「格付け取込」からデータを登録してください。</div>';
+    return;
+  }
+
+  const gs = gradeStats(rows);
+  const avgWt = avg(rows,'carcass_weight');
+  const avgBf = avg(rows,'backfat_thickness');
+
+  // KPI
+  document.getElementById('ca-kpi').innerHTML = `
+    <div class="kcard c"><div class="kl">総出荷頭数</div><div class="kv">${gs.total.toLocaleString()}<span class="ku">頭</span></div></div>
+    <div class="kcard g"><div class="kl">平均枝肉重量</div><div class="kv">${avgWt.toFixed(1)}<span class="ku">kg</span></div></div>
+    <div class="kcard ${parseFloat(avgBf)>=1.5&&parseFloat(avgBf)<=2.5?'g':'r'}"><div class="kl">平均背脂肪厚</div><div class="kv">${avgBf.toFixed(2)}<span class="ku">cm</span></div><div class="kd nt">適正:1.5〜2.5</div></div>
+    <div class="kcard ${parseFloat(gs.上中率)>=70?'g':'y'}"><div class="kl">上+中 率</div><div class="kv">${gs.上中率}<span class="ku">%</span></div><div class="kd ${parseFloat(gs.上中率)>=70?'up':'dn'}">目標70%+</div></div>`;
+
+  // 格付けサマリバー
+  const gradeColors = { '上':'var(--accent)','中':'var(--accent2)','並':'var(--warn)','等外':'var(--danger)' };
+  document.getElementById('ca-grade-summary').innerHTML = ['上','中','並','等外'].map(gr => {
+    const cnt = gs[gr]||0;
+    const p = (cnt/gs.total*100).toFixed(1);
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:13px;color:var(--text);font-weight:600">${gr}</span>
+        <span class="mn">${cnt}頭 <span style="color:var(--muted)">${p}%</span></span>
+      </div>
+      <div class="pb" style="height:12px"><div class="pf" style="width:${p}%;background:${gradeColors[gr]}"></div></div>
+    </div>`;
+  }).join('');
+
+  // 農場別平均比較
+  const f1rows = rows.filter(r=>r.farm==='farm1');
+  const f2rows = rows.filter(r=>r.farm==='farm2');
+  const f1gs = gradeStats(f1rows), f2gs = gradeStats(f2rows);
+  const f1wt = avg(f1rows,'carcass_weight'), f2wt = avg(f2rows,'carcass_weight');
+  const f1bf = avg(f1rows,'backfat_thickness'), f2bf = avg(f2rows,'backfat_thickness');
+  const maxWt = Math.max(f1wt,f2wt,1);
+
+  document.getElementById('ca-farm-compare').innerHTML = `
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;color:var(--muted2);margin-bottom:6px">平均枝肉重量</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="font-size:11px;color:var(--f1);width:50px">第1農場</span>
+        <div class="pb" style="flex:1"><div class="pf" style="width:${(f1wt/maxWt*100).toFixed(0)}%;background:var(--f1)"></div></div>
+        <span class="mn" style="font-size:12px;width:55px;text-align:right">${f1wt.toFixed(1)}kg</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;color:var(--f2);width:50px">第2農場</span>
+        <div class="pb" style="flex:1"><div class="pf" style="width:${(f2wt/maxWt*100).toFixed(0)}%;background:var(--f2)"></div></div>
+        <span class="mn" style="font-size:12px;width:55px;text-align:right">${f2wt.toFixed(1)}kg</span>
+      </div>
+    </div>
+    <div class="sep" style="margin:10px 0"></div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;color:var(--muted2);margin-bottom:6px">上+中率</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="font-size:11px;color:var(--f1);width:50px">第1農場</span>
+        <div class="pb" style="flex:1"><div class="pf" style="width:${f1gs.上中率}%;background:var(--f1)"></div></div>
+        <span class="mn" style="font-size:12px;width:55px;text-align:right">${f1gs.上中率}%</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;color:var(--f2);width:50px">第2農場</span>
+        <div class="pb" style="flex:1"><div class="pf" style="width:${f2gs.上中率}%;background:var(--f2)"></div></div>
+        <span class="mn" style="font-size:12px;width:55px;text-align:right">${f2gs.上中率}%</span>
+      </div>
+    </div>
+    <div class="sep" style="margin:10px 0"></div>
+    <div style="font-size:12px;color:var(--muted2);margin-bottom:6px">背脂肪厚</div>
+    <div class="sr"><span class="sl">第1農場</span><span class="sv ${f1bf>=1.5&&f1bf<=2.5?'ng':'nb'}">${f1bf.toFixed(2)} cm</span></div>
+    <div class="sr"><span class="sl">第2農場</span><span class="sv ${f2bf>=1.5&&f2bf<=2.5?'ng':'nb'}">${f2bf.toFixed(2)} cm</span></div>`;
+
+  // 月別サマリ
+  const byMonth = {};
+  rows.forEach(r => {
+    const m = (r.shipped_at||'').slice(0,7);
+    const k = m+'|'+r.farm;
+    if(!byMonth[k]) byMonth[k] = { month:m, farm:r.farm, rows:[] };
+    byMonth[k].rows.push(r);
+  });
+  document.getElementById('ca-monthly-tb').innerHTML = Object.values(byMonth)
+    .sort((a,b)=>b.month.localeCompare(a.month)||a.farm.localeCompare(b.farm))
+    .map(g => {
+      const s = gradeStats(g.rows);
+      const w = avg(g.rows,'carcass_weight'), b = avg(g.rows,'backfat_thickness');
+      return `<tr>
+        <td class="mn">${g.month}</td>
+        <td>${fb(g.farm)}</td>
+        <td class="mn">${s.total}頭</td>
+        <td class="mn">${w.toFixed(1)} kg</td>
+        <td class="mn ${b>=1.5&&b<=2.5?'ng':'nb'}">${b.toFixed(2)} cm</td>
+        <td class="mn ng">${s.上率}%</td>
+        <td class="mn nn">${s.中率}%</td>
+        <td class="mn nw">${s.並率}%</td>
+        <td class="mn ${parseFloat(s.等外率)>5?'nb':''}">${s.等外率}%</td>
+        <td class="mn" style="font-weight:600;color:${parseFloat(s.上中率)>=70?'var(--accent)':'var(--warn)'}">${s.上中率}%</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
+
+  // 格付け分布タブ
+  document.getElementById('ca-grade-bars').innerHTML = ['上','中','並','等外'].map(gr=>{
+    const cnt=gs[gr]||0, p=(cnt/gs.total*100).toFixed(1);
+    return `<div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:14px;font-weight:600;color:${gradeColors[gr]}">${gr}</span>
+        <span class="mn">${cnt.toLocaleString()}頭 / ${p}%</span>
+      </div>
+      <div class="pb" style="height:16px"><div class="pf" style="width:${p}%;background:${gradeColors[gr]}"></div></div>
+    </div>`;
+  }).join('');
+
+  // 農場別格付け
+  document.getElementById('ca-grade-farm-bars').innerHTML = ['farm1','farm2'].map(f=>{
+    const frows = rows.filter(r=>r.farm===f);
+    if(!frows.length) return `<div style="color:var(--muted);font-size:12px;margin-bottom:16px">${FARMS[f].short}: データなし</div>`;
+    const fs2 = gradeStats(frows);
+    return `<div style="margin-bottom:16px;padding:12px;border-radius:8px;border-left:4px solid var(--${f==='farm1'?'f1':'f2'})">
+      <div style="font-size:12px;font-weight:600;color:var(--${f==='farm1'?'f1':'f2'});margin-bottom:8px">${FARMS[f].short}（${fs2.total}頭）</div>
+      ${['上','中','並','等外'].map(gr=>{
+        const cnt=fs2[gr]||0, p=(cnt/fs2.total*100).toFixed(1);
+        return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          <span style="font-size:11px;width:20px;color:${gradeColors[gr]};font-weight:600">${gr}</span>
+          <div class="pb" style="flex:1"><div class="pf" style="width:${p}%;background:${gradeColors[gr]}"></div></div>
+          <span class="mn" style="font-size:11px;width:70px;text-align:right">${cnt}頭 ${p}%</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+
+  // 出荷日別格付け
+  const byDate = {};
+  rows.forEach(r => {
+    const k = r.shipped_at+'|'+r.farm;
+    if(!byDate[k]) byDate[k]={date:r.shipped_at,farm:r.farm,rows:[]};
+    byDate[k].rows.push(r);
+  });
+  document.getElementById('ca-grade-date-tb').innerHTML = Object.values(byDate)
+    .sort((a,b)=>b.date.localeCompare(a.date)).map(g=>{
+      const s=gradeStats(g.rows);
+      return `<tr>
+        <td>${fb(g.farm)}</td><td class="mn">${g.date}</td>
+        <td class="mn">${s.total}頭</td>
+        <td class="mn ng">${s.上}頭</td><td class="mn nn">${s.中}頭</td>
+        <td class="mn nw">${s.並}頭</td><td class="mn nb">${s.等外}頭</td>
+        <td class="mn ${parseFloat(s.上率)>=30?'ng':'nw'}">${s.上率}%</td>
+        <td class="mn" style="font-weight:600;color:${parseFloat(s.上中率)>=70?'var(--accent)':'var(--warn)'}">${s.上中率}%</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
+
+  // 推移グラフ
+  const dateGroups = {};
+  rows.forEach(r=>{
+    const k=r.shipped_at+'|'+r.farm;
+    if(!dateGroups[k]) dateGroups[k]={date:r.shipped_at,farm:r.farm,rows:[]};
+    dateGroups[k].rows.push(r);
+  });
+  const sortedGroups = Object.values(dateGroups).sort((a,b)=>a.date.localeCompare(b.date));
+  const f1groups = sortedGroups.filter(g=>g.farm==='farm1');
+  const f2groups = sortedGroups.filter(g=>g.farm==='farm2');
+
+  drawTrendSvg('ca-wt-svg', f1groups, f2groups, g=>avg(g.rows,'carcass_weight'), 70, 110, 88, '88kg', 'var(--muted2)');
+  drawTrendSvg('ca-bf-svg', f1groups, f2groups, g=>avg(g.rows,'backfat_thickness'), 0.5, 4.0, null, null, null, true);
+  drawGradeRateSvg('ca-gr-svg', f1groups, f2groups);
+
+  // 農場比較詳細
+  ['farm1','farm2'].forEach(f=>{
+    const frows=rows.filter(r=>r.farm===f);
+    const fs3=gradeStats(frows);
+    const fw=avg(frows,'carcass_weight'), fb2=avg(frows,'backfat_thickness');
+    document.getElementById(`ca-${f==='farm1'?'f1':'f2'}-detail`).innerHTML = frows.length ? `
+      <div class="sr"><span class="sl">出荷頭数</span><span class="sv">${fs3.total}頭</span></div>
+      <div class="sr"><span class="sl">平均枝肉重量</span><span class="sv">${fw.toFixed(1)} kg</span></div>
+      <div class="sr"><span class="sl">平均背脂肪厚</span><span class="sv ${fb2>=1.5&&fb2<=2.5?'ng':'nb'}">${fb2.toFixed(2)} cm</span></div>
+      <div class="sr"><span class="sl">上率</span><span class="sv ng">${fs3.上率}%</span></div>
+      <div class="sr"><span class="sl">中率</span><span class="sv nn">${fs3.中率}%</span></div>
+      <div class="sr"><span class="sl">上+中率</span><span class="sv" style="font-size:16px;font-weight:700;color:${parseFloat(fs3.上中率)>=70?'var(--accent)':'var(--warn)'}">${fs3.上中率}%</span></div>`
+    : '<div style="color:var(--muted);font-size:12px">データなし</div>';
+  });
+
+  // 比較表
+  const compareRows = [
+    ['出荷頭数', f1gs.total+'頭', f2gs.total+'頭', (f1gs.total-f2gs.total)+'頭', false],
+    ['平均枝肉重量', f1wt.toFixed(1)+'kg', f2wt.toFixed(1)+'kg', (f1wt-f2wt).toFixed(1)+'kg', false],
+    ['平均背脂肪厚', f1bf.toFixed(2)+'cm', f2bf.toFixed(2)+'cm', (f1bf-f2bf).toFixed(2)+'cm', false],
+    ['上率', f1gs.上率+'%', f2gs.上率+'%', (parseFloat(f1gs.上率)-parseFloat(f2gs.上率)).toFixed(1)+'pt', false],
+    ['中率', f1gs.中率+'%', f2gs.中率+'%', (parseFloat(f1gs.中率)-parseFloat(f2gs.中率)).toFixed(1)+'pt', false],
+    ['上+中率', f1gs.上中率+'%', f2gs.上中率+'%', (parseFloat(f1gs.上中率)-parseFloat(f2gs.上中率)).toFixed(1)+'pt', true],
+    ['等外率', f1gs.等外率+'%', f2gs.等外率+'%', (parseFloat(f1gs.等外率)-parseFloat(f2gs.等外率)).toFixed(1)+'pt', false],
+  ];
+  document.getElementById('ca-compare-tb').innerHTML = compareRows.map(([lbl,v1,v2,diff,key])=>`
+    <tr ${key?'style="border-top:2px solid var(--border)"':''}>
+      <td style="color:var(--muted2);font-size:12px${key?';font-weight:700;color:var(--text)':''}">${lbl}</td>
+      <td class="tr3 mn c1" style="${key?'font-weight:700;font-size:15px':''}">${v1||'-'}</td>
+      <td class="tr3 mn c2" style="${key?'font-weight:700;font-size:15px':''}">${v2||'-'}</td>
+      <td class="tr3 mn" style="color:var(--muted2)">${diff}</td>
+    </tr>`).join('');
+
+  // 明細
+  document.getElementById('ca-detail-count').textContent = `${rows.length}頭`;
+  document.getElementById('ca-detail-tb').innerHTML = rows.slice(0,300).map(r=>`<tr>
+    <td>${fb(r.farm)}</td><td class="mn">${r.shipped_at||'-'}</td>
+    <td class="mn" style="color:var(--muted2)">${r.carcass_no||'-'}</td>
+    <td>${r.sex||'-'}</td>
+    <td><span class="bdg ${r.grade==='上'?'c':r.grade==='中'?'g':r.grade==='並'?'y':'r'}">${r.grade||'-'}</span></td>
+    <td class="mn">${r.carcass_weight?.toFixed(1)||'-'} kg</td>
+    <td class="mn ${r.backfat_thickness>=1.5&&r.backfat_thickness<=2.5?'ng':r.backfat_thickness>2.5?'nb':'nw'}">${r.backfat_thickness?.toFixed(2)||'-'} cm</td>
+    <td style="font-size:11px;color:var(--muted)">${r.defects||'-'}</td>
+  </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
+}
+
+function drawTrendSvg(svgId, f1g, f2g, valFn, minV, maxV, targetV, targetLabel, targetColor, isBf=false) {
+  const svg = document.getElementById(svgId); if(!svg) return;
+  const W=600, H=180, PAD=30;
+  const allG = [...f1g,...f2g].sort((a,b)=>a.date.localeCompare(b.date));
+  if(!allG.length){ svg.innerHTML=''; return; }
+  const dates = [...new Set(allG.map(g=>g.date))].sort();
+  const xScale = d => dates.length<2 ? W/2 : PAD + (dates.indexOf(d))/(dates.length-1)*(W-PAD*2);
+  const yScale = v => H-PAD - (v-minV)/(maxV-minV)*(H-PAD*2);
+
+  let c = `<line x1="${PAD}" y1="${H-PAD}" x2="${W-PAD}" y2="${H-PAD}" stroke="#2a3045" stroke-width="1"/>
+    <line x1="${PAD}" y1="${PAD}" x2="${W-PAD}" y2="${PAD}" stroke="#2a3045" stroke-width="1"/>`;
+
+  if(isBf){ // 背脂肪適正範囲
+    const y1=yScale(2.5), y2=yScale(1.5);
+    c+=`<rect x="${PAD}" y="${y1}" width="${W-PAD*2}" height="${y2-y1}" fill="rgba(251,191,36,.08)"/>`;
+    c+=`<line x1="${PAD}" y1="${y1}" x2="${W-PAD}" y2="${y1}" stroke="var(--warn)" stroke-width="1" stroke-dasharray="4,3"/>`;
+    c+=`<line x1="${PAD}" y1="${y2}" x2="${W-PAD}" y2="${y2}" stroke="var(--warn)" stroke-width="1" stroke-dasharray="4,3"/>`;
+  }
+  if(targetV){
+    const ty=yScale(targetV);
+    c+=`<line x1="${PAD}" y1="${ty}" x2="${W-PAD}" y2="${ty}" stroke="${targetColor||'var(--warn)'}" stroke-width="1" stroke-dasharray="5,4"/>`;
+    if(targetLabel) c+=`<text x="${PAD+4}" y="${ty-4}" fill="${targetColor||'var(--warn)'}" font-size="10">${targetLabel}</text>`;
+  }
+
+  [[f1g,'var(--f1)'],[f2g,'var(--f2)']].forEach(([grps,color])=>{
+    if(!grps.length) return;
+    const pts = grps.map(g=>`${xScale(g.date).toFixed(0)},${yScale(valFn(g)).toFixed(0)}`).join(' ');
+    c+=`<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    grps.forEach(g=>{
+      const x=xScale(g.date), y=yScale(valFn(g));
+      c+=`<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="4" fill="${color}"/>`;
+    });
+  });
+
+  // 日付ラベル（間引き）
+  const step = Math.max(1, Math.floor(dates.length/6));
+  dates.filter((_,i)=>i%step===0||i===dates.length-1).forEach(d=>{
+    c+=`<text x="${xScale(d).toFixed(0)}" y="${H}" fill="#64748b" font-size="9" text-anchor="middle">${d.slice(5)}</text>`;
+  });
+  svg.innerHTML=c;
+}
+
+function drawGradeRateSvg(svgId, f1g, f2g) {
+  const svg = document.getElementById(svgId); if(!svg) return;
+  const W=600, H=160, PAD=30;
+  const allG = [...f1g,...f2g].sort((a,b)=>a.date.localeCompare(b.date));
+  if(!allG.length){ svg.innerHTML=''; return; }
+  const dates = [...new Set(allG.map(g=>g.date))].sort();
+  const xScale = d => dates.length<2?W/2:PAD+(dates.indexOf(d))/(dates.length-1)*(W-PAD*2);
+  const yScale = v => H-PAD-(v/100)*(H-PAD*2);
+  let c=`<line x1="${PAD}" y1="${H-PAD}" x2="${W-PAD}" y2="${H-PAD}" stroke="#2a3045" stroke-width="1"/>
+    <line x1="${PAD}" y1="${yScale(70)}" x2="${W-PAD}" y2="${yScale(70)}" stroke="var(--warn)" stroke-width="1" stroke-dasharray="5,4"/>
+    <text x="${PAD+4}" y="${yScale(70)-4}" fill="var(--warn)" font-size="10">目標70%</text>`;
+  [[f1g,'var(--f1)'],[f2g,'var(--f2)']].forEach(([grps,color])=>{
+    if(!grps.length) return;
+    const pts=grps.map(g=>{const s=gradeStats(g.rows);return`${xScale(g.date).toFixed(0)},${yScale(parseFloat(s.上中率)).toFixed(0)}`;}).join(' ');
+    c+=`<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round"/>`;
+    grps.forEach(g=>{const s=gradeStats(g.rows);const x=xScale(g.date),y=yScale(parseFloat(s.上中率));c+=`<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="4" fill="${color}"/>`;});
+  });
+  const step=Math.max(1,Math.floor(dates.length/6));
+  dates.filter((_,i)=>i%step===0||i===dates.length-1).forEach(d=>{c+=`<text x="${xScale(d).toFixed(0)}" y="${H}" fill="#64748b" font-size="9" text-anchor="middle">${d.slice(5)}</text>`;});
+  svg.innerHTML=c;
 }
 
 // ══════════════════════════════════════════════

@@ -2337,20 +2337,7 @@ function rImportStatus() {
 
   const el = document.getElementById('d-import-status');
   if(el) el.innerHTML = html;
-  if(svg) {
-    const mos=['11月','12月','1月','2月','3月','4月','5月'];
-    const xs=[0,83,167,250,333,417,500];
-    const f1=[694,712,726,730,736,748,748], f2=[680,695,710,718,722,730,738];
-    const toY=v=>140-(v-650)/150*120;
-    let c=`<line x1="0" y1="${toY(750)}" x2="500" y2="${toY(750)}" stroke="#fbbf24" stroke-width="1" stroke-dasharray="5,4"/>
-      <text x="5" y="${toY(750)-4}" fill="#fbbf24" font-size="10">目標750g</text>`;
-    c+=`<polyline points="${xs.map((x,i)=>x+','+toY(f2[i])).join(' ')}" fill="none" stroke="var(--f2)" stroke-width="2.5" stroke-linejoin="round"/>`;
-    xs.forEach((x,i)=>{c+=`<circle cx="${x}" cy="${toY(f2[i])}" r="3.5" fill="var(--f2)"/>`;});
-    c+=`<polyline points="${xs.map((x,i)=>x+','+toY(f1[i])).join(' ')}" fill="none" stroke="var(--f1)" stroke-width="2.5" stroke-linejoin="round"/>`;
-    xs.forEach((x,i)=>{c+=`<circle cx="${x}" cy="${toY(f1[i])}" r="3.5" fill="var(--f1)"/>`;});
-    mos.forEach((m,i)=>{c+=`<text x="${xs[i]}" y="158" fill="#64748b" font-size="10" text-anchor="middle">${m}</text>`;});
-    svg.innerHTML = c;
-  }
+  
 }
 
 // ══════════════════════════════════════════════

@@ -179,9 +179,49 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 .mf-diff-pos{color:var(--accent);font-weight:600;}
 .mf-diff-neg{color:var(--danger);font-weight:600;}
 .bdg.w{background:rgba(251,191,36,.12);color:var(--warn);}
+/* ── ログイン画面 ── */
+#login-screen{display:none;position:fixed;inset:0;background:var(--bg);z-index:9000;align-items:center;justify-content:center;}
+#login-screen.show{display:flex;}
+.login-box{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:40px 36px;width:360px;max-width:90vw;}
+.login-logo{text-align:center;margin-bottom:28px;}
+.login-logo .mark{font-family:var(--disp);font-size:32px;font-weight:800;color:var(--accent);}
+.login-logo .sub{font-size:11px;color:var(--muted);margin-top:4px;}
+.login-label{font-size:11px;color:var(--muted);letter-spacing:.8px;margin-bottom:5px;display:block;}
+.login-field{margin-bottom:16px;}
+.login-err{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:var(--danger);border-radius:7px;padding:9px 12px;font-size:12px;margin-bottom:14px;display:none;}
+.login-err.show{display:block;}
+#btn-login{width:100%;padding:11px;font-size:14px;font-weight:600;letter-spacing:.5px;}
+.login-footer{text-align:center;margin-top:18px;font-size:11px;color:var(--muted);}
+/* サイドバー ユーザー情報 */
+.sb-user{padding:10px 13px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;}
+.sb-user-email{font-size:10px;color:var(--muted2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sb-logout{background:none;border:1px solid var(--border);border-radius:5px;color:var(--muted);font-size:11px;padding:3px 8px;cursor:pointer;white-space:nowrap;}
+.sb-logout:hover{border-color:var(--danger);color:var(--danger);}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
+
+<!-- Login Screen -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="mark">🐷 PigPro</div>
+      <div class="sub">MULTI-FARM v3 · Cloud</div>
+    </div>
+    <div class="login-err" id="login-err"></div>
+    <div class="login-field">
+      <label class="login-label">メールアドレス</label>
+      <input id="login-email" class="fi" type="email" placeholder="example@email.com" autocomplete="email">
+    </div>
+    <div class="login-field">
+      <label class="login-label">パスワード</label>
+      <input id="login-pass" class="fi" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button id="btn-login" class="btn bp" onclick="signIn()">ログイン</button>
+    <div class="login-footer">PigPro Manager v3 · 農場管理システム</div>
+  </div>
+</div>
 
 <!-- Loading -->
 <div class="loading" id="loading">
@@ -225,6 +265,10 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <div class="nv" onclick="gp('mf-import',this)"><span class="ic">📥</span><span>MF取込</span></div>
   <div class="nv" onclick="gp('confirm',this)"><span class="ic">✅</span><span>月次確定</span></div>
   <div class="sb-bot" id="sb-info">読み込み中...</div>
+  <div class="sb-user" id="sb-user">
+    <span class="sb-user-email" id="sb-user-email">-</span>
+    <button class="sb-logout" onclick="signOut()">ログアウト</button>
+  </div>
 </nav>
 
 <!-- ロット内訳・生体重入力モーダル -->
@@ -2618,21 +2662,95 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 
 <script>
 // ══════════════════════════════════════════════
-// SUPABASE CONFIG
+// SUPABASE CONFIG & AUTH
 // ══════════════════════════════════════════════
 const SUPABASE_URL = 'https://lqxsjakqquekffejgahj.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_F_ZPepIbWvWLxvXFduP7Qw_Wic5irLJ';
+
+// Supabase JS SDK v2 クライアント（Auth用）
+const _sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: window.localStorage,
+  }
+});
+
+// 現在のセッショントークンを取得（なければanonキーにフォールバック）
+async function getAuthToken() {
+  const { data } = await _sb.auth.getSession();
+  return data?.session?.access_token || SUPABASE_KEY;
+}
+
+// ══════════════════════════════════════════════
+// AUTH FUNCTIONS
+// ══════════════════════════════════════════════
+async function signIn() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-err');
+  const btnEl = document.getElementById('btn-login');
+  errEl.classList.remove('show');
+  if (!email || !pass) {
+    errEl.textContent = 'メールアドレスとパスワードを入力してください';
+    errEl.classList.add('show'); return;
+  }
+  btnEl.disabled = true; btnEl.textContent = 'ログイン中...';
+  const { error } = await _sb.auth.signInWithPassword({ email, password: pass });
+  btnEl.disabled = false; btnEl.textContent = 'ログイン';
+  if (error) {
+    errEl.textContent = 'ログインに失敗しました。メールアドレスまたはパスワードを確認してください。';
+    errEl.classList.add('show');
+  }
+  // 成功時はonAuthStateChangeが呼ばれてアプリが起動する
+}
+
+async function signOut() {
+  if (!confirm('ログアウトしますか？')) return;
+  await _sb.auth.signOut();
+  // 画面をログイン画面に戻す
+  document.getElementById('login-screen').classList.add('show');
+  document.getElementById('sb').style.display = '';
+  document.getElementById('main').style.display = '';
+}
+
+// Enterキーでログイン
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('login-screen').classList.contains('show')) {
+    signIn();
+  }
+});
+
+// ── Auth状態監視 ──
+_sb.auth.onAuthStateChange(async (event, session) => {
+  if (session) {
+    // ログイン済み → ログイン画面を隠してアプリを起動
+    document.getElementById('login-screen').classList.remove('show');
+    const email = session.user?.email || '';
+    document.getElementById('sb-user-email').textContent = email;
+    // 初回またはサインイン時のみloadAll実行
+    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+      await loadAll();
+    }
+  } else {
+    // 未ログイン → ログイン画面を表示
+    document.getElementById('login-screen').classList.add('show');
+    document.getElementById('sb-user-email').textContent = '-';
+  }
+});
 
 // ══════════════════════════════════════════════
 // API LAYER
 // ══════════════════════════════════════════════
 async function sbFetch(path, options={}) {
+  const token = await getAuthToken();
   const url = SUPABASE_URL + '/rest/v1/' + path;
   const defaultPrefer = options.method === 'POST' ? 'return=representation' : undefined;
   const prefer = options.headers?.['Prefer'] || defaultPrefer;
   const headers = {
     'apikey': SUPABASE_KEY,
-    'Authorization': 'Bearer ' + SUPABASE_KEY,
+    'Authorization': 'Bearer ' + token,
     'Content-Type': 'application/json',
     ...(prefer ? { 'Prefer': prefer } : {}),
     ...options.headers,
@@ -12415,7 +12533,15 @@ async function saveFarm() {
 // INIT
 // ══════════════════════════════════════════════
 document.getElementById('dt').textContent = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'});
-loadAll();
+
+// Auth状態を確認してアプリ起動（onAuthStateChange が INITIAL_SESSION を発火）
+// セッションなし→ログイン画面を即表示
+(async () => {
+  const { data } = await _sb.auth.getSession();
+  if (!data?.session) {
+    document.getElementById('login-screen').classList.add('show');
+  }
+})();
 </script>
 </body>
 </html>

@@ -8942,6 +8942,19 @@ async function processOtasanXls(file, suppressLoading=false) {
             const m = normalized.match(/令和\s*(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/);
             if(m) detectedSlaughteredAt = `${2018+parseInt(m[1])}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
           }
+          // ④ Excelシリアル値（数値）として読み込まれた場合（例: 46030）
+          if(!detectedSlaughteredAt) {
+            for(const v of row) {
+              if(typeof v === 'number' && Number.isInteger(v) && v > 40000 && v < 50000) {
+                const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+                const y = d.getUTCFullYear(), mo = d.getUTCMonth()+1, dy = d.getUTCDate();
+                if(y >= 2020 && y <= 2030) {
+                  detectedSlaughteredAt = `${y}-${String(mo).padStart(2,'0')}-${String(dy).padStart(2,'0')}`;
+                  break;
+                }
+              }
+            }
+          }
         }
         const kw1 = document.getElementById('sl-map1')?.value || '中田';
         const kw2 = document.getElementById('sl-map2')?.value || '米谷';

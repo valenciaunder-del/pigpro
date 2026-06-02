@@ -9553,6 +9553,7 @@ function checkSlConsistency(data) {
   const s = data.sheet || {};
   const details = data.details || [];
   let detailErrors = 0;
+  let summaryErrors = 0;
 
   // 1) 明細行ごとの整合チェック
   details.forEach((d, i) => {

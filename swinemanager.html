@@ -2735,6 +2735,8 @@ document.addEventListener('keydown', e => {
 // ── Auth状態監視 ──
 _sb.auth.onAuthStateChange(async (event, session) => {
   if (session) {
+    // トークンキャッシュを常に最新に更新
+    _currentToken = session.access_token || null;
     // ログイン済み → ログイン画面を隠してアプリを起動
     document.getElementById('login-screen').classList.remove('show');
     const email = session.user?.email || '';
@@ -2744,6 +2746,7 @@ _sb.auth.onAuthStateChange(async (event, session) => {
       await loadAll();
     }
   } else {
+    _currentToken = null;
     // 未ログイン → ログイン画面を表示
     document.getElementById('login-screen').classList.add('show');
     document.getElementById('sb-user-email').textContent = '-';
@@ -2767,6 +2770,15 @@ async function sbFetch(path, options={}) {
   };
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
+    if (res.status === 401) {
+      // トークン期限切れ → キャッシュをリセットして1回だけ再試行
+      _currentToken = null;
+      const retryToken = await getAuthToken();
+      const retryRes = await fetch(url, { ...options, headers: { ...headers, 'Authorization': 'Bearer ' + retryToken } });
+      if (!retryRes.ok) throw new Error(await retryRes.text());
+      const retryText = await retryRes.text();
+      return retryText ? JSON.parse(retryText) : [];
+    }
     const err = await res.text();
     throw new Error(err);
   }

@@ -2653,6 +2653,21 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         </div>
       </div>
 
+      <!-- 豚舎・タンクNo設定 -->
+      <div style="margin-top:18px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--accent)">🏠 豚舎・タンクNo設定</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div style="font-size:12px;font-weight:700;color:var(--muted2);margin-bottom:8px">中田農場</div>
+            <div id="s1-barn-list" style="display:flex;flex-direction:column;gap:8px"></div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:700;color:var(--muted2);margin-bottom:8px">米山農場</div>
+            <div id="s2-barn-list" style="display:flex;flex-direction:column;gap:8px"></div>
+          </div>
+        </div>
+      </div>
+
     </div>
     <div class="mf2">
       <button class="btn bs" onclick="cm('m-farm-set')">キャンセル</button>
@@ -2978,8 +2993,18 @@ const api = {
 let CF = 'farm1', CP = 'dashboard';
 let DATA = { lots:[], weights:[], feeds:[], deaths:[], ships:[], costs:[], sales:[], ival:[], balance:[], feedMaster:[], feedPurchase:[], invDaily:[], slaughter:[], slaughterDetail:[], feedTank:[] };
 const FARMS = {
-  farm1: { name:'中田農場', short:'中田農場', adgT:750, fcrT:2.70, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5 },
-  farm2: { name:'米山農場', short:'米山農場', adgT:740, fcrT:2.75, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5 },
+  farm1: { name:'中田農場', short:'中田農場', adgT:750, fcrT:2.70, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5,
+    barns: [
+      { id:'A', name:'A豚舎', location:'北側', tank_piglet:1, tank_hog:2 },
+      { id:'B', name:'B豚舎', location:'南側', tank_piglet:3, tank_hog:4 },
+    ]
+  },
+  farm2: { name:'米山農場', short:'米山農場', adgT:740, fcrT:2.75, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5,
+    barns: [
+      { id:'A', name:'A豚舎', location:'道路側', tank_piglet:3, tank_hog:4 },
+      { id:'B', name:'B豚舎', location:'川側',   tank_piglet:2, tank_hog:1 },
+    ]
+  },
 };
 // 出荷先別歩留まり（農場共通）
 const COMMON_YIELDS = {
@@ -3590,6 +3615,33 @@ function initFarmSettingsModal() {
     srcList.innerHTML = '';
     (FARMS[f].sources||[]).forEach(s => addSourceRow(f, s));
     if(!(FARMS[f].sources||[]).length) addSourceRow(f);
+  });
+  // 豚舎・タンクNo設定
+  ['farm1','farm2'].forEach(f => {
+    const n = f==='farm1'?'1':'2';
+    const barnList = document.getElementById(`s${n}-barn-list`);
+    if(!barnList) return;
+    barnList.innerHTML = '';
+    (FARMS[f].barns||[]).forEach(b => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:8px 10px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;display:flex;flex-direction:column;gap:6px';
+      row.dataset.barnId = b.id;
+      row.innerHTML = `
+        <div style="font-size:12px;font-weight:700;color:var(--text)">${b.name}</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px">
+          <span style="color:var(--muted);width:48px">位置</span>
+          <input class="fi barn-location" value="${b.location||''}" style="flex:1;font-size:11px" placeholder="例：道路側">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px">
+          <span style="color:var(--muted);width:48px">子豚タンク</span>
+          <input class="fi barn-tank-piglet" type="number" value="${b.tank_piglet||''}" style="width:60px;font-size:11px" placeholder="No">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:11px">
+          <span style="color:var(--muted);width:48px">肉豚タンク</span>
+          <input class="fi barn-tank-hog" type="number" value="${b.tank_hog||''}" style="width:60px;font-size:11px" placeholder="No">
+        </div>`;
+      barnList.appendChild(row);
+    });
   });
 }
 function cm(id) { document.getElementById(id).classList.remove('open'); }
@@ -12633,10 +12685,22 @@ async function saveFarm() {
     const rows = document.querySelectorAll(`#s${n}-source-list .source-row`);
     FARMS[f].sources = [...rows].map(r=>r.querySelector('.source-name').value.trim()).filter(Boolean);
   });
+  // 豚舎・タンクNo保存
+  ['farm1','farm2'].forEach(f => {
+    const n = f==='farm1'?'1':'2';
+    const rows = document.querySelectorAll(`#s${n}-barn-list [data-barn-id]`);
+    FARMS[f].barns = [...rows].map(row => ({
+      id:          row.dataset.barnId,
+      name:        row.dataset.barnId + '豚舎',
+      location:    row.querySelector('.barn-location')?.value || '',
+      tank_piglet: parseInt(row.querySelector('.barn-tank-piglet')?.value) || 0,
+      tank_hog:    parseInt(row.querySelector('.barn-tank-hog')?.value)    || 0,
+    }));
+  });
   // Supabaseに保存（localStorageにも念のため）
   const settingsToSave = {
-    farm1: { name:FARMS.farm1.name, adgT:FARMS.farm1.adgT, fcrT:FARMS.farm1.fcrT, breed:FARMS.farm1.breed, defaultYield:FARMS.farm1.defaultYield, yields:FARMS.farm1.yields, sources:FARMS.farm1.sources, targetCwMin:FARMS.farm1.targetCwMin, targetCwMax:FARMS.farm1.targetCwMax, shipDays:FARMS.farm1.shipDays },
-    farm2: { name:FARMS.farm2.name, adgT:FARMS.farm2.adgT, fcrT:FARMS.farm2.fcrT, breed:FARMS.farm2.breed, defaultYield:FARMS.farm2.defaultYield, yields:FARMS.farm2.yields, sources:FARMS.farm2.sources, targetCwMin:FARMS.farm2.targetCwMin, targetCwMax:FARMS.farm2.targetCwMax, shipDays:FARMS.farm2.shipDays },
+    farm1: { name:FARMS.farm1.name, adgT:FARMS.farm1.adgT, fcrT:FARMS.farm1.fcrT, breed:FARMS.farm1.breed, defaultYield:FARMS.farm1.defaultYield, yields:FARMS.farm1.yields, sources:FARMS.farm1.sources, targetCwMin:FARMS.farm1.targetCwMin, targetCwMax:FARMS.farm1.targetCwMax, shipDays:FARMS.farm1.shipDays, barns:FARMS.farm1.barns },
+    farm2: { name:FARMS.farm2.name, adgT:FARMS.farm2.adgT, fcrT:FARMS.farm2.fcrT, breed:FARMS.farm2.breed, defaultYield:FARMS.farm2.defaultYield, yields:FARMS.farm2.yields, sources:FARMS.farm2.sources, targetCwMin:FARMS.farm2.targetCwMin, targetCwMax:FARMS.farm2.targetCwMax, shipDays:FARMS.farm2.shipDays, barns:FARMS.farm2.barns },
     common: { yields: COMMON_YIELDS },
   };
   try {

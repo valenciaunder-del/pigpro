@@ -1026,6 +1026,22 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <!-- KPIカード -->
   <div class="kgrid mb18" id="pf-kpi"></div>
 
+  <!-- 豚舎別事故率 -->
+  <div class="card mb18" id="pf-barn-accident-card">
+    <div class="ch">
+      <span class="ct">🏠 豚舎別 事故率</span>
+      <span id="pf-barn-accident-note" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th>農場</th><th>豚舎</th><th>ロット数</th><th>導入頭数</th><th>死廃頭数</th><th>事故率</th><th>平均ADG</th><th>平均肥育日数</th>
+        </tr></thead>
+        <tbody id="pf-barn-accident-tb"></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- グラフ・分析タブ -->
   <div class="card mb18">
     <div class="ch" style="flex-wrap:wrap;gap:8px">
@@ -5306,8 +5322,94 @@ function rPerfFull() {
   // グラフ描画
   renderPfChart(lots);
 
+  // 豚舎別事故率テーブル
+  renderBarnAccident(lots);
+
   // 旧KPI・ADG比較も更新
   rPerf();
+}
+
+function renderBarnAccident(lots) {
+  const tb = document.getElementById('pf-barn-accident-tb');
+  const note = document.getElementById('pf-barn-accident-note');
+  if(!tb) return;
+
+  // 農場×豚舎でグループ化
+  const groups = {};
+  lots.forEach(l => {
+    const farmName = FARMS[l.farm]?.name || l.farm;
+    const barn = l.barn || '未設定';
+    const key = `${l.farm}__${barn}`;
+    if(!groups[key]) groups[key] = { farm: l.farm, farmName, barn, lots: [], deaths: 0, intros: 0, adgWs: 0, adgHs: 0, daysSum: 0, daysCnt: 0 };
+    const g = groups[key];
+    g.lots.push(l);
+    g.intros += l.count || 0;
+    g.deaths += calcAccidentOnly(DATA.deaths.filter(d => d.lot_id === l.id && d.confirmed !== false));
+    const adg = calcLotAdg(l, true);
+    if(adg) {
+      const sh = DATA.ships.filter(s => s.lot_id === l.id && s.live_weight > 0);
+      const h = sh.reduce((a, s) => a + s.count, 0);
+      if(h > 0) { g.adgWs += adg * h; g.adgHs += h; }
+    }
+    const days = calcLotAvgDays(l);
+    if(days > 0) { g.daysSum += days; g.daysCnt++; }
+  });
+
+  const rows = Object.values(groups).sort((a, b) => {
+    if(a.farm !== b.farm) return a.farm.localeCompare(b.farm);
+    return a.barn.localeCompare(b.barn);
+  });
+
+  // 豚舎設定なしロットが多い場合は注記
+  const noBar = lots.filter(l => !l.barn).length;
+  if(note) note.textContent = noBar > 0 ? `※豚舎未設定ロット ${noBar}件含む` : '';
+
+  if(!rows.length) {
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">データがありません</td></tr>';
+    return;
+  }
+
+  // 農場ごとに小計行も追加
+  let html = '';
+  let prevFarm = null;
+  rows.forEach(g => {
+    if(prevFarm && prevFarm !== g.farm) {
+      // 農場区切り線
+      html += `<tr><td colspan="8" style="border-top:2px solid var(--border);padding:0"></td></tr>`;
+    }
+    prevFarm = g.farm;
+    const rate = g.intros > 0 ? (g.deaths / g.intros * 100).toFixed(1) : '-';
+    const rateCls = rate !== '-' ? (parseFloat(rate) >= 5 ? 'nb' : parseFloat(rate) >= 3 ? 'nw' : 'ng') : '';
+    const avgAdg = g.adgHs > 0 ? Math.round(g.adgWs / g.adgHs) : null;
+    const avgDays = g.daysCnt > 0 ? Math.round(g.daysSum / g.daysCnt) : null;
+    html += `<tr>
+      <td style="font-size:11px">${fb(g.farm)}</td>
+      <td><span class="bdg gr" style="font-size:12px">${g.barn}</span></td>
+      <td class="mn">${g.lots.length}ロット</td>
+      <td class="mn">${g.intros.toLocaleString()}頭</td>
+      <td class="mn">${g.deaths}頭</td>
+      <td class="mn"><span class="${rateCls}" style="font-weight:700">${rate !== '-' ? rate + '%' : '-'}</span></td>
+      <td class="mn ${avgAdg ? ac(avgAdg) : ''}">${avgAdg ? avgAdg + ' g/日' : '-'}</td>
+      <td class="mn">${avgDays ? avgDays + '日' : '-'}</td>
+    </tr>`;
+  });
+
+  // 全体合計行
+  const totalIntros = rows.reduce((a, g) => a + g.intros, 0);
+  const totalDeaths = rows.reduce((a, g) => a + g.deaths, 0);
+  const totalRate = totalIntros > 0 ? (totalDeaths / totalIntros * 100).toFixed(1) : '-';
+  const totalRateCls = totalRate !== '-' ? (parseFloat(totalRate) >= 5 ? 'nb' : parseFloat(totalRate) >= 3 ? 'nw' : 'ng') : '';
+  html += `<tr style="background:var(--panel2);font-weight:700;border-top:2px solid var(--border)">
+    <td colspan="2" style="font-size:12px;color:var(--muted)">合計</td>
+    <td class="mn">${rows.reduce((a,g)=>a+g.lots.length,0)}ロット</td>
+    <td class="mn">${totalIntros.toLocaleString()}頭</td>
+    <td class="mn">${totalDeaths}頭</td>
+    <td class="mn"><span class="${totalRateCls}" style="font-weight:700">${totalRate !== '-' ? totalRate + '%' : '-'}</span></td>
+    <td class="mn">-</td>
+    <td class="mn">-</td>
+  </tr>`;
+
+  tb.innerHTML = html;
 }
 
 function renderPfChart(lots) {

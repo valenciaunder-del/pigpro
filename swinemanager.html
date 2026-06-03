@@ -8528,6 +8528,16 @@ async function analyzeSlaughterWithClaude(b64, mimeType, fileName) {
 大きくずれている場合はFAXの読み取り誤りの可能性があるため、前後の行や合計行・相場欄を参照して値を再確認すること。
 head_countは通常1〜40頭前後だが100頭を超える場合もある。極端に小さい値（1桁）や極端に大きい値はOCR誤読を疑うこと。
 
+【JMGA格付け基準（皮はぎ用）による等級の自己チェック】
+以下の基準表と照合し、読み取った grade が範囲外の場合は格付明細書を再確認すること：
+  極上: 重量73.0〜81.0kg かつ 背脂肪1.5〜2.1cm
+  上:   重量68.0〜83.0kg かつ 背脂肪1.3〜2.4cm（極上範囲除く）
+  中:   重量63.0〜78.0kg かつ 背脂肪0.9〜2.7cm、または 重量78.0〜88.0kg かつ 背脂肪1.0〜3.0cm
+  並:   上記に該当しないもの（重量63kg未満、88kg超、または背脂肪が範囲外）
+例: 枝重66kg・背脂肪1.6cmで grade=「上」は範囲外 → 「中」が正しい
+例: 枝重85kg・背脂肪1.9cmで grade=「上」は範囲外 → 「中」が正しい
+ただし格付明細書に明確に「上」と印字されていれば、実際の格付審査で例外として上位評価された可能性があるため、印字通りに返してよい。
+
 【仙台中央食肉卸売市場フォーマットの場合】
 - 縦長の表形式で1行に2頭分のデータが並ぶ（上段・下段）
 - 列の並び順：個印 | 上場番号(carcass_no) | 品種 | 格常要因(等級・瑕疵) | 重量fu | 単価 | 枝肉金額 | 内臓金額 | 原皮金額 | 販売金額 | 委託手数料 | 経費出融 | 仕切金額
@@ -9907,17 +9917,52 @@ function checkSlConsistency(data) {
 }
 
 // 明細1行のHTMLを生成
+// JMGA格付け基準（皮はぎ用）で重量・背脂肪から期待等級を返す
+// 戻り値: { expected: '上', reason: '...' } または null（判定不能）
+function checkJmgaGrade(weight, backfat) {
+  if(!weight || !backfat) return null;
+  const w = parseFloat(weight), f = parseFloat(backfat);
+  if(isNaN(w) || isNaN(f)) return null;
+
+  // 極上: 73.0以上81.0以下 かつ 1.5以上2.1以下
+  if(w >= 73.0 && w <= 81.0 && f >= 1.5 && f <= 2.1) return { expected:'極上', reason:`重量${w}kg・背脂肪${f}cm → 極上範囲` };
+  // 上: 68.0以上83.0以下 かつ 1.3以上2.4以下（極上除く）
+  if(w >= 68.0 && w <= 83.0 && f >= 1.3 && f <= 2.4) return { expected:'上', reason:`重量${w}kg・背脂肪${f}cm → 上範囲` };
+  // 中（2パターン）
+  if(w >= 63.0 && w < 78.0  && f >= 0.9 && f <= 2.7) return { expected:'中', reason:`重量${w}kg・背脂肪${f}cm → 中範囲` };
+  if(w >= 78.0 && w <= 88.0 && f >= 1.0 && f <= 3.0) return { expected:'中', reason:`重量${w}kg・背脂肪${f}cm → 中範囲` };
+  // 並（それ以外）
+  return { expected:'並', reason:`重量${w}kg・背脂肪${f}cm → 並範囲` };
+}
+
+// 等級の矛盾チェック：OCR等級 vs JMGA基準
+// 返り値: null（問題なし）or { expected, reason }（不一致）
+function checkGradeMismatch(d) {
+  if(!d.grade || !d.carcass_weight || !d.backfat) return null;
+  const result = checkJmgaGrade(d.carcass_weight, d.backfat);
+  if(!result) return null;
+  const expected = result.expected;
+  // 極上→上は実運用上ありえる（書類上は「上」でまとめることがある）
+  if(d.grade === expected) return null;
+  if(d.grade === '上' && expected === '極上') return null; // 許容
+  return { expected, reason: result.reason };
+}
+
 function slDetailRow(d, i) {
   const calc = (d.carcass_weight && d.unit_price) ? Math.round(d.carcass_weight * d.unit_price) : null;
-  return `<tr data-idx="${i}">
+  const mismatch = checkGradeMismatch(d);
+  const rowStyle = mismatch ? 'background:rgba(251,146,60,.08);outline:1px solid rgba(251,146,60,.4)' : '';
+  const gradeCols = ['上','中','並','等外'].map(g=>`<option value="${g}" ${d.grade===g?'selected':''}>${g}</option>`).join('');
+  const gradeWarn = mismatch
+    ? `<div style="margin-top:3px;font-size:10px;color:var(--warn);line-height:1.3">⚠️ 基準: <b style="cursor:pointer;text-decoration:underline" onclick="updateSlDetail(${i},'grade','${mismatch.expected}');this.closest('td').querySelector('select').value='${mismatch.expected}';updateSlDetailRender(${i})">${mismatch.expected}</b><br><span style="color:var(--muted);font-size:9px">${mismatch.reason}</span></div>`
+    : '';
+  return `<tr data-idx="${i}" style="${rowStyle}">
     <td class="mn" style="color:var(--muted2);font-family:var(--mono)">${d.carcass_no||'-'}</td>
     <td class="mn"><input type="number" step="0.5" value="${d.carcass_weight||''}" style="width:60px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'carcass_weight',parseFloat(this.value))"> kg</td>
     <td class="mn ng"><input type="number" value="${d.unit_price||''}" style="width:50px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--accent);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'unit_price',parseInt(this.value))"></td>
     <td class="mn ng">${calc !== null ? fM(calc) : '-'}</td>
-    <td><select style="background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'grade',this.value)">
-      ${['上','中','並','等外'].map(g=>`<option value="${g}" ${d.grade===g?'selected':''}>${g}</option>`).join('')}
-    </select></td>
-    <td class="mn"><input type="number" step="0.1" value="${d.backfat||''}" style="width:48px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'backfat',parseFloat(this.value))"> cm</td>
+    <td><select style="background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'grade',this.value);updateSlDetailRender(${i})">${gradeCols}</select>${gradeWarn}</td>
+    <td class="mn"><input type="number" step="0.1" value="${d.backfat||''}" style="width:48px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'backfat',parseFloat(this.value));updateSlDetailRender(${i})"> cm</td>
     <td><select style="background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'sex',this.value)">
       <option value="去勢" ${d.sex==='去勢'?'selected':''}>去勢</option>
       <option value="雌" ${d.sex==='雌'?'selected':''}>雌</option>
@@ -9925,6 +9970,27 @@ function slDetailRow(d, i) {
     </select></td>
     <td><input type="text" value="${d.defects||''}" style="width:80px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:11px" onchange="updateSlDetail(${i},'defects',this.value||null)"></td>
   </tr>`;
+}
+
+// 行単体を再描画（等級・背脂肪変更時）
+function updateSlDetailRender(idx) {
+  const d = SL_DATA?.details?.[idx];
+  if(!d) return;
+  const row = document.querySelector(`#sl-detail-tb tr[data-idx="${idx}"]`);
+  if(!row) return;
+  const mismatch = checkGradeMismatch(d);
+  row.style.background = mismatch ? 'rgba(251,146,60,.08)' : '';
+  row.style.outline = mismatch ? '1px solid rgba(251,146,60,.4)' : '';
+  const gradeCell = row.cells[4];
+  // ⚠️注釈div更新（selectは残す）
+  const existWarn = gradeCell.querySelector('div');
+  if(existWarn) existWarn.remove();
+  if(mismatch) {
+    const div = document.createElement('div');
+    div.style.cssText = 'margin-top:3px;font-size:10px;color:var(--warn);line-height:1.3';
+    div.innerHTML = `⚠️ 基準: <b style="cursor:pointer;text-decoration:underline" onclick="updateSlDetail(${idx},'grade','${mismatch.expected}');this.closest('td').querySelector('select').value='${mismatch.expected}';updateSlDetailRender(${idx})">${mismatch.expected}</b><br><span style="color:var(--muted);font-size:9px">${mismatch.reason}</span>`;
+    gradeCell.appendChild(div);
+  }
 }
 
 function updateSlDetail(idx, field, value) {
@@ -9936,8 +10002,6 @@ function updateSlDetail(idx, field, value) {
     const d = SL_DATA.details[idx];
     const calc = d.carcass_weight && d.unit_price ? Math.round(d.carcass_weight * d.unit_price) : null;
     targetRow.cells[3].textContent = calc !== null ? fM(calc) : '-';
-    targetRow.style.background = '';
-    targetRow.style.outline = '';
   }
   // サマリーを再計算
   const stats = calcSlStats(SL_DATA.details);

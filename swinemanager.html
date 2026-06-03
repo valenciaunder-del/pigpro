@@ -9386,17 +9386,14 @@ async function splitTifToPages(b64, mimeType) {
     // TIFをデコード
     const ifds = UTIF.decode(buf);
     const pages = [];
-    const MAX_PAGES = 4;
-    const MAX_PX = 1200;
+    const MAX_PX = 800;
 
-    for(let pi = 0; pi < ifds.length; pi++) {
-      if(pi >= MAX_PAGES) break; // 最大4ページまで
-      const ifd = ifds[pi];
+    for(const ifd of ifds) {
       UTIF.decodeImage(buf, ifd);
       const rgba = UTIF.toRGBA8(ifd);
       const w = ifd.width, h = ifd.height;
 
-      // リサイズ比率計算（最大1200px）
+      // リサイズ比率計算（最大800px）
       const scale = Math.min(1, MAX_PX / Math.max(w, h));
       const dw = Math.round(w * scale), dh = Math.round(h * scale);
 
@@ -9408,15 +9405,15 @@ async function splitTifToPages(b64, mimeType) {
       imageData.data.set(rgba);
       sctx.putImageData(imageData, 0, 0);
 
-      // リサイズ後canvasにJPEG品質60%で出力
+      // リサイズ後canvasにJPEG品質55%で出力
       const canvas = document.createElement('canvas');
       canvas.width = dw; canvas.height = dh;
       canvas.getContext('2d').drawImage(src, 0, 0, dw, dh);
-      const jpeg = canvas.toDataURL('image/jpeg', 0.60).split(',')[1];
+      const jpeg = canvas.toDataURL('image/jpeg', 0.55).split(',')[1];
       pages.push({ data: jpeg, mimeType: 'image/jpeg' });
     }
 
-    console.log(`TIF: ${ifds.length}ページ中${pages.length}ページを処理（max${MAX_PAGES}・max${MAX_PX}px・JPEG60%）`);
+    console.log(`TIF: ${pages.length}ページを処理（max${MAX_PX}px・JPEG55%）`);
     return pages;
 
   } catch(e) {

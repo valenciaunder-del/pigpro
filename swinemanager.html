@@ -6750,6 +6750,7 @@ async function addLot() {
     DATA.lots = await api.getLots();
     notif(`ロット ${id} を登録しました`); refreshShipPlanIfActive();
     rLotFull(); fillSelects(); updateSBInfo();
+    genLotId(); // DATA.lots更新後に次のロット番号を再生成（連番対応）
   } catch(e) { notif('登録エラー: '+e.message,'r'); }
   finally { hideLoading(); }
 }

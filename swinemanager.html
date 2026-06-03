@@ -9386,26 +9386,37 @@ async function splitTifToPages(b64, mimeType) {
     // TIFをデコード
     const ifds = UTIF.decode(buf);
     const pages = [];
+    const MAX_PAGES = 4;
+    const MAX_PX = 1200;
 
-    for(const ifd of ifds) {
+    for(let pi = 0; pi < ifds.length; pi++) {
+      if(pi >= MAX_PAGES) break; // 最大4ページまで
+      const ifd = ifds[pi];
       UTIF.decodeImage(buf, ifd);
       const rgba = UTIF.toRGBA8(ifd);
       const w = ifd.width, h = ifd.height;
 
-      // CanvasでPNGに変換
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      const imageData = ctx.createImageData(w, h);
-      imageData.data.set(rgba);
-      ctx.putImageData(imageData, 0, 0);
+      // リサイズ比率計算（最大1200px）
+      const scale = Math.min(1, MAX_PX / Math.max(w, h));
+      const dw = Math.round(w * scale), dh = Math.round(h * scale);
 
-      // PNGとして出力
-      const png = canvas.toDataURL('image/png').split(',')[1];
-      pages.push({ data: png, mimeType: 'image/png' });
+      // 元サイズでcanvasに描画してリサイズ
+      const src = document.createElement('canvas');
+      src.width = w; src.height = h;
+      const sctx = src.getContext('2d');
+      const imageData = sctx.createImageData(w, h);
+      imageData.data.set(rgba);
+      sctx.putImageData(imageData, 0, 0);
+
+      // リサイズ後canvasにJPEG品質60%で出力
+      const canvas = document.createElement('canvas');
+      canvas.width = dw; canvas.height = dh;
+      canvas.getContext('2d').drawImage(src, 0, 0, dw, dh);
+      const jpeg = canvas.toDataURL('image/jpeg', 0.60).split(',')[1];
+      pages.push({ data: jpeg, mimeType: 'image/jpeg' });
     }
 
-    console.log(`TIF: ${pages.length}ページを分割`);
+    console.log(`TIF: ${ifds.length}ページ中${pages.length}ページを処理（max${MAX_PAGES}・max${MAX_PX}px・JPEG60%）`);
     return pages;
 
   } catch(e) {

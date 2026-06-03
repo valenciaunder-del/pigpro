@@ -6586,7 +6586,16 @@ function genLotId() {
   if(!date) return;
   const code = farm === 'farm1' ? 'N' : 'Y';
   const dateStr = date.replace(/-/g, '');
-  document.getElementById('fl-id').value = `${dateStr}${code}`;
+  const base = `${dateStr}${code}`;
+  // 同じ農場・同じ日付のロットが既に存在する場合は連番を付ける
+  const existing = (DATA?.lots || []).map(l => l.id);
+  let id = base;
+  let n = 2;
+  while(existing.includes(id)) {
+    id = `${base}-${n}`;
+    n++;
+  }
+  document.getElementById('fl-id').value = id;
   // 農場変更時に仕入先セレクトも更新
   updateSourceSelects();
 }

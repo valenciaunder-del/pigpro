@@ -11940,8 +11940,10 @@ function onTankCsvDrop2(e) {
 
 function onTankCsvSelect2(e) {
   const file = e.target.files[0];
-  if(file) parseTankCsv(file);
-  e.target.value = '';
+  if(file) {
+    parseTankCsv(file);
+    setTimeout(() => { e.target.value = ''; }, 2000);
+  }
 }
 
 function clearTankCsvPreview() {
@@ -11984,6 +11986,7 @@ function parseTankCsv(file) {
 
 function _processCsvText(text) {
   try {
+    console.log('テキスト長:', text.length, '文字、行数:', text.split('\n').length);
     const rows = buildFeedTankRowsFromCsv(text);
     if(!rows.length) {
       const lines = text.split(/\r?\n/).filter(l=>l.trim()).slice(0,3);
@@ -11995,7 +11998,7 @@ function _processCsvText(text) {
       notif('認識できるタンク名がありませんでした。コンソールで確認してください。', 'r');
       return;
     }
-    console.log('CSV解析完了:', rows.length, '件');
+    console.log('CSV行数:', text.split('\n').length, 'rows解析:', rows.length, '件');
     _tankCsvRows2 = rows;
     showTankCsvPreview(rows);
   } catch(err) {

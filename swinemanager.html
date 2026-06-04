@@ -655,6 +655,42 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     </div>
   </div>
 
+  <!-- FCRトレンド・豚舎別FCR -->
+  <div class="g2 mb18" id="d-fcr-section">
+    <!-- FCR月次トレンドグラフ -->
+    <div class="card" style="margin-bottom:0">
+      <div class="ch">
+        <span class="ct">FCR 月次推移</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select class="fs" id="d-fcr-months" onchange="rDashFcr()" style="font-size:11px;width:90px">
+            <option value="6">直近6ヶ月</option>
+            <option value="12">直近12ヶ月</option>
+            <option value="0">全期間</option>
+          </select>
+          <span class="bdg gr">タンクデータ使用</span>
+        </div>
+      </div>
+      <div class="cb">
+        <div class="ca" style="height:180px"><svg id="d-fcr-svg" viewBox="0 0 500 160" preserveAspectRatio="none"></svg></div>
+        <div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap" id="d-fcr-legend">
+          <span style="font-size:11px"><span style="color:var(--f1)">━</span> 中田農場</span>
+          <span style="font-size:11px"><span style="color:var(--f2)">━</span> 米山農場</span>
+          <span style="font-size:11px"><span style="color:var(--warn)">- -</span> 目標2.70</span>
+        </div>
+      </div>
+    </div>
+    <!-- 豚舎別FCRカード -->
+    <div class="card" style="margin-bottom:0">
+      <div class="ch">
+        <span class="ct">豚舎別 FCR</span>
+        <span style="font-size:11px;color:var(--muted)" id="d-barn-fcr-period">-</span>
+      </div>
+      <div class="cb" id="d-barn-fcr-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="color:var(--muted);font-size:12px;grid-column:1/-1;text-align:center;padding:20px">タンクデータ取込後に表示されます</div>
+      </div>
+    </div>
+  </div>
+
   <!-- データ取込状況 -->
   <div class="card mb18">
     <div class="ch">
@@ -4347,11 +4383,152 @@ function rImportStatus() {
   const el = document.getElementById('d-import-status');
   if(el) el.innerHTML = html;
   
+  // FCRトレンド・豚舎別FCRを更新
+  if(DATA.feedTank?.length) rDashFcr();
 }
 
-// ══════════════════════════════════════════════
-// LOT
-// ══════════════════════════════════════════════
+// ════════════════════════════════════════
+// ダッシュボード FCRトレンド・豚舎別FCR
+// ════════════════════════════════════════
+function rDashFcr() {
+  const nMonths = parseInt(document.getElementById('d-fcr-months')?.value || '6');
+  const fcrT = { farm1: FARMS.farm1.fcrT||2.7, farm2: FARMS.farm2.fcrT||2.75 };
+
+  // 全月リスト（feed_tankデータから）
+  const allMonths = [...new Set(DATA.feedTank.map(r=>r.date.slice(0,7)))].sort();
+  const months = nMonths===0 ? allMonths : allMonths.slice(-nMonths);
+  if(!months.length) return;
+
+  // 農場別月次FCR計算
+  const farmFcrs = {};
+  ['farm1','farm2'].forEach(f => {
+    farmFcrs[f] = months.map(m => ({
+      month: m,
+      fcr: calcFarmFcr(f, m)
+    }));
+  });
+
+  // ─── FCRグラフ ───────────────────────────────
+  const W=500, H=160, PL=38, PR=10, PT=14, PB=24;
+  const validFcrs = ['farm1','farm2'].flatMap(f=>farmFcrs[f].map(d=>d.fcr)).filter(v=>v!==null);
+  if(!validFcrs.length) return;
+  const minV = Math.max(1.5, Math.min(...validFcrs) - 0.2);
+  const maxV = Math.min(5.0, Math.max(...validFcrs, 2.8) + 0.2);
+  const xS = i => PL + (i/(months.length-1||1))*(W-PL-PR);
+  const yS = v => PT + (1-(v-minV)/(maxV-minV))*(H-PT-PB);
+
+  let c = '';
+  // グリッドライン
+  [2.5, 2.7, 3.0, 3.5].filter(v=>v>=minV&&v<=maxV).forEach(v => {
+    const y = yS(v).toFixed(0);
+    const col = v===2.7 ? 'rgba(251,191,36,.4)' : 'rgba(100,116,139,.2)';
+    c += `<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="${col}" stroke-width="${v===2.7?1.5:0.8}" stroke-dasharray="${v===2.7?'4,3':''}"/>`;
+    c += `<text x="${PL-3}" y="${parseFloat(y)+3}" fill="#64748b" font-size="9" text-anchor="end">${v.toFixed(1)}</text>`;
+  });
+
+  // 農場別ライン
+  const COLS = { farm1: 'var(--f1)', farm2: 'var(--f2)' };
+  ['farm1','farm2'].forEach(f => {
+    const pts = farmFcrs[f].map((d,i) => d.fcr!==null ? `${xS(i).toFixed(0)},${yS(d.fcr).toFixed(0)}` : null).filter(Boolean);
+    if(pts.length < 2) return;
+    // 連続線（null除外）
+    let path = '';
+    farmFcrs[f].forEach((d,i) => {
+      if(d.fcr===null) return;
+      const x=xS(i).toFixed(0), y=yS(d.fcr).toFixed(0);
+      if(!path) path=`M${x},${y}`;
+      else path+=`L${x},${y}`;
+    });
+    c += `<path d="${path}" fill="none" stroke="${COLS[f]}" stroke-width="2" stroke-linejoin="round"/>`;
+    farmFcrs[f].forEach((d,i) => {
+      if(d.fcr===null) return;
+      const col = d.fcr<=fcrT[f] ? 'var(--accent)' : d.fcr<=fcrT[f]+0.3 ? 'var(--warn)' : 'var(--danger)';
+      c += `<circle cx="${xS(i)}" cy="${yS(d.fcr)}" r="3" fill="${col}" stroke="${COLS[f]}" stroke-width="1.5"/>`;
+    });
+  });
+
+  // 月ラベル
+  const step = Math.max(1, Math.floor(months.length/6));
+  months.filter((_,i)=>i%step===0||i===months.length-1).forEach(m => {
+    const i = months.indexOf(m);
+    c += `<text x="${xS(i).toFixed(0)}" y="${H}" fill="#64748b" font-size="9" text-anchor="middle">${m.slice(5)}</text>`;
+  });
+
+  const svg = document.getElementById('d-fcr-svg');
+  if(svg) svg.innerHTML = c;
+
+  // ─── 豚舎別FCRカード ───────────────────────────
+  const barnGrid = document.getElementById('d-barn-fcr-grid');
+  const periodEl = document.getElementById('d-barn-fcr-period');
+  if(!barnGrid) return;
+
+  const tankRows = DATA.feedTank.filter(r => r.tank_name &&
+    (nMonths===0 || months.includes(r.date.slice(0,7)))
+  );
+  const tankNames = [...new Set(tankRows.map(r=>({farm:r.farm,tank:r.tank_name}))
+    .map(x=>x.farm+'|'+x.tank))].sort()
+    .map(k=>({farm:k.split('|')[0], tank:k.split('|')[1]}));
+
+  if(!tankNames.length) {
+    barnGrid.innerHTML = '<div style="color:var(--muted);font-size:12px;grid-column:1/-1;text-align:center;padding:20px">タンクデータ取込後に表示されます</div>';
+    return;
+  }
+
+  if(periodEl) periodEl.textContent = months[0]+'〜'+months[months.length-1];
+
+  // 農場全体のADG
+  const farmAdg = {};
+  ['farm1','farm2'].forEach(f => {
+    const cutoff = f==='farm2'?'2026-02-13':'2020-01-01';
+    const lots = DATA.lots.filter(l=>l.farm===f&&l.start_date>=cutoff);
+    let wA=0,tH=0;
+    lots.forEach(l=>{const adg=calcLotAdg(l,true);if(!adg)return;const sh=DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);const h=sh.reduce((a,s)=>a+s.count,0);if(h>0){wA+=adg*h;tH+=h;}});
+    farmAdg[f] = tH>0 ? wA/tH : FARMS[f]?.adgT||750;
+  });
+
+  // タンク名→豚舎情報マップ
+  const tankBarnMap = {};
+  Object.entries(FARMS).forEach(([fid,f])=>{
+    (f.barns||[]).forEach(b=>{
+      if(b.tank_piglet_label) tankBarnMap[b.tank_piglet_label]={farm:fid,barn:b.name,type:'子豚用',color:'var(--accent2)'};
+      if(b.tank_hog_label)    tankBarnMap[b.tank_hog_label]   ={farm:fid,barn:b.name,type:'肉豚用',color:'var(--accent3)'};
+    });
+  });
+
+  barnGrid.innerHTML = tankNames.map(({farm:f, tank:tn}) => {
+    const tRows = tankRows.filter(r=>r.farm===f&&r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+    if(tRows.length < 2) return '';
+    const feedT = Math.max(0,
+      (tRows[0].tank_remaining||0) +
+      tRows.reduce((a,r)=>a+(r.delivery_ton||0),0) -
+      (tRows[tRows.length-1].tank_remaining||0)
+    );
+    const invR = DATA.invDaily.filter(r=>r.farm===f&&r.date>=tRows[0].date&&r.date<=tRows[tRows.length-1].date);
+    const hd = invR.reduce((a,r)=>a+(r.stock_head||0),0);
+    const info = tankBarnMap[tn];
+    const sameType = tankNames.filter(x=>x.farm===f&&tankBarnMap[x.tank]?.type===info?.type);
+    const ratio = sameType.length > 0 ? 1/sameType.length : 0.5;
+    const gainT = hd * ratio * (farmAdg[f]||750) / 1e9;
+    const fcrV = feedT>0&&gainT>0 ? feedT/gainT : null;
+    const ft = FARMS[f]?.fcrT||2.7;
+    const ac = fcrV ? (fcrV<=ft?'var(--accent)':fcrV<=ft+0.3?'var(--warn)':'var(--danger)') : 'var(--muted)';
+    const farmLabel = FARMS[f]?.name||f;
+    return `<div style="background:var(--panel2);border-radius:10px;padding:12px;border-left:3px solid ${info?.color||'var(--border)'}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:10px;color:var(--muted)">${farmLabel}</div>
+        <span class="bdg gr" style="font-size:9px">${tn}</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:4px;margin-bottom:4px">
+        <span style="font-family:var(--mono);font-size:26px;font-weight:700;color:${ac}">${fcrV?fcrV.toFixed(2):'-'}</span>
+        <span style="font-size:10px;color:var(--muted)">FCR</span>
+      </div>
+      <div style="font-size:10px;color:var(--muted)">${feedT.toFixed(2)}t ÷ ${gainT.toFixed(3)}t</div>
+      <div style="font-size:10px;color:var(--muted2)">${info?.barn||''} ${info?.type||''}</div>
+    </div>`;
+  }).join('') || '<div style="color:var(--muted);font-size:12px;grid-column:1/-1;text-align:center;padding:20px">データなし</div>';
+}
+
+
 function rLotFull() {
   const ff = CF==='both' ? 'all' : CF;
   const fs2 = document.getElementById('l-fs')?.value||'all';

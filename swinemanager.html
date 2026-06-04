@@ -2459,7 +2459,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   </div>
 </div>
 
-
+<div class="page" id="page-confirm">
   <div class="alert i mb18">✅ <div>月末に棚卸データを取り込み、日々の記録と突合して月次データを確定します。確定後は分析・レポートに使用されます。</div></div>
 
   <!-- 月選択 -->
@@ -12495,6 +12495,23 @@ function rFeedTank() {
 
   const fcrResult = calcFarmFcr(farm, mon);
   const fcr = fcrResult !== null ? fcrResult.toFixed(2) : '-';
+
+  // FCR詳細計算用変数
+  const invRows = DATA.invDaily.filter(r=>r.farm===farm && r.date && r.date.startsWith(mon));
+  const headDays = invRows.reduce((a,r)=>a+(r.stock_head||0), 0);
+  const daysInMon = invRows.length || 1;
+  const avgHeads = Math.round(headDays / daysInMon);
+  const cutoffDate = farm==='farm2' ? '2026-02-13' : '2020-01-01';
+  const recentLots = DATA.lots.filter(l=>l.farm===farm && l.start_date>=cutoffDate);
+  let wAdg=0, tHead=0;
+  recentLots.forEach(l=>{
+    const adg=calcLotAdg(l,true); if(!adg) return;
+    const ships=DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);
+    const h=ships.reduce((a,s)=>a+s.count,0);
+    if(h>0){wAdg+=adg*h;tHead+=h;}
+  });
+  const avgAdg = tHead>0 ? wAdg/tHead : FARMS[farm]?.adgT||750;
+  const gainTon = headDays * avgAdg / 1e9; // t単位
 
   // KPI
   document.getElementById('ft-kpi').innerHTML = `

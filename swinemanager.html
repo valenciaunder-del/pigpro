@@ -3044,17 +3044,39 @@ const api = {
 
   // Feed tank（飼料タンク）
   getFeedTank: async (farm, month) => {
-    if(farm && farm!=='both') {
-      let q = `?farm=eq.${farm}&order=date.asc&limit=5000`;
+    // タンク別に分割取得してRow Limit回避
+    const tankNames = Object.values(TANK_NAME_MAP).map(v=>v.tank_label);
+    const uniqueTanks = [...new Set(tankNames)];
+    
+    const fetchByFarm = async (f) => {
+      let q = `?farm=eq.${f}&order=date.asc&limit=5000`;
       if(month) q += `&date=gte.${month}-01&date=lte.${month}-31`;
       return sbFetch('feed_tank' + q);
+    };
+
+    if(farm && farm!=='both') {
+      if(month) {
+        let q = `?farm=eq.${farm}&order=date.asc&limit=5000`;
+        q += `&date=gte.${month}-01&date=lte.${month}-31`;
+        return sbFetch('feed_tank' + q);
+      }
+      // 月指定なし→タンク別に分割取得
+      const results = await Promise.all(
+        uniqueTanks.map(tn =>
+          sbFetch(`feed_tank?farm=eq.${farm}&tank_name=eq.${encodeURIComponent(tn)}&order=date.asc&limit=2000`)
+        )
+      );
+      return results.flat();
     }
-    // 農場指定なし→両農場をそれぞれ取得してマージ（Row Limit対策）
-    const [f1, f2] = await Promise.all([
-      sbFetch('feed_tank?farm=eq.farm1&order=date.asc&limit=5000'),
-      sbFetch('feed_tank?farm=eq.farm2&order=date.asc&limit=5000'),
-    ]);
-    return [...f1, ...f2];
+    // 両農場→農場×タンク別に分割取得
+    const allResults = await Promise.all(
+      ['farm1','farm2'].flatMap(f =>
+        uniqueTanks.map(tn =>
+          sbFetch(`feed_tank?farm=eq.${f}&tank_name=eq.${encodeURIComponent(tn)}&order=date.asc&limit=2000`)
+        )
+      )
+    );
+    return allResults.flat();
   },
   upsertFeedTank: (rows) => sbFetch('feed_tank?on_conflict=farm,date,tank_name', {
     method: 'POST',

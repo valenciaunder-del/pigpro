@@ -11952,40 +11952,56 @@ function clearTankCsvPreview() {
 }
 
 function parseTankCsv(file) {
-  const reader = new FileReader();
-  reader.onload = (ev) => {
+  // まずUTF-8として読んでみる
+  const readerUtf8 = new FileReader();
+  readerUtf8.onload = (ev) => {
     try {
-      const buf = ev.target.result;
-      let text;
-      // UTF-8を先に試す（農場・豚などの文字が含まれるか確認）
-      const utf8text = new TextDecoder('utf-8').decode(buf);
-      if(utf8text.includes('農場') || utf8text.includes('豚')) {
-        text = utf8text;
+      const text = ev.target.result;
+      // 文字化けしていないか確認（農場・豚の文字があればUTF-8成功）
+      if(text.includes('農場') || text.includes('豚')) {
+        _processCsvText(text);
       } else {
-        // UTF-8で読めなければShift-JIS
-        try { text = new TextDecoder('shift-jis').decode(buf); }
-        catch { text = utf8text; }
+        // Shift-JISで再読み込み
+        const readerSjis = new FileReader();
+        readerSjis.onload = (ev2) => {
+          try {
+            const buf = ev2.target.result;
+            const textSjis = new TextDecoder('shift-jis').decode(buf);
+            _processCsvText(textSjis);
+          } catch(err) {
+            notif('CSV読み込みエラー（Shift-JIS）: ' + err.message, 'r');
+          }
+        };
+        readerSjis.readAsArrayBuffer(file);
       }
-      const rows = buildFeedTankRowsFromCsv(text);
-      if(!rows.length) {
-        // デバッグ情報
-        const lines = text.split(/\r?\n/).filter(l=>l.trim()).slice(0,3);
-        lines.forEach((l,i) => {
-          const cols = l.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
-          console.log('行'+(i+1)+' 列6:', JSON.stringify(cols[5]||''));
-        });
-        console.log('MAP keys:', Object.keys(TANK_NAME_MAP));
-        notif('認識できるタンク名がありませんでした。コンソールでデバッグ情報を確認してください。', 'r');
-        return;
-      }
-      _tankCsvRows2 = rows;
-      showTankCsvPreview(rows);
     } catch(err) {
       notif('CSVの読み込みに失敗: ' + err.message, 'r');
       console.error(err);
     }
   };
-  reader.readAsArrayBuffer(file);
+  readerUtf8.readAsText(file, 'UTF-8');
+}
+
+function _processCsvText(text) {
+  try {
+    const rows = buildFeedTankRowsFromCsv(text);
+    if(!rows.length) {
+      const lines = text.split(/\r?\n/).filter(l=>l.trim()).slice(0,3);
+      lines.forEach((l,i) => {
+        const cols = l.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+        console.log('行'+(i+1)+' 列6:', JSON.stringify(cols[5]||''));
+      });
+      console.log('MAP keys:', Object.keys(TANK_NAME_MAP));
+      notif('認識できるタンク名がありませんでした。コンソールで確認してください。', 'r');
+      return;
+    }
+    console.log('CSV解析完了:', rows.length, '件');
+    _tankCsvRows2 = rows;
+    showTankCsvPreview(rows);
+  } catch(err) {
+    notif('CSV処理エラー: ' + err.message, 'r');
+    console.error(err);
+  }
 }
 
 function showTankCsvPreview(rows) {

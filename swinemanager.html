@@ -2284,44 +2284,53 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     </div>
   </div>
 
-  <!-- CSV取込タブ（FileMakerタンクスナップショット） -->
+  <!-- CSV取込タブ（タンクスナップショット独立管理） -->
   <div class="ft-t-c" id="ft-csv-import" style="display:none">
-    <div class="alert i mb18">ℹ️ <div>FileMakerのタンクスナップショットCSVを取込みます。タンク名がFARMS設定（子豚A/肉豚A等）と一致する行のみ処理されます。</div></div>
+    <div class="alert i mb18">ℹ️ <div>FileMakerのタンクスナップショットCSVを取込みます。8本のタンクを独立して管理します。棚卸Excelとは切り離された専用テーブルです。</div></div>
     <div class="card mb18">
       <div class="ch"><span class="ct">📥 タンクスナップショット CSV取込</span></div>
       <div class="cb">
-        <!-- タンク名マッピング確認 -->
-        <div style="background:rgba(42,48,69,.4);border-radius:8px;padding:12px;margin-bottom:16px">
-          <div style="font-size:12px;font-weight:600;color:var(--muted2);margin-bottom:8px">認識するタンク名（CSVのタンク名列との対応）</div>
-          <div id="ft-tank-mapping" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;font-size:11px"></div>
+        <!-- CSVフォーマット説明 -->
+        <div style="background:rgba(42,48,69,.4);border-radius:8px;padding:12px;margin-bottom:16px;font-size:11px">
+          <div style="font-weight:600;color:var(--muted2);margin-bottom:6px">認識するCSV列（FileMaker出力形式）</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;color:var(--muted)">
+            <span>列1: 飼料名</span><span>列2: 集計日</span><span><b style="color:var(--accent2)">列3: スナップショット日 ← 日付キー</b></span>
+            <span>列4: 残量%</span><span><b style="color:var(--accent2)">列5: 残量(t) ← 記録値</b></span><span><b style="color:var(--accent2)">列6: タンク名 ← 識別キー</b></span>
+            <span>列11: 前回補充量(t)</span><span colspan="2"></span>
+          </div>
+          <div style="margin-top:8px;color:var(--muted2);font-weight:600">認識するタンク名（CSVの列6と一致必須）：</div>
+          <div id="ft-tank-mapping" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:4px"></div>
+        </div>
+        <!-- ファイル選択ボタン（確実に動く方式） -->
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
+          <button class="btn bp" onclick="document.getElementById('ft-csv-input2').click()" style="font-size:14px;padding:10px 20px">
+            📂 CSVファイルを選択
+          </button>
+          <input type="file" id="ft-csv-input2" accept=".csv" style="display:none" onchange="onTankCsvSelect2(event)">
+          <span style="font-size:11px;color:var(--muted)">または下のエリアにドロップ</span>
         </div>
         <!-- ドロップゾーン -->
-        <div id="ft-csv-drop"
-          style="border:2px dashed var(--border);border-radius:10px;padding:40px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px"
+        <div id="ft-csv-drop2"
+          style="border:2px dashed var(--border);border-radius:10px;padding:30px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px"
           ondragover="event.preventDefault();this.style.borderColor='var(--accent2)';this.style.background='rgba(34,211,238,.05)'"
           ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
-          ondrop="onTankCsvDrop(event)"
-          onclick="document.getElementById('ft-csv-input').click()">
-          <div style="font-size:36px;margin-bottom:10px">🗂️</div>
-          <div style="font-size:15px;color:var(--muted2);margin-bottom:6px">タンクスナップショットCSVをここにドロップ</div>
-          <div style="font-size:12px;color:var(--muted)">または クリックしてファイルを選択（.csv）</div>
-          <input type="file" id="ft-csv-input" accept=".csv" style="display:none" onchange="onTankCsvSelect(event)">
+          ondrop="onTankCsvDrop2(event)">
+          <div style="font-size:28px;margin-bottom:6px">🗂️</div>
+          <div style="font-size:13px;color:var(--muted)">CSVをここにドロップ</div>
         </div>
         <!-- プレビュー -->
-        <div id="ft-csv-preview" style="display:none">
+        <div id="ft-csv-preview2" style="display:none">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-            <div>
-              <span style="font-size:13px;font-weight:700;color:var(--text)" id="ft-csv-summary"></span>
-            </div>
+            <span style="font-size:13px;font-weight:700;color:var(--text)" id="ft-csv-summary2"></span>
             <div style="display:flex;gap:8px">
-              <button class="btn bs sm" onclick="document.getElementById('ft-csv-preview').style.display='none';document.getElementById('ft-csv-drop').style.display=''">クリア</button>
-              <button class="btn bp" onclick="saveTankCsv()">✓ 保存する</button>
+              <button class="btn bs sm" onclick="clearTankCsvPreview()">クリア</button>
+              <button class="btn bp" onclick="saveTankCsv2()">✓ 保存する</button>
             </div>
           </div>
-          <div class="tw" style="max-height:300px;overflow-y:auto">
+          <div class="tw" style="max-height:320px;overflow-y:auto">
             <table>
-              <thead><tr><th>農場</th><th>タンク</th><th>日付</th><th>残量(t)</th><th>補充量(t)</th><th>日使用量(t)</th><th>飼料名</th></tr></thead>
-              <tbody id="ft-csv-tb"></tbody>
+              <thead><tr><th>農場</th><th>タンク名</th><th>日付</th><th>残量(t)</th><th>補充量(t)</th><th>日使用量(t)</th><th>飼料名</th></tr></thead>
+              <tbody id="ft-csv-tb2"></tbody>
             </table>
           </div>
         </div>
@@ -11916,95 +11925,101 @@ function onInvFileSelect(e) {
 }
 
 // ════════════════════════════════════════
-// タンクスナップショット CSV 取込
 // ════════════════════════════════════════
-let _tankCsvRows = [];
+// タンクスナップショット CSV 取込（独立管理版）
+// ════════════════════════════════════════
+let _tankCsvRows2 = [];
 
-function onTankCsvDrop(e) {
+function onTankCsvDrop2(e) {
   e.preventDefault();
-  const dz = document.getElementById('ft-csv-drop');
+  const dz = document.getElementById('ft-csv-drop2');
   dz.style.borderColor='var(--border)'; dz.style.background='';
   const file = e.dataTransfer.files[0];
-  if(file) processTankCsvFile(file);
+  if(file) parseTankCsv(file);
 }
 
-function onTankCsvSelect(e) {
+function onTankCsvSelect2(e) {
   const file = e.target.files[0];
-  if(file) processTankCsvFile(file);
+  if(file) parseTankCsv(file);
+  e.target.value = '';
 }
 
-function processTankCsvFile(file) {
+function clearTankCsvPreview() {
+  _tankCsvRows2 = [];
+  document.getElementById('ft-csv-preview2').style.display = 'none';
+  document.getElementById('ft-csv-summary2').textContent = '';
+  document.getElementById('ft-csv-tb2').innerHTML = '';
+}
+
+function parseTankCsv(file) {
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = (ev) => {
     try {
-      // Shift-JIS対応（TextDecoderで読み直し）
-      const buf = e.target.result;
+      const buf = ev.target.result;
       let text;
-      try {
-        text = new TextDecoder('shift-jis').decode(buf);
-      } catch {
-        text = new TextDecoder('utf-8').decode(buf);
-      }
+      try { text = new TextDecoder('shift-jis').decode(buf); }
+      catch { text = new TextDecoder('utf-8').decode(buf); }
       const rows = buildFeedTankRowsFromCsv(text);
       if(!rows.length) {
-        notif('認識できるタンク名がありませんでした。CSV取込タブのタンク名マッピングを確認してください。', 'r');
+        // デバッグ情報
+        const lines = text.split(/\r?\n/).filter(l=>l.trim()).slice(0,3);
+        lines.forEach((l,i) => {
+          const cols = l.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+          console.log('行'+(i+1)+' 列6:', JSON.stringify(cols[5]||''));
+        });
+        console.log('MAP keys:', Object.keys(TANK_NAME_MAP));
+        notif('認識できるタンク名がありませんでした。コンソールでデバッグ情報を確認してください。', 'r');
         return;
       }
-      _tankCsvRows = rows;
-      // プレビュー表示
-      const dz = document.getElementById('ft-csv-drop');
-      const pv = document.getElementById('ft-csv-preview');
-      dz.style.display = 'none';
-      pv.style.display = '';
-      // サマリ
-      const farms = [...new Set(rows.map(r=>r.farm))];
-      const tanks = [...new Set(rows.map(r=>r.tank_name))];
-      const dates = [...new Set(rows.map(r=>r.date))].sort();
-      document.getElementById('ft-csv-summary').textContent =
-        `${rows.length}件 / ${tanks.length}タンク / ${dates[0]}〜${dates[dates.length-1]}`;
-      // プレビューテーブル（最大100件）
-      document.getElementById('ft-csv-tb').innerHTML = rows.slice(0,100).map(r => `<tr>
-        <td class="mn">${FARMS[r.farm]?.name||r.farm}</td>
-        <td><span class="bdg gr">${r.tank_name}</span></td>
-        <td class="mn">${r.date}</td>
-        <td class="mn">${r.tank_remaining?.toFixed(2)} t</td>
-        <td class="mn ${(r.delivery_ton||0)>0?'ng':''}">${(r.delivery_ton||0)>0?'+'+r.delivery_ton.toFixed(2)+'t':'-'}</td>
-        <td class="mn ${(r.daily_usage||0)>0?'nw':''}">${r.daily_usage!=null?r.daily_usage.toFixed(3)+' t':'-'}</td>
-        <td class="mn" style="font-size:11px;color:var(--muted)">${r.feed_name||'-'}</td>
-      </tr>`).join('');
-      if(rows.length > 100) {
-        document.getElementById('ft-csv-tb').innerHTML +=
-          `<tr><td colspan="7" style="text-align:center;color:var(--muted);font-size:11px">…他${rows.length-100}件（保存時に全件処理されます）</td></tr>`;
-      }
+      _tankCsvRows2 = rows;
+      showTankCsvPreview(rows);
     } catch(err) {
-      notif('CSVの読み込みに失敗しました: ' + err.message, 'r');
+      notif('CSVの読み込みに失敗: ' + err.message, 'r');
+      console.error(err);
     }
   };
   reader.readAsArrayBuffer(file);
 }
 
-async function saveTankCsv() {
-  if(!_tankCsvRows.length) { notif('取込データがありません', 'r'); return; }
-  showLoading('タンクデータを保存中...');
+function showTankCsvPreview(rows) {
+  const dates = [...new Set(rows.map(r=>r.date))].sort();
+  const tanks = [...new Set(rows.map(r=>r.tank_name))].sort();
+  document.getElementById('ft-csv-summary2').textContent =
+    rows.length+'件 ／ '+tanks.length+'タンク ／ '+dates[0]+'〜'+dates[dates.length-1];
+  document.getElementById('ft-csv-tb2').innerHTML =
+    rows.slice(0,200).map(r=>`<tr>
+      <td class="mn" style="font-size:11px">${FARMS[r.farm]?.name||r.farm}</td>
+      <td><span class="bdg gr" style="font-size:10px">${r.tank_name}</span></td>
+      <td class="mn">${r.date}</td>
+      <td class="mn">${r.tank_remaining!=null?r.tank_remaining.toFixed(2):'-'} t</td>
+      <td class="mn ${(r.delivery_ton||0)>0?'ng':''}">${(r.delivery_ton||0)>0?'+'+r.delivery_ton.toFixed(2)+'t':'-'}</td>
+      <td class="mn ${(r.daily_usage||0)>0?'nw':''}">${r.daily_usage!=null?r.daily_usage.toFixed(3)+' t':'-'}</td>
+      <td class="mn" style="font-size:10px;color:var(--muted)">${r.feed_name||'-'}</td>
+    </tr>`).join('') +
+    (rows.length>200?`<tr><td colspan="7" style="text-align:center;color:var(--muted);font-size:11px">…他${rows.length-200}件</td></tr>`:'');
+  document.getElementById('ft-csv-preview2').style.display = '';
+}
+
+async function saveTankCsv2() {
+  if(!_tankCsvRows2.length) { notif('取込データがありません', 'r'); return; }
+  showLoading(_tankCsvRows2.length+'件を保存中...');
   try {
     const BATCH = 200;
-    for(let i=0; i<_tankCsvRows.length; i+=BATCH) {
-      await api.upsertFeedTank(_tankCsvRows.slice(i, i+BATCH));
+    for(let i=0; i<_tankCsvRows2.length; i+=BATCH) {
+      await api.upsertFeedTank(_tankCsvRows2.slice(i, i+BATCH));
     }
     DATA.feedTank = await api.getFeedTank();
-    notif(`✅ ${_tankCsvRows.length}件のタンクデータを保存しました`);
-    _tankCsvRows = [];
-    document.getElementById('ft-csv-preview').style.display = 'none';
-    document.getElementById('ft-csv-drop').style.display = '';
-    document.getElementById('ft-csv-input').value = '';
+    const tankCount = [...new Set(_tankCsvRows2.map(r=>r.tank_name))].length;
+    notif('✅ '+_tankCsvRows2.length+'件のタンクデータを保存しました（'+tankCount+'タンク）');
+    clearTankCsvPreview();
     rFeedTank();
   } catch(err) {
-    notif('保存に失敗しました: ' + err.message, 'r');
+    notif('保存に失敗: ' + err.message, 'r');
+    console.error(err);
   } finally {
     hideLoading();
   }
 }
-
 // ファイル名から農場を自動判定してセレクトを更新
 function detectFarmFromFilename(filename) {
   if(!filename) return null;

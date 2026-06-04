@@ -3038,11 +3038,23 @@ function buildTankNameMap() {
   const map = {};
   Object.entries(FARMS).forEach(([farmId, f]) => {
     (f.barns||[]).forEach(b => {
-      // CSVのタンク名フォーマット: "中田農場　子豚A" / "米山農場　肉豚1"
-      const pigletKey = `${f.name}　${b.tank_piglet_label}`;
-      const hogKey    = `${f.name}　${b.tank_hog_label}`;
-      map[pigletKey] = { farm: farmId, feed_type: 'piglet',   tank_label: b.tank_piglet_label };
-      map[hogKey]    = { farm: farmId, feed_type: 'finisher', tank_label: b.tank_hog_label };
+      // ラベルが未設定の場合はデフォルト値を使用
+      const pigletLabel = b.tank_piglet_label || (farmId==='farm1'
+        ? (b.id==='A' ? '子豚A' : '子豚B')
+        : (b.id==='A' ? '子豚3' : '子豚2'));
+      const hogLabel = b.tank_hog_label || (farmId==='farm1'
+        ? (b.id==='A' ? '肉豚A' : '肉豚B')
+        : (b.id==='A' ? '肉豚4' : '肉豚1'));
+
+      // ラベルが有効な場合のみマッピングに追加
+      if(pigletLabel) {
+        const key = `${f.name}\u3000${pigletLabel}`; // 全角スペース
+        map[key] = { farm: farmId, feed_type: 'piglet', tank_label: pigletLabel };
+      }
+      if(hogLabel) {
+        const key = `${f.name}\u3000${hogLabel}`; // 全角スペース
+        map[key] = { farm: farmId, feed_type: 'finisher', tank_label: hogLabel };
+      }
     });
   });
   return map;

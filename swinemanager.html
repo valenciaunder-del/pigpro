@@ -2172,6 +2172,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="tab active" onclick="st('ft-t','ft-overview',this)">タンク残量</div>
       <div class="tab" onclick="st('ft-t','ft-usage',this)">使用量・FCR</div>
       <div class="tab" onclick="st('ft-t','ft-history',this)">月次履歴</div>
+      <div class="tab" onclick="st('ft-t','ft-csv-import',this)">📥 CSV取込</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select class="fs" id="ft-mon-y" onchange="syncMon('ft-mon');rFeedTank()" style="width:72px"></select><select class="fs" id="ft-mon-m" onchange="syncMon('ft-mon');rFeedTank()" style="width:52px"></select><input type="hidden" id="ft-mon">
@@ -2182,52 +2183,16 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <!-- タンク残量タブ -->
   <div class="ft-t-c active" id="ft-overview">
     <div class="kgrid mb18" style="grid-template-columns:repeat(4,1fr)" id="ft-kpi"></div>
-    <div class="g2 mb18">
-      <!-- 子豚用タンク -->
-      <div class="card" style="margin-bottom:0;border-top:3px solid var(--accent2)">
-        <div class="ch"><span class="ct" style="color:var(--accent2)">🐣 子豚用タンク</span><span class="bdg gr" id="ft-p2-name">-</span></div>
-        <div class="cb">
-          <div style="text-align:center;padding:16px 0;margin-bottom:12px">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">現在残量</div>
-            <div style="font-family:var(--mono);font-size:42px;font-weight:700;color:var(--accent2)" id="ft-p2-remain">-</div>
-            <div style="font-size:13px;color:var(--muted2)">t</div>
-          </div>
-          <div class="pb" style="height:14px;margin-bottom:10px">
-            <div class="pf" id="ft-p2-bar" style="background:var(--accent2)"></div>
-          </div>
-          <div class="sr"><span class="sl">今月入荷</span><span class="sv nn" id="ft-p2-in">-</span></div>
-          <div class="sr"><span class="sl">今月使用量</span><span class="sv nw" id="ft-p2-use">-</span></div>
-          <div class="sr"><span class="sl">日平均使用量</span><span class="sv" id="ft-p2-avg">-</span></div>
-        </div>
-      </div>
-      <!-- 肉豚用タンク -->
-      <div class="card" style="margin-bottom:0;border-top:3px solid var(--accent3)">
-        <div class="ch"><span class="ct" style="color:var(--accent3)">🥩 肉豚用タンク</span><span class="bdg gr" id="ft-p3-name">-</span></div>
-        <div class="cb">
-          <div style="text-align:center;padding:16px 0;margin-bottom:12px">
-            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">現在残量</div>
-            <div style="font-family:var(--mono);font-size:42px;font-weight:700;color:var(--accent3)" id="ft-p3-remain">-</div>
-            <div style="font-size:13px;color:var(--muted2)">t</div>
-          </div>
-          <div class="pb" style="height:14px;margin-bottom:10px">
-            <div class="pf" id="ft-p3-bar" style="background:var(--accent3)"></div>
-          </div>
-          <div class="sr"><span class="sl">今月入荷</span><span class="sv nn" id="ft-p3-in">-</span></div>
-          <div class="sr"><span class="sl">今月使用量</span><span class="sv nw" id="ft-p3-use">-</span></div>
-          <div class="sr"><span class="sl">日平均使用量</span><span class="sv" id="ft-p3-avg">-</span></div>
-        </div>
-      </div>
-    </div>
+    <!-- タンク別カード（4本） -->
+    <div id="ft-tank-cards" style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:18px"></div>
     <!-- タンク残量グラフ -->
     <div class="card">
-      <div class="ch"><span class="ct">タンク残量 日次推移</span></div>
+      <div class="ch">
+        <span class="ct">タンク残量 日次推移</span>
+        <span id="ft-tank-legend" style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px"></span>
+      </div>
       <div class="cb">
         <div class="ca" style="height:200px"><svg id="ft-tank-svg" viewBox="0 0 600 180" preserveAspectRatio="none"></svg></div>
-        <div style="display:flex;gap:16px;margin-top:8px;flex-wrap:wrap">
-          <span style="font-size:11px;color:var(--accent2)">━ 子豚用</span>
-          <span style="font-size:11px;color:var(--accent3)">━ 肉豚用</span>
-          <span style="font-size:11px;color:var(--accent)">▲ 入荷日</span>
-        </div>
       </div>
     </div>
   </div>
@@ -2271,6 +2236,51 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         </tr></thead>
         <tbody id="ft-hist-tb"></tbody>
       </table></div>
+    </div>
+  </div>
+
+  <!-- CSV取込タブ（FileMakerタンクスナップショット） -->
+  <div class="ft-t-c" id="ft-csv-import" style="display:none">
+    <div class="alert i mb18">ℹ️ <div>FileMakerのタンクスナップショットCSVを取込みます。タンク名がFARMS設定（子豚A/肉豚A等）と一致する行のみ処理されます。</div></div>
+    <div class="card mb18">
+      <div class="ch"><span class="ct">📥 タンクスナップショット CSV取込</span></div>
+      <div class="cb">
+        <!-- タンク名マッピング確認 -->
+        <div style="background:rgba(42,48,69,.4);border-radius:8px;padding:12px;margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--muted2);margin-bottom:8px">認識するタンク名（CSVのタンク名列との対応）</div>
+          <div id="ft-tank-mapping" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;font-size:11px"></div>
+        </div>
+        <!-- ドロップゾーン -->
+        <div id="ft-csv-drop"
+          style="border:2px dashed var(--border);border-radius:10px;padding:40px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px"
+          ondragover="event.preventDefault();this.style.borderColor='var(--accent2)';this.style.background='rgba(34,211,238,.05)'"
+          ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
+          ondrop="onTankCsvDrop(event)"
+          onclick="document.getElementById('ft-csv-input').click()">
+          <div style="font-size:36px;margin-bottom:10px">🗂️</div>
+          <div style="font-size:15px;color:var(--muted2);margin-bottom:6px">タンクスナップショットCSVをここにドロップ</div>
+          <div style="font-size:12px;color:var(--muted)">または クリックしてファイルを選択（.csv）</div>
+          <input type="file" id="ft-csv-input" accept=".csv" style="display:none" onchange="onTankCsvSelect(event)">
+        </div>
+        <!-- プレビュー -->
+        <div id="ft-csv-preview" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div>
+              <span style="font-size:13px;font-weight:700;color:var(--text)" id="ft-csv-summary"></span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn bs sm" onclick="document.getElementById('ft-csv-preview').style.display='none';document.getElementById('ft-csv-drop').style.display=''">クリア</button>
+              <button class="btn bp" onclick="saveTankCsv()">✓ 保存する</button>
+            </div>
+          </div>
+          <div class="tw" style="max-height:300px;overflow-y:auto">
+            <table>
+              <thead><tr><th>農場</th><th>タンク</th><th>日付</th><th>残量(t)</th><th>補充量(t)</th><th>日使用量(t)</th><th>飼料名</th></tr></thead>
+              <tbody id="ft-csv-tb"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -2992,7 +3002,7 @@ const api = {
     ]);
     return [...f1, ...f2];
   },
-  upsertFeedTank: (rows) => sbFetch('feed_tank?on_conflict=farm,date,feed_type', {
+  upsertFeedTank: (rows) => sbFetch('feed_tank?on_conflict=farm,date,tank_name', {
     method: 'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(rows)
@@ -3011,17 +3021,33 @@ let DATA = { lots:[], weights:[], feeds:[], deaths:[], ships:[], costs:[], sales
 const FARMS = {
   farm1: { name:'中田農場', short:'中田農場', adgT:750, fcrT:2.70, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5,
     barns: [
-      { id:'A', name:'A豚舎', location:'北側', tank_piglet:1, tank_hog:2 },
-      { id:'B', name:'B豚舎', location:'南側', tank_piglet:3, tank_hog:4 },
+      { id:'A', name:'A豚舎', location:'北側', tank_piglet:1, tank_hog:2, tank_piglet_label:'子豚A', tank_hog_label:'肉豚A' },
+      { id:'B', name:'B豚舎', location:'南側', tank_piglet:3, tank_hog:4, tank_piglet_label:'子豚B', tank_hog_label:'肉豚B' },
     ]
   },
   farm2: { name:'米山農場', short:'米山農場', adgT:740, fcrT:2.75, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5,
     barns: [
-      { id:'A', name:'A豚舎', location:'道路側', tank_piglet:3, tank_hog:4 },
-      { id:'B', name:'B豚舎', location:'川側',   tank_piglet:2, tank_hog:1 },
+      { id:'A', name:'A豚舎', location:'道路側', tank_piglet:3, tank_hog:4, tank_piglet_label:'子豚3', tank_hog_label:'肉豚4' },
+      { id:'B', name:'B豚舎', location:'川側',   tank_piglet:2, tank_hog:1, tank_piglet_label:'子豚2', tank_hog_label:'肉豚1' },
     ]
   },
 };
+
+// CSVタンク名→{farm, feed_type, tank_label}のマッピングを生成
+function buildTankNameMap() {
+  const map = {};
+  Object.entries(FARMS).forEach(([farmId, f]) => {
+    (f.barns||[]).forEach(b => {
+      // CSVのタンク名フォーマット: "中田農場　子豚A" / "米山農場　肉豚1"
+      const pigletKey = `${f.name}　${b.tank_piglet_label}`;
+      const hogKey    = `${f.name}　${b.tank_hog_label}`;
+      map[pigletKey] = { farm: farmId, feed_type: 'piglet',   tank_label: b.tank_piglet_label };
+      map[hogKey]    = { farm: farmId, feed_type: 'finisher', tank_label: b.tank_hog_label };
+    });
+  });
+  return map;
+}
+const TANK_NAME_MAP = buildTankNameMap();
 // 出荷先別歩留まり（農場共通）
 const COMMON_YIELDS = {
   '仙台中央卸売市場株式会社': 65.0,
@@ -11826,6 +11852,96 @@ function onInvFileSelect(e) {
   if(file) processInvFile(file);
 }
 
+// ════════════════════════════════════════
+// タンクスナップショット CSV 取込
+// ════════════════════════════════════════
+let _tankCsvRows = [];
+
+function onTankCsvDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('ft-csv-drop');
+  dz.style.borderColor='var(--border)'; dz.style.background='';
+  const file = e.dataTransfer.files[0];
+  if(file) processTankCsvFile(file);
+}
+
+function onTankCsvSelect(e) {
+  const file = e.target.files[0];
+  if(file) processTankCsvFile(file);
+}
+
+function processTankCsvFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      // Shift-JIS対応（TextDecoderで読み直し）
+      const buf = e.target.result;
+      let text;
+      try {
+        text = new TextDecoder('shift-jis').decode(buf);
+      } catch {
+        text = new TextDecoder('utf-8').decode(buf);
+      }
+      const rows = buildFeedTankRowsFromCsv(text);
+      if(!rows.length) {
+        notif('認識できるタンク名がありませんでした。CSV取込タブのタンク名マッピングを確認してください。', 'r');
+        return;
+      }
+      _tankCsvRows = rows;
+      // プレビュー表示
+      const dz = document.getElementById('ft-csv-drop');
+      const pv = document.getElementById('ft-csv-preview');
+      dz.style.display = 'none';
+      pv.style.display = '';
+      // サマリ
+      const farms = [...new Set(rows.map(r=>r.farm))];
+      const tanks = [...new Set(rows.map(r=>r.tank_name))];
+      const dates = [...new Set(rows.map(r=>r.date))].sort();
+      document.getElementById('ft-csv-summary').textContent =
+        `${rows.length}件 / ${tanks.length}タンク / ${dates[0]}〜${dates[dates.length-1]}`;
+      // プレビューテーブル（最大100件）
+      document.getElementById('ft-csv-tb').innerHTML = rows.slice(0,100).map(r => `<tr>
+        <td class="mn">${FARMS[r.farm]?.name||r.farm}</td>
+        <td><span class="bdg gr">${r.tank_name}</span></td>
+        <td class="mn">${r.date}</td>
+        <td class="mn">${r.tank_remaining?.toFixed(2)} t</td>
+        <td class="mn ${(r.delivery_ton||0)>0?'ng':''}">${(r.delivery_ton||0)>0?'+'+r.delivery_ton.toFixed(2)+'t':'-'}</td>
+        <td class="mn ${(r.daily_usage||0)>0?'nw':''}">${r.daily_usage!=null?r.daily_usage.toFixed(3)+' t':'-'}</td>
+        <td class="mn" style="font-size:11px;color:var(--muted)">${r.feed_name||'-'}</td>
+      </tr>`).join('');
+      if(rows.length > 100) {
+        document.getElementById('ft-csv-tb').innerHTML +=
+          `<tr><td colspan="7" style="text-align:center;color:var(--muted);font-size:11px">…他${rows.length-100}件（保存時に全件処理されます）</td></tr>`;
+      }
+    } catch(err) {
+      notif('CSVの読み込みに失敗しました: ' + err.message, 'r');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function saveTankCsv() {
+  if(!_tankCsvRows.length) { notif('取込データがありません', 'r'); return; }
+  showLoading('タンクデータを保存中...');
+  try {
+    const BATCH = 200;
+    for(let i=0; i<_tankCsvRows.length; i+=BATCH) {
+      await api.upsertFeedTank(_tankCsvRows.slice(i, i+BATCH));
+    }
+    DATA.feedTank = await api.getFeedTank();
+    notif(`✅ ${_tankCsvRows.length}件のタンクデータを保存しました`);
+    _tankCsvRows = [];
+    document.getElementById('ft-csv-preview').style.display = 'none';
+    document.getElementById('ft-csv-drop').style.display = '';
+    document.getElementById('ft-csv-input').value = '';
+    rFeedTank();
+  } catch(err) {
+    notif('保存に失敗しました: ' + err.message, 'r');
+  } finally {
+    hideLoading();
+  }
+}
+
 // ファイル名から農場を自動判定してセレクトを更新
 function detectFarmFromFilename(filename) {
   if(!filename) return null;
@@ -12208,16 +12324,21 @@ async function saveInvData() {
 
 // 棚卸データから飼料タンク行を生成
 function buildFeedTankRows(invRows) {
+  // inv_dailyのfeed2/feed3（合算値）を農場設定のタンクラベルに分配
+  // 棚卸Excelは農場単位の合算値のため、feed_typeごとに1行生成しtank_nameはラベルで識別
   const rows = [];
   for(const r of invRows) {
-    // 子豚用（feed2）- tank残量が数値であれば保存
+    const farmBarns = FARMS[r.farm]?.barns || [];
+    // 子豚用（feed2）- farmのA豚舎の子豚タンクラベルを使用（棚卸は農場合算）
     if(r.feed2_tank !== null && r.feed2_tank !== undefined && r.feed2_tank !== '') {
       const val = parseFloat(r.feed2_tank);
       if(!isNaN(val)) {
+        const barnA = farmBarns[0];
         rows.push({
           farm: r.farm,
           date: r.date,
           feed_type: 'piglet',
+          tank_name: barnA?.tank_piglet_label || '子豚',
           feed_name: r.feed2_name || null,
           delivery_ton: parseFloat(r.feed2_qty) || 0,
           tank_remaining: val,
@@ -12225,14 +12346,16 @@ function buildFeedTankRows(invRows) {
         });
       }
     }
-    // 肉豚用（feed3）- tank残量が数値であれば保存
+    // 肉豚用（feed3）
     if(r.feed3_tank !== null && r.feed3_tank !== undefined && r.feed3_tank !== '') {
       const val = parseFloat(r.feed3_tank);
       if(!isNaN(val)) {
+        const barnA = farmBarns[0];
         rows.push({
           farm: r.farm,
           date: r.date,
           feed_type: 'finisher',
+          tank_name: barnA?.tank_hog_label || '肉豚',
           feed_name: r.feed3_name || null,
           delivery_ton: parseFloat(r.feed3_qty) || 0,
           tank_remaining: val,
@@ -12242,16 +12365,68 @@ function buildFeedTankRows(invRows) {
     }
   }
 
-  // 日使用量を計算（前日残量 + 入荷 - 当日残量）
-  ['piglet','finisher'].forEach(type => {
-    const typeRows = rows.filter(r=>r.feed_type===type&&r.farm===rows[0]?.farm)
-      .sort((a,b)=>a.date.localeCompare(b.date));
-    for(let i=1; i<typeRows.length; i++) {
-      const prev = typeRows[i-1];
-      const curr = typeRows[i];
-      const usage = (prev.tank_remaining||0) + (curr.delivery_ton||0) - (curr.tank_remaining||0);
-      curr.daily_usage = Math.max(0, parseFloat(usage.toFixed(4)));
-    }
+  // 日使用量計算（前日残量 + 入荷 - 当日残量）
+  const farms = [...new Set(rows.map(r=>r.farm))];
+  farms.forEach(farm => {
+    const tankNames = [...new Set(rows.filter(r=>r.farm===farm).map(r=>r.tank_name))];
+    tankNames.forEach(tn => {
+      const typeRows = rows.filter(r=>r.farm===farm&&r.tank_name===tn)
+        .sort((a,b)=>a.date.localeCompare(b.date));
+      for(let i=1; i<typeRows.length; i++) {
+        const prev = typeRows[i-1];
+        const curr = typeRows[i];
+        const usage = (prev.tank_remaining||0) + (curr.delivery_ton||0) - (curr.tank_remaining||0);
+        curr.daily_usage = Math.max(0, parseFloat(usage.toFixed(4)));
+      }
+    });
+  });
+
+  return rows;
+}
+
+// CSVタンクスナップショット（FileMaker形式）をfeed_tank行に変換
+function buildFeedTankRowsFromCsv(csvText) {
+  const lines = csvText.split(/\r?\n/).filter(l=>l.trim());
+  const rows = [];
+  for(const line of lines) {
+    const cols = line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+    if(cols.length < 14) continue;
+    const tankNameCsv = cols[5]; // 例: "中田農場　子豚A"
+    const info = TANK_NAME_MAP[tankNameCsv];
+    if(!info) continue; // 未知のタンク名はスキップ
+    const dateRaw = cols[2]; // YYYY/MM/DD
+    const date = dateRaw.replace(/\//g, '-');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const tankRemaining = parseFloat(cols[4]);
+    if(isNaN(tankRemaining)) continue;
+    const deliveryTon = parseFloat(cols[10]) || 0; // 前回補充量
+    const feedName = cols[0]; // 飼料名
+    rows.push({
+      farm: info.farm,
+      date,
+      feed_type: info.feed_type,
+      tank_name: info.tank_label,
+      feed_name: feedName || null,
+      delivery_ton: deliveryTon,
+      tank_remaining: tankRemaining,
+      daily_usage: null,
+    });
+  }
+
+  // daily_usage計算
+  const farms = [...new Set(rows.map(r=>r.farm))];
+  farms.forEach(farm => {
+    const tankNames = [...new Set(rows.filter(r=>r.farm===farm).map(r=>r.tank_name))];
+    tankNames.forEach(tn => {
+      const typeRows = rows.filter(r=>r.farm===farm&&r.tank_name===tn)
+        .sort((a,b)=>a.date.localeCompare(b.date));
+      for(let i=1; i<typeRows.length; i++) {
+        const prev = typeRows[i-1];
+        const curr = typeRows[i];
+        const usage = (prev.tank_remaining||0) + (curr.delivery_ton||0) - (curr.tank_remaining||0);
+        curr.daily_usage = Math.max(0, parseFloat(usage.toFixed(4)));
+      }
+    });
   });
 
   return rows;
@@ -12269,29 +12444,37 @@ function rFeedTank() {
     r.farm === farm && r.date.startsWith(mon)
   ).sort((a,b)=>a.date.localeCompare(b.date));
 
+  // タンク名マッピング表示（CSV取込タブ用）
+  const mapEl = document.getElementById('ft-tank-mapping');
+  if(mapEl) {
+    mapEl.innerHTML = Object.entries(TANK_NAME_MAP).map(([csvName, info]) =>
+      `<div style="display:flex;gap:6px;align-items:center">
+        <span style="color:var(--muted)">${csvName}</span>
+        <span style="color:var(--accent)">→</span>
+        <span class="bdg gr">${info.tank_label}</span>
+        <span style="color:var(--muted);font-size:10px">${FARMS[info.farm]?.name}</span>
+      </div>`
+    ).join('');
+  }
+
+  // feed_typeベースのlegacy集計（FCR計算用）
   const pigletRows   = items.filter(r=>r.feed_type==='piglet');
   const finisherRows = items.filter(r=>r.feed_type==='finisher');
 
   if(!items.length) {
     document.getElementById('ft-kpi').innerHTML =
-      '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">データがありません。棚卸データを取込んでください。</div>';
+      '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">データがありません。棚卸データまたはCSVを取込んでください。</div>';
+    document.getElementById('ft-tank-cards').innerHTML = '';
     return;
   }
-
-  // 最新残量
-  const lastPiglet   = pigletRows[pigletRows.length-1];
-  const lastFinisher = finisherRows[finisherRows.length-1];
 
   // 月間使用量
   const pigletUse   = pigletRows.reduce((a,r)=>a+(r.daily_usage||0),0);
   const finisherUse = finisherRows.reduce((a,r)=>a+(r.daily_usage||0),0);
   const totalUse    = pigletUse + finisherUse;
+  const pigletIn    = pigletRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+  const finisherIn  = finisherRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
 
-  // 今月入荷量
-  const pigletIn   = pigletRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
-  const finisherIn = finisherRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
-
-  // FCR計算（calcFarmFcrの結果を使用）
   const fcrResult = calcFarmFcr(farm, mon);
   const fcr = fcrResult !== null ? fcrResult.toFixed(2) : '-';
 
@@ -12302,29 +12485,45 @@ function rFeedTank() {
     <div class="kcard ${parseFloat(fcr)<=2.7?'g':parseFloat(fcr)<=3.0?'y':'r'}"><div class="kl">FCR（推計）</div><div class="kv">${fcr}</div><div class="kd nt">目標2.70以下</div></div>
     <div class="kcard g"><div class="kl">対象年月</div><div style="font-family:var(--mono);font-size:18px;font-weight:600">${mon}</div></div>`;
 
-  // 子豚用タンク表示
-  const p2name = lastPiglet?.feed_name || '子豚用飼料';
-  document.getElementById('ft-p2-name').textContent = p2name;
-  document.getElementById('ft-p2-remain').textContent = lastPiglet?.tank_remaining?.toFixed(2) || '-';
-  const p2max = Math.max(...pigletRows.map(r=>r.tank_remaining||0), pigletIn+lastPiglet?.tank_remaining||10);
-  document.getElementById('ft-p2-bar').style.width = lastPiglet?.tank_remaining ? Math.min(100,(lastPiglet.tank_remaining/p2max*100)).toFixed(0)+'%' : '0%';
-  document.getElementById('ft-p2-in').textContent  = pigletIn.toFixed(1) + ' t';
-  document.getElementById('ft-p2-use').textContent = pigletUse.toFixed(2) + ' t';
-  const p2days = pigletRows.filter(r=>r.daily_usage>0).length||1;
-  document.getElementById('ft-p2-avg').textContent = (pigletUse/p2days).toFixed(3) + ' t/日';
+  // タンク別カード（4本）
+  const TANK_COLORS = ['var(--accent2)','var(--accent3)','var(--accent)','#f59e0b'];
+  const tankNames = [...new Set(items.map(r=>r.tank_name).filter(Boolean))].sort();
+  // タンクがない場合はfeed_typeで代替
+  const displayTanks = tankNames.length > 0 ? tankNames : ['piglet','finisher'].map(ft => {
+    const r = items.find(x=>x.feed_type===ft); return r?.tank_name || ft;
+  }).filter(Boolean);
 
-  // 肉豚用タンク表示
-  const p3name = lastFinisher?.feed_name || '肉豚用飼料';
-  document.getElementById('ft-p3-name').textContent = p3name;
-  document.getElementById('ft-p3-remain').textContent = lastFinisher?.tank_remaining?.toFixed(2) || '-';
-  const p3max = Math.max(...finisherRows.map(r=>r.tank_remaining||0), finisherIn+lastFinisher?.tank_remaining||10);
-  document.getElementById('ft-p3-bar').style.width = lastFinisher?.tank_remaining ? Math.min(100,(lastFinisher.tank_remaining/p3max*100)).toFixed(0)+'%' : '0%';
-  document.getElementById('ft-p3-in').textContent  = finisherIn.toFixed(1) + ' t';
-  document.getElementById('ft-p3-use').textContent = finisherUse.toFixed(2) + ' t';
-  const p3days = finisherRows.filter(r=>r.daily_usage>0).length||1;
-  document.getElementById('ft-p3-avg').textContent = (finisherUse/p3days).toFixed(3) + ' t/日';
+  const cardsEl = document.getElementById('ft-tank-cards');
+  cardsEl.innerHTML = displayTanks.map((tn, idx) => {
+    const tRows = items.filter(r=>(r.tank_name||r.feed_type)===tn);
+    const last  = tRows[tRows.length-1];
+    const use   = tRows.reduce((a,r)=>a+(r.daily_usage||0),0);
+    const inT   = tRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+    const avg   = use / (tRows.filter(r=>r.daily_usage>0).length||1);
+    const col   = TANK_COLORS[idx % TANK_COLORS.length];
+    const ft    = tRows[0]?.feed_type==='piglet' ? '🐣 子豚用' : '🥩 肉豚用';
+    const fname = last?.feed_name || '';
+    const remain = last?.tank_remaining;
+    const maxR  = Math.max(...tRows.map(r=>r.tank_remaining||0), inT + (remain||10));
+    const pct   = remain ? Math.min(100, (remain/maxR*100)).toFixed(0) : 0;
+    return `<div class="card" style="margin-bottom:0;border-top:3px solid ${col}">
+      <div class="ch"><span class="ct" style="color:${col}">${ft} <b>${tn}</b></span>${fname?`<span class="bdg gr" style="font-size:10px">${fname}</span>`:''}
+      </div>
+      <div class="cb">
+        <div style="text-align:center;padding:12px 0 8px">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:2px">現在残量</div>
+          <div style="font-family:var(--mono);font-size:36px;font-weight:700;color:${col}">${remain!=null?remain.toFixed(2):'-'}</div>
+          <div style="font-size:12px;color:var(--muted2)">t</div>
+        </div>
+        <div class="pb" style="height:10px;margin-bottom:10px"><div class="pf" style="width:${pct}%;background:${col}"></div></div>
+        <div class="sr"><span class="sl">今月入荷</span><span class="sv nn">${inT.toFixed(1)} t</span></div>
+        <div class="sr"><span class="sl">今月使用量</span><span class="sv nw">${use.toFixed(2)} t</span></div>
+        <div class="sr"><span class="sl">日平均</span><span class="sv">${avg.toFixed(3)} t/日</span></div>
+      </div>
+    </div>`;
+  }).join('');
 
-  // タンク残量グラフ
+  // タンク残量グラフ（タンク別複数ライン）
   const allDates = [...new Set(items.map(r=>r.date))].sort();
   const W=600,H=180,PAD=30;
   const allVals = items.map(r=>r.tank_remaining||0);
@@ -12335,38 +12534,43 @@ function rFeedTank() {
 
   // 入荷日マーカー
   allDates.forEach((d,i)=>{
-    const pr = pigletRows.find(r=>r.date===d);
-    const fr = finisherRows.find(r=>r.date===d);
-    if((pr?.delivery_ton||0)>0||(fr?.delivery_ton||0)>0) {
+    const total = items.filter(r=>r.date===d).reduce((a,r)=>a+(r.delivery_ton||0),0);
+    if(total>0) {
       c+=`<line x1="${xS(i)}" y1="${PAD}" x2="${xS(i)}" y2="${H-PAD}" stroke="rgba(74,222,128,.2)" stroke-width="2"/>`;
-      c+=`<text x="${xS(i)}" y="${PAD-2}" fill="var(--accent)" font-size="8" text-anchor="middle">▲${((pr?.delivery_ton||0)+(fr?.delivery_ton||0)).toFixed(0)}t</text>`;
+      c+=`<text x="${xS(i)}" y="${PAD-2}" fill="var(--accent)" font-size="8" text-anchor="middle">▲${total.toFixed(0)}t</text>`;
     }
   });
 
-  // 子豚用ライン
-  if(pigletRows.length>1){
-    const pts=allDates.map((d,i)=>{const r=pigletRows.find(x=>x.date===d);return r?`${xS(i).toFixed(0)},${yS(r.tank_remaining).toFixed(0)}`:null;}).filter(Boolean).join(' ');
-    c+=`<polyline points="${pts}" fill="none" stroke="var(--accent2)" stroke-width="2.5" stroke-linejoin="round"/>`;
-    allDates.forEach((d,i)=>{const r=pigletRows.find(x=>x.date===d);if(r)c+=`<circle cx="${xS(i)}" cy="${yS(r.tank_remaining)}" r="2.5" fill="var(--accent2)"/>`;});
-  }
+  // タンク別ライン
+  const legendEl = document.getElementById('ft-tank-legend');
+  let legendHtml = '';
+  displayTanks.forEach((tn, idx) => {
+    const col = TANK_COLORS[idx % TANK_COLORS.length];
+    const tRows = items.filter(r=>(r.tank_name||r.feed_type)===tn);
+    if(tRows.length > 1) {
+      const pts = allDates.map((d,i)=>{
+        const r = tRows.find(x=>x.date===d);
+        return r!=null?`${xS(i).toFixed(0)},${yS(r.tank_remaining||0).toFixed(0)}`:null;
+      }).filter(Boolean).join(' ');
+      c+=`<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
+      allDates.forEach((d,i)=>{const r=tRows.find(x=>x.date===d);if(r)c+=`<circle cx="${xS(i)}" cy="${yS(r.tank_remaining||0)}" r="2" fill="${col}"/>`;});
+    }
+    legendHtml += `<span style="color:${col}">━ ${tn}</span>`;
+  });
+  if(legendEl) legendEl.innerHTML = legendHtml;
 
-  // 肉豚用ライン
-  if(finisherRows.length>1){
-    const pts=allDates.map((d,i)=>{const r=finisherRows.find(x=>x.date===d);return r?`${xS(i).toFixed(0)},${yS(r.tank_remaining).toFixed(0)}`:null;}).filter(Boolean).join(' ');
-    c+=`<polyline points="${pts}" fill="none" stroke="var(--accent3)" stroke-width="2.5" stroke-linejoin="round"/>`;
-    allDates.forEach((d,i)=>{const r=finisherRows.find(x=>x.date===d);if(r)c+=`<circle cx="${xS(i)}" cy="${yS(r.tank_remaining)}" r="2.5" fill="var(--accent3)"/>`;});
-  }
-
-  // 日付ラベル（間引き）
+  // 日付ラベル
   const step=Math.max(1,Math.floor(allDates.length/8));
-  allDates.filter((_,i)=>i%step===0||i===allDates.length-1).forEach((d,_,arr)=>{
+  allDates.filter((_,i)=>i%step===0||i===allDates.length-1).forEach(d=>{
     const i=allDates.indexOf(d);
     c+=`<text x="${xS(i).toFixed(0)}" y="${H}" fill="#64748b" font-size="9" text-anchor="middle">${d.slice(5)}</text>`;
   });
   const svg=document.getElementById('ft-tank-svg');
   if(svg) svg.innerHTML=c;
 
-  // FCR詳細
+  // FCR詳細タブ
+  const p2name = pigletRows[0]?.feed_name || '子豚用飼料';
+  const p3name = finisherRows[0]?.feed_name || '肉豚用飼料';
   document.getElementById('ft-fcr-kpi').innerHTML = `
     <div class="kcard g"><div class="kl">子豚用 使用量</div><div class="kv">${pigletUse.toFixed(2)}<span class="ku">t</span></div><div class="kd nt">${p2name}</div></div>
     <div class="kcard o"><div class="kl">肉豚用 使用量</div><div class="kv">${finisherUse.toFixed(2)}<span class="ku">t</span></div><div class="kd nt">${p3name}</div></div>
@@ -12397,22 +12601,21 @@ function rFeedTank() {
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:6px">※ ADG・在場頭数はロット管理のデータを使用</div>`;
 
-  // 日次明細
+  // 日次明細（タンク別列）
+  const allTankNames = [...new Set(items.map(r=>r.tank_name||r.feed_type).filter(Boolean))].sort();
+  const hdr = allTankNames.map(tn=>`<th>${tn}残量</th><th>${tn}入荷</th><th>${tn}使用量</th>`).join('')+'<th>合計使用量</th>';
+  document.querySelector('#ft-usage table thead tr').innerHTML = `<th>日付</th>${hdr}`;
   document.getElementById('ft-daily-tb').innerHTML = allDates.map(d=>{
-    const p=pigletRows.find(r=>r.date===d);
-    const f=finisherRows.find(r=>r.date===d);
-    const total=(p?.daily_usage||0)+(f?.daily_usage||0);
-    return `<tr>
-      <td class="mn">${d}</td>
-      <td class="mn">${p?.tank_remaining?.toFixed(2)||'-'} t</td>
-      <td class="mn ${(p?.delivery_ton||0)>0?'ng':''}">${p?.delivery_ton>0?'+'+p.delivery_ton.toFixed(1)+'t':'-'}</td>
-      <td class="mn ${(p?.daily_usage||0)>0?'nw':''}">${p?.daily_usage?.toFixed(3)||'-'} t</td>
-      <td class="mn">${f?.tank_remaining?.toFixed(2)||'-'} t</td>
-      <td class="mn ${(f?.delivery_ton||0)>0?'ng':''}">${f?.delivery_ton>0?'+'+f.delivery_ton.toFixed(1)+'t':'-'}</td>
-      <td class="mn ${(f?.daily_usage||0)>0?'nw':''}">${f?.daily_usage?.toFixed(3)||'-'} t</td>
-      <td class="mn ${total>0?'nw':''}">${total>0?total.toFixed(3)+' t':'-'}</td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
+    let total=0;
+    const cells = allTankNames.map(tn=>{
+      const r=items.find(x=>x.date===d&&(x.tank_name||x.feed_type)===tn);
+      total+=(r?.daily_usage||0);
+      return `<td class="mn">${r?.tank_remaining?.toFixed(2)||'-'} t</td>
+        <td class="mn ${(r?.delivery_ton||0)>0?'ng':''}">${(r?.delivery_ton||0)>0?'+'+r.delivery_ton.toFixed(1)+'t':'-'}</td>
+        <td class="mn ${(r?.daily_usage||0)>0?'nw':''}">${r?.daily_usage?.toFixed(3)||'-'} t</td>`;
+    }).join('');
+    return `<tr><td class="mn">${d}</td>${cells}<td class="mn ${total>0?'nw':''}">${total>0?total.toFixed(3)+' t':'-'}</td></tr>`;
+  }).join('') || '<tr><td colspan="20" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
 
   // 月次履歴
   const byMonth = {};

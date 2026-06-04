@@ -11957,8 +11957,15 @@ function parseTankCsv(file) {
     try {
       const buf = ev.target.result;
       let text;
-      try { text = new TextDecoder('shift-jis').decode(buf); }
-      catch { text = new TextDecoder('utf-8').decode(buf); }
+      // UTF-8を先に試す（農場・豚などの文字が含まれるか確認）
+      const utf8text = new TextDecoder('utf-8').decode(buf);
+      if(utf8text.includes('農場') || utf8text.includes('豚')) {
+        text = utf8text;
+      } else {
+        // UTF-8で読めなければShift-JIS
+        try { text = new TextDecoder('shift-jis').decode(buf); }
+        catch { text = utf8text; }
+      }
       const rows = buildFeedTankRowsFromCsv(text);
       if(!rows.length) {
         // デバッグ情報

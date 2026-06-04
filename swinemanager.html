@@ -3477,6 +3477,8 @@ async function loadAll() {
       });
       // 共通歩留まりを復元
       if(farmSettings.common?.yields) Object.assign(COMMON_YIELDS, farmSettings.common.yields);
+      // タンク名マップを再構築
+      Object.assign(TANK_NAME_MAP, buildTankNameMap());
     } else {
       // Supabaseに設定がない場合はlocalStorageから移行
       try {
@@ -3671,16 +3673,20 @@ function initFarmSettingsModal() {
       row.innerHTML = `
         <div style="font-size:12px;font-weight:700;color:var(--text)">${b.name}</div>
         <div style="display:flex;align-items:center;gap:6px;font-size:11px">
-          <span style="color:var(--muted);width:48px">位置</span>
+          <span style="color:var(--muted);width:72px">位置</span>
           <input class="fi barn-location" value="${b.location||''}" style="flex:1;font-size:11px" placeholder="例：道路側">
         </div>
         <div style="display:flex;align-items:center;gap:6px;font-size:11px">
-          <span style="color:var(--muted);width:48px">子豚タンク</span>
-          <input class="fi barn-tank-piglet" type="number" value="${b.tank_piglet||''}" style="width:60px;font-size:11px" placeholder="No">
+          <span style="color:var(--muted);width:72px">子豚タンクNo</span>
+          <input class="fi barn-tank-piglet" type="number" value="${b.tank_piglet||''}" style="width:50px;font-size:11px" placeholder="No">
+          <span style="color:var(--muted);margin-left:4px">名称</span>
+          <input class="fi barn-tank-piglet-label" value="${b.tank_piglet_label||''}" style="width:70px;font-size:11px" placeholder="例：子豚A">
         </div>
         <div style="display:flex;align-items:center;gap:6px;font-size:11px">
-          <span style="color:var(--muted);width:48px">肉豚タンク</span>
-          <input class="fi barn-tank-hog" type="number" value="${b.tank_hog||''}" style="width:60px;font-size:11px" placeholder="No">
+          <span style="color:var(--muted);width:72px">肉豚タンクNo</span>
+          <input class="fi barn-tank-hog" type="number" value="${b.tank_hog||''}" style="width:50px;font-size:11px" placeholder="No">
+          <span style="color:var(--muted);margin-left:4px">名称</span>
+          <input class="fi barn-tank-hog-label" value="${b.tank_hog_label||''}" style="width:70px;font-size:11px" placeholder="例：肉豚A">
         </div>`;
       barnList.appendChild(row);
     });
@@ -13070,13 +13076,17 @@ async function saveFarm() {
     const n = f==='farm1'?'1':'2';
     const rows = document.querySelectorAll(`#s${n}-barn-list [data-barn-id]`);
     FARMS[f].barns = [...rows].map(row => ({
-      id:          row.dataset.barnId,
-      name:        row.dataset.barnId + '豚舎',
-      location:    row.querySelector('.barn-location')?.value || '',
-      tank_piglet: parseInt(row.querySelector('.barn-tank-piglet')?.value) || 0,
-      tank_hog:    parseInt(row.querySelector('.barn-tank-hog')?.value)    || 0,
+      id:                row.dataset.barnId,
+      name:              row.dataset.barnId + '豚舎',
+      location:          row.querySelector('.barn-location')?.value || '',
+      tank_piglet:       parseInt(row.querySelector('.barn-tank-piglet')?.value) || 0,
+      tank_hog:          parseInt(row.querySelector('.barn-tank-hog')?.value)    || 0,
+      tank_piglet_label: row.querySelector('.barn-tank-piglet-label')?.value || '',
+      tank_hog_label:    row.querySelector('.barn-tank-hog-label')?.value    || '',
     }));
   });
+  // TANK_NAME_MAPを再構築
+  Object.assign(TANK_NAME_MAP, buildTankNameMap());
   // Supabaseに保存（localStorageにも念のため）
   const settingsToSave = {
     farm1: { name:FARMS.farm1.name, adgT:FARMS.farm1.adgT, fcrT:FARMS.farm1.fcrT, breed:FARMS.farm1.breed, defaultYield:FARMS.farm1.defaultYield, yields:FARMS.farm1.yields, sources:FARMS.farm1.sources, targetCwMin:FARMS.farm1.targetCwMin, targetCwMax:FARMS.farm1.targetCwMax, shipDays:FARMS.farm1.shipDays, barns:FARMS.farm1.barns },

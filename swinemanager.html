@@ -2221,18 +2221,63 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 
   <!-- 月次履歴タブ -->
   <div class="ft-t-c" id="ft-history" style="display:none">
-    <!-- 直近6ヶ月平均FCR -->
-    <div class="kgrid mb18" style="grid-template-columns:repeat(3,1fr)" id="ft-avg-fcr-kpi"></div>
+
+    <!-- 期間・平均設定バー -->
+    <div class="card mb18">
+      <div class="ch"><span class="ct">📊 FCR集計設定</span></div>
+      <div class="cb">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+            <label style="color:var(--muted)">集計開始</label>
+            <select class="fs" id="ft-fcr-from" onchange="rFeedTank()" style="width:100px"></select>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+            <label style="color:var(--muted)">集計終了</label>
+            <select class="fs" id="ft-fcr-to" onchange="rFeedTank()" style="width:100px"></select>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+            <label style="color:var(--muted)">平均FCR計算</label>
+            <select class="fs" id="ft-avg-months" onchange="rFeedTank()" style="width:110px">
+              <option value="3">直近3ヶ月</option>
+              <option value="6" selected>直近6ヶ月</option>
+              <option value="12">直近12ヶ月</option>
+              <option value="0">期間全体</option>
+            </select>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);padding:8px;background:rgba(42,48,69,.4);border-radius:6px">
+          <b style="color:var(--muted2)">FCR計算式：</b>
+          飼料消費量(t) ÷ 推計増体重(t)<br>
+          飼料消費量 = 期首タンク残 + 月間入荷 − 期末タンク残（期首期末方式）<br>
+          推計増体重 = Σ(日次在場頭数) × 平均ADG(g/日) ÷ 1,000,000
+        </div>
+      </div>
+    </div>
+
+    <!-- 平均FCR KPI（ルール付き） -->
+    <div class="kgrid mb18" style="grid-template-columns:repeat(4,1fr)" id="ft-avg-fcr-kpi"></div>
+
+    <!-- 豚舎別FCR（CSVデータがある場合） -->
+    <div class="card mb18" id="ft-barn-fcr-card" style="display:none">
+      <div class="ch"><span class="ct">🏠 豚舎別 FCR</span><span style="font-size:11px;color:var(--muted)" id="ft-barn-fcr-note"></span></div>
+      <div class="tw"><table>
+        <thead><tr><th>豚舎・タンク</th><th>飼料種</th><th class="tr3">消費量(t)</th><th class="tr3">推計増体重(t)</th><th class="tr3 nb">FCR</th><th class="tr3">目標比</th></tr></thead>
+        <tbody id="ft-barn-fcr-tb"></tbody>
+      </table></div>
+    </div>
+
+    <!-- 月次FCR履歴テーブル -->
     <div class="card">
-      <div class="ch"><span class="ct">月次 飼料使用量・FCR履歴</span></div>
+      <div class="ch"><span class="ct">月次 飼料使用量・FCR履歴</span><span style="font-size:11px;color:var(--muted)">● = 平均FCR対象月</span></div>
       <div class="tw"><table class="pt">
         <thead><tr>
           <th>年月</th><th>農場</th>
           <th class="tr3">子豚用(t)</th>
           <th class="tr3">肉豚用(t)</th>
           <th class="tr3">合計使用量(t)</th>
-          <th class="tr3">在場頭数</th>
+          <th class="tr3">在場頭日数</th>
           <th class="tr3 nb">FCR</th>
+          <th class="tr3">対目標</th>
         </tr></thead>
         <tbody id="ft-hist-tb"></tbody>
       </table></div>
@@ -12654,70 +12699,171 @@ function rFeedTank() {
     return `<tr><td class="mn">${d}</td>${cells}<td class="mn ${total>0?'nw':''}">${total>0?total.toFixed(3)+' t':'-'}</td></tr>`;
   }).join('') || '<tr><td colspan="20" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
 
-  // 月次履歴
+  // ─── 月次履歴タブ ───────────────────────────────
   const byMonth = {};
   DATA.feedTank.filter(r=>r.farm===farm).forEach(r=>{
     const m=r.date.slice(0,7);
-    if(!byMonth[m]) byMonth[m]={month:m,farm,piglet:0,finisher:0,heads:0};
+    if(!byMonth[m]) byMonth[m]={month:m,farm,piglet:0,finisher:0};
     if(r.feed_type==='piglet') byMonth[m].piglet+=r.daily_usage||0;
     if(r.feed_type==='finisher') byMonth[m].finisher+=r.daily_usage||0;
   });
   const sortedMonths = Object.values(byMonth).sort((a,b)=>b.month.localeCompare(a.month));
 
-  // 直近6ヶ月の有効FCRを収集
-  const recentValidFcrs = [];
-  for(const g of sortedMonths.slice(0, 12)) { // 最大12ヶ月から有効な6ヶ月を探す
-    const fcrVal = calcFarmFcr(g.farm, g.month);
-    if(fcrVal !== null && recentValidFcrs.length < 6) {
-      recentValidFcrs.push({ month: g.month, fcr: fcrVal });
-    }
+  // 期間セレクタの選択肢を更新
+  const allMonths = sortedMonths.map(g=>g.month);
+  const fromEl = document.getElementById('ft-fcr-from');
+  const toEl   = document.getElementById('ft-fcr-to');
+  if(fromEl && toEl) {
+    const prevFrom = fromEl.value;
+    const prevTo   = toEl.value;
+    const opts = allMonths.map(m=>`<option value="${m}">${m}</option>`).join('');
+    fromEl.innerHTML = opts;
+    toEl.innerHTML   = opts;
+    // デフォルト: from=最古, to=最新
+    fromEl.value = allMonths.includes(prevFrom) ? prevFrom : (allMonths[allMonths.length-1]||'');
+    toEl.value   = allMonths.includes(prevTo)   ? prevTo   : (allMonths[0]||'');
   }
-  const avgFcr6 = recentValidFcrs.length > 0
-    ? (recentValidFcrs.reduce((a,v)=>a+v.fcr,0) / recentValidFcrs.length)
-    : null;
+  const fcrFrom = fromEl?.value || '';
+  const fcrTo   = toEl?.value   || '';
+  const avgMonthsN = parseInt(document.getElementById('ft-avg-months')?.value || '6');
 
-  // 平均FCRカード表示
+  // 期間内の月のみ絞り込み
+  const filteredMonths = sortedMonths.filter(g =>
+    (!fcrFrom || g.month >= fcrFrom) && (!fcrTo || g.month <= fcrTo)
+  );
+
+  // 各月のFCRを計算
+  const monthFcrs = filteredMonths.map(g => ({
+    ...g,
+    fcrVal: calcFarmFcr(g.farm, g.month),
+    headDays: DATA.invDaily.filter(r=>r.farm===g.farm && r.date.startsWith(g.month))
+      .reduce((a,r)=>a+(r.stock_head||0),0),
+  }));
+
+  // 平均FCR計算（ルール選択）
+  const validFcrs = monthFcrs.filter(g=>g.fcrVal!==null).reverse(); // 古い順
+  const avgTarget = avgMonthsN===0 ? validFcrs : validFcrs.slice(-avgMonthsN);
+  const avgFcr = avgTarget.length > 0
+    ? avgTarget.reduce((a,g)=>a+g.fcrVal,0) / avgTarget.length
+    : null;
+  const avgMonthSet = new Set(avgTarget.map(g=>g.month));
+
+  // 平均FCR KPI
   const avgKpi = document.getElementById('ft-avg-fcr-kpi');
   if(avgKpi) {
-    const avgColor = avgFcr6 ? (avgFcr6<=2.7?'g':avgFcr6<=3.0?'y':'r') : 'c';
-    const monthRange = recentValidFcrs.length > 0
-      ? `${recentValidFcrs[recentValidFcrs.length-1].month}〜${recentValidFcrs[0].month}`
+    const fcrT = FARMS[farm]?.fcrT;
+    const ac = avgFcr ? (avgFcr<=2.7?'g':avgFcr<=3.0?'y':'r') : 'c';
+    const rng = avgTarget.length>0
+      ? `${avgTarget[0].month}〜${avgTarget[avgTarget.length-1].month}`
       : '-';
+    const label = avgMonthsN===0 ? `期間全体(${avgTarget.length}ヶ月)` : `直近${avgTarget.length}ヶ月`;
     avgKpi.innerHTML = `
-      <div class="kcard ${avgColor}">
-        <div class="kl">直近${recentValidFcrs.length}ヶ月平均FCR</div>
-        <div class="kv">${avgFcr6 ? avgFcr6.toFixed(2) : '-'}</div>
-        <div class="kd nt">${monthRange}</div>
+      <div class="kcard ${ac}">
+        <div class="kl">${label}平均FCR</div>
+        <div class="kv">${avgFcr?avgFcr.toFixed(2):'-'}</div>
+        <div class="kd nt">${rng}</div>
       </div>
       <div class="kcard c">
-        <div class="kl">有効月数</div>
-        <div class="kv">${recentValidFcrs.length}<span class="ku">ヶ月</span></div>
-        <div class="kd nt">nullや異常値除外済み</div>
-      </div>
-      <div class="kcard ${avgColor}">
         <div class="kl">FCR目標</div>
-        <div class="kv">${FARMS[farm]?.fcrT?.toFixed(2)||'-'}</div>
-        <div class="kd ${avgFcr6 && FARMS[farm]?.fcrT ? (avgFcr6<=FARMS[farm].fcrT?'up':'dn') : 'nt'}">${avgFcr6 && FARMS[farm]?.fcrT ? (avgFcr6<=FARMS[farm].fcrT?'▼ 目標達成':'▲ 目標超過') : '-'}</div>
+        <div class="kv">${fcrT?fcrT.toFixed(2):'-'}</div>
+        <div class="kd nt ${avgFcr&&fcrT?(avgFcr<=fcrT?'up':'dn'):'nt'}">${avgFcr&&fcrT?(avgFcr<=fcrT?'▼ 達成':'▲ 超過'):'-'}</div>
+      </div>
+      <div class="kcard o">
+        <div class="kl">有効月数</div>
+        <div class="kv">${avgTarget.length}<span class="ku">ヶ月</span></div>
+        <div class="kd nt">null・異常値除外済</div>
+      </div>
+      <div class="kcard ${filteredMonths.length>0?'g':'c'}">
+        <div class="kl">集計期間</div>
+        <div style="font-family:var(--mono);font-size:13px;font-weight:600">${fcrFrom||'-'}〜${fcrTo||'-'}</div>
+        <div class="kd nt">${filteredMonths.length}ヶ月分</div>
       </div>`;
   }
 
-  document.getElementById('ft-hist-tb').innerHTML = sortedMonths
-    .map(g=>{
+  // 豚舎別FCR（tank_nameがある場合）
+  const barnFcrCard = document.getElementById('ft-barn-fcr-card');
+  const barnFcrTb   = document.getElementById('ft-barn-fcr-tb');
+  const tankRows = DATA.feedTank.filter(r=>r.farm===farm && r.tank_name &&
+    (!fcrFrom||r.date>=fcrFrom+'-01') && (!fcrTo||r.date<=fcrTo+'-31'));
+  const tankNamesList = [...new Set(tankRows.map(r=>r.tank_name))].sort();
+
+  if(barnFcrCard && tankNamesList.length > 0) {
+    barnFcrCard.style.display = '';
+    const note = document.getElementById('ft-barn-fcr-note');
+    if(note) note.textContent = `${fcrFrom||''}〜${fcrTo||''} / ${tankNamesList.length}タンク`;
+
+    const fcrT = FARMS[farm]?.fcrT || 2.7;
+    // ADG（農場全体の加重平均）
+    const cutoffDate = farm==='farm2'?'2026-02-13':'2020-01-01';
+    const rLots = DATA.lots.filter(l=>l.farm===farm&&l.start_date>=cutoffDate);
+    let wA=0,tH=0;
+    rLots.forEach(l=>{const adg=calcLotAdg(l,true);if(!adg)return;const sh=DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);const h=sh.reduce((a,s)=>a+s.count,0);if(h>0){wA+=adg*h;tH+=h;}});
+    const farmAdg = tH>0 ? wA/tH : FARMS[farm]?.adgT||750;
+
+    // タンク×豚舎の紐付け（FARMS設定から）
+    const tankBarnMap = {};
+    (FARMS[farm]?.barns||[]).forEach(b=>{
+      if(b.tank_piglet_label) tankBarnMap[b.tank_piglet_label]={barn:b.name,type:'子豚用'};
+      if(b.tank_hog_label)    tankBarnMap[b.tank_hog_label]   ={barn:b.name,type:'肉豚用'};
+    });
+
+    barnFcrTb.innerHTML = tankNamesList.map(tn=>{
+      const tR = tankRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+      if(tR.length<2) return '';
+      // 消費量：期首+入荷-期末
+      const feedT = Math.max(0,
+        (tR[0].tank_remaining||0) +
+        tR.reduce((a,r)=>a+(r.delivery_ton||0),0) -
+        (tR[tR.length-1].tank_remaining||0)
+      );
+      // 在場頭日数（inv_dailyはfarm全体なのでタンク数で按分）
+      const invR = DATA.invDaily.filter(r=>r.farm===farm &&
+        r.date>=tR[0].date && r.date<=tR[tR.length-1].date);
+      const totalHeadDays = invR.reduce((a,r)=>a+(r.stock_head||0),0);
+      // このタンクの豚種に応じた按分比（同種タンク数で均等按分）
+      const barnInfo = tankBarnMap[tn];
+      const sameType = tankNamesList.filter(t=>tankBarnMap[t]?.type===barnInfo?.type);
+      const allocRatio = sameType.length > 0 ? 1/sameType.length : 0.5;
+      const tankHeadDays = totalHeadDays * allocRatio;
+      const gainT = tankHeadDays * farmAdg / 1e9;
+      const fcrV = (feedT>0 && gainT>0) ? feedT/gainT : null;
+      const ac = fcrV ? (fcrV<=fcrT?'ng':fcrV<=fcrT*1.1?'nw':'nb') : '';
+      const vs = fcrV&&fcrT ? (fcrV<=fcrT?`▼ -${(fcrT-fcrV).toFixed(2)}`:`▲ +${(fcrV-fcrT).toFixed(2)}`) : '-';
+      const vsC = fcrV&&fcrT ? (fcrV<=fcrT?'ng':'nb') : '';
+      return `<tr>
+        <td><span class="bdg gr">${tn}</span>${barnInfo?`<span style="font-size:10px;color:var(--muted);margin-left:4px">${barnInfo.barn}</span>`:''}
+        </td>
+        <td style="font-size:11px;color:var(--muted)">${barnInfo?.type||'-'}</td>
+        <td class="tr3 mn">${feedT.toFixed(3)} t</td>
+        <td class="tr3 mn">${gainT.toFixed(4)} t</td>
+        <td class="tr3 mn ${ac}" style="font-weight:700">${fcrV?fcrV.toFixed(2):'-'}</td>
+        <td class="tr3 mn ${vsC}">${vs}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:12px">タンク別データなし</td></tr>';
+  } else if(barnFcrCard) {
+    barnFcrCard.style.display = 'none';
+  }
+
+  // 月次FCRテーブル
+  document.getElementById('ft-hist-tb').innerHTML = monthFcrs.length
+    ? monthFcrs.map(g=>{
       const total=g.piglet+g.finisher;
-      // FCR: feed_tankのdaily_usageと出荷実績から計算
-      const fcrV2 = calcFarmFcr(g.farm, g.month);
-      const fcr2 = fcrV2 !== null ? fcrV2.toFixed(2) : '-';
-      const isInAvg = recentValidFcrs.some(v=>v.month===g.month);
-      return `<tr style="${isInAvg?'background:rgba(74,222,128,.04)':''}">
-        <td class="mn">${g.month}${isInAvg?'<span style="font-size:9px;color:var(--accent);margin-left:4px">●</span>':''}</td>
+      const fcr2 = g.fcrVal !== null ? g.fcrVal.toFixed(2) : '-';
+      const inAvg = avgMonthSet.has(g.month);
+      const fcrT = FARMS[farm]?.fcrT;
+      const vs = g.fcrVal&&fcrT ? (g.fcrVal<=fcrT?`<span class="ng">▼${(fcrT-g.fcrVal).toFixed(2)}</span>`:`<span class="nb">▲${(g.fcrVal-fcrT).toFixed(2)}</span>`) : '-';
+      return `<tr style="${inAvg?'background:rgba(74,222,128,.04)':''}">
+        <td class="mn">${g.month}${inAvg?'<span style="font-size:9px;color:var(--accent);margin-left:4px">●</span>':''}</td>
         <td>${fb(g.farm)}</td>
         <td class="tr3 mn">${g.piglet.toFixed(2)} t</td>
         <td class="tr3 mn">${g.finisher.toFixed(2)} t</td>
         <td class="tr3 mn nw">${total.toFixed(2)} t</td>
-        <td class="tr3 mn">${h}頭</td>
-        <td class="tr3 mn ${parseFloat(fcr2)<=2.7?'ng':parseFloat(fcr2)<=3.0?'nw':'nb'}" style="font-weight:600">${fcr2}</td>
+        <td class="tr3 mn">${g.headDays.toLocaleString()}</td>
+        <td class="tr3 mn ${g.fcrVal?(g.fcrVal<=2.7?'ng':g.fcrVal<=3.0?'nw':'nb'):''}" style="font-weight:600">${fcr2}</td>
+        <td class="tr3 mn">${vs}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
+    }).join('')
+    : '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
 }
 
 function clearInvData() {

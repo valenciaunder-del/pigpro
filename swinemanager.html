@@ -12524,13 +12524,14 @@ function rFeedTank() {
   const TANK_COLORS = ['var(--accent2)','var(--accent3)','var(--accent)','#f59e0b'];
   const tankNames = [...new Set(items.map(r=>r.tank_name).filter(Boolean))].sort();
   // タンクがない場合はfeed_typeで代替
+  const FEED_TYPE_LABEL = { piglet:'子豚用', finisher:'肉豚用' };
   const displayTanks = tankNames.length > 0 ? tankNames : ['piglet','finisher'].map(ft => {
-    const r = items.find(x=>x.feed_type===ft); return r?.tank_name || ft;
+    const r = items.find(x=>x.feed_type===ft); return r?.tank_name || FEED_TYPE_LABEL[ft] || ft;
   }).filter(Boolean);
 
   const cardsEl = document.getElementById('ft-tank-cards');
   cardsEl.innerHTML = displayTanks.map((tn, idx) => {
-    const tRows = items.filter(r=>(r.tank_name||r.feed_type)===tn);
+    const tRows = items.filter(r=>(r.tank_name||(FEED_TYPE_LABEL[r.feed_type]||r.feed_type))===tn);
     const last  = tRows[tRows.length-1];
     const use   = tRows.reduce((a,r)=>a+(r.daily_usage||0),0);
     const inT   = tRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
@@ -12581,7 +12582,7 @@ function rFeedTank() {
   let legendHtml = '';
   displayTanks.forEach((tn, idx) => {
     const col = TANK_COLORS[idx % TANK_COLORS.length];
-    const tRows = items.filter(r=>(r.tank_name||r.feed_type)===tn);
+    const tRows = items.filter(r=>(r.tank_name||(FEED_TYPE_LABEL[r.feed_type]||r.feed_type))===tn);
     if(tRows.length > 1) {
       const pts = allDates.map((d,i)=>{
         const r = tRows.find(x=>x.date===d);
@@ -12637,13 +12638,14 @@ function rFeedTank() {
     <div style="font-size:11px;color:var(--muted);margin-top:6px">※ ADG・在場頭数はロット管理のデータを使用</div>`;
 
   // 日次明細（タンク別列）
-  const allTankNames = [...new Set(items.map(r=>r.tank_name||r.feed_type).filter(Boolean))].sort();
+  // tank_nameがない旧データはfeed_typeを日本語に変換して表示
+  const allTankNames = [...new Set(items.map(r=>r.tank_name||(FEED_TYPE_LABEL[r.feed_type]||r.feed_type)).filter(Boolean))].sort();
   const hdr = allTankNames.map(tn=>`<th>${tn}残量</th><th>${tn}入荷</th><th>${tn}使用量</th>`).join('')+'<th>合計使用量</th>';
   document.querySelector('#ft-usage table thead tr').innerHTML = `<th>日付</th>${hdr}`;
   document.getElementById('ft-daily-tb').innerHTML = allDates.map(d=>{
     let total=0;
     const cells = allTankNames.map(tn=>{
-      const r=items.find(x=>x.date===d&&(x.tank_name||x.feed_type)===tn);
+      const r=items.find(x=>x.date===d&&(x.tank_name||(FEED_TYPE_LABEL[x.feed_type]||x.feed_type))===tn);
       total+=(r?.daily_usage||0);
       return `<td class="mn">${r?.tank_remaining?.toFixed(2)||'-'} t</td>
         <td class="mn ${(r?.delivery_ton||0)>0?'ng':''}">${(r?.delivery_ton||0)>0?'+'+r.delivery_ton.toFixed(1)+'t':'-'}</td>

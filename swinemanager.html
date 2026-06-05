@@ -7186,6 +7186,10 @@ async function deleteLot(id) {
 async function addLot() {
   const id = document.getElementById('fl-id').value.trim();
   if(!id) { notif('導入日を選択してロット番号を生成してください','r'); return; }
+  const _count = parseInt(document.getElementById('fl-count').value)||0;
+  const _date  = document.getElementById('fl-date').value;
+  if(_count <= 0) { notif('導入頭数を入力してください','r'); return; }
+  if(!_date)      { notif('導入日を入力してください','r'); return; }
   const data = {
     id, farm: document.getElementById('fl-farm').value,
     breed: document.getElementById('fl-breed').value,
@@ -10553,14 +10557,26 @@ async function saveSlaughter() {
     registerDiscard = ok;
   }
 
-  // 重複チェック：同じ農場・出荷日・屠畜場の仕切書が既にあるか確認
+  // 枝肉番号・販売頭数が0の場合は空シートになるため取込中止
+  if(soldCount === 0) {
+    hideLoading();
+    notif('販売頭数が0です。空の仕切書は取り込めません。', 'r');
+    return;
+  }
+
   // 重複チェック：先頭枝肉番号で同一仕切書かどうか判定
   const firstNo  = SL_DATA.details?.length ? Math.min(...SL_DATA.details.map(d=>d.carcass_no).filter(n=>n>0)) : null;
   const lastNo   = SL_DATA.details?.length ? Math.max(...SL_DATA.details.map(d=>d.carcass_no).filter(n=>n>0)) : null;
 
+  if(firstNo === null) {
+    hideLoading();
+    notif('枝肉番号が読み取れません。明細データを確認してください。', 'r');
+    return;
+  }
+
   // 同一仕切書チェック（先頭枝番一致 OR 枝番範囲が重複）
   const sameSheet = firstNo ? DATA.slaughter.find(x =>
-    x.farm === s.farm && (
+    x.farm === s.farm && x.shipped_at === s.shipped_at && (
       x.first_carcass_no === firstNo ||
       (x.first_carcass_no && x.last_carcass_no &&
        firstNo <= x.last_carcass_no && lastNo >= x.first_carcass_no)
@@ -12643,6 +12659,7 @@ async function saveInvData() {
             count: r.accident_head,
             weight_kg: null,
             cause: '棚卸データより自動登録',
+            confirmed: false,
           });
           newAccidents++;
         } catch(e) { console.warn('事故登録スキップ:', r.date, e.message); }

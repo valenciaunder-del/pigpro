@@ -1129,6 +1129,12 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     </div>
   </div>
 
+  <!-- 条件比較テーブル（compareモード時に表示） -->
+  <div class="card mb18" id="pf-cmp-card" style="display:none">
+    <div class="ch"><span class="ct">条件別比較</span></div>
+    <div id="pf-cmp-body"></div>
+  </div>
+
   <!-- ロット一覧テーブル -->
   <div class="card mb18">
     <div class="ch">
@@ -4583,6 +4589,8 @@ function clearPfPeriod() {
 }
 
 function rPfCmp() {
+  const el = document.getElementById('pf-cmp-body');
+  if(!el) return;
   const key = _pfCmpKey;
   const from = document.getElementById('pf-from')?.value || '';
   const to   = document.getElementById('pf-to')?.value || '';
@@ -4643,7 +4651,6 @@ function rPfCmp() {
   }
 
   const labels = { source:'導入元', slaughterhouse:'出荷先' };
-  const el = document.getElementById('pf-cmp-body');
 
   if(!Object.keys(groups).length) {
     const periodStr = from||to ? `（${from||'〜'}〜${to||'現在'}）` : '';
@@ -4853,6 +4860,9 @@ function setPfGraph(type, el) {
   // 出荷計画エリアの表示切替
   const spArea = document.getElementById('pf-shipplan-area');
   if(spArea) spArea.style.display = type==='shipplan' ? 'block' : 'none';
+  // 条件比較テーブルカードの表示切替
+  const cmpCard = document.getElementById('pf-cmp-card');
+  if(cmpCard) cmpCard.style.display = type==='compare' ? '' : 'none';
   // 通常グラフエリアの表示切替
   const chartCard = document.querySelector('#page-performance .card:has(#pf-chart)');
   if(chartCard) chartCard.style.display = type==='shipplan' ? 'none' : '';

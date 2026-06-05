@@ -3054,7 +3054,11 @@ const api = {
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(data)
   }),
-  insertSlaughterDetail: (rows) => sbFetch('slaughter_detail', { method:'POST', body: JSON.stringify(rows) }),
+  insertSlaughterDetail: (rows) => sbFetch('slaughter_detail?on_conflict=sheet_id,carcass_no', {
+    method:'POST',
+    headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify(rows)
+  }),
   deleteSlaughter: (id) => sbFetch(`slaughter_sheets?id=eq.${id}`, { method:'DELETE' }),
   deleteSlaughterDetail: (sheetId) => sbFetch(`slaughter_detail?sheet_id=eq.${sheetId}`, { method:'DELETE' }),
   getSlaughterDetail: (farm) => {

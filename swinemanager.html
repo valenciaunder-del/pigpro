@@ -2930,6 +2930,7 @@ const api = {
   deleteWeightsByLot: (lot_id) => sbFetch(`weight_records?lot_id=eq.${encodeURIComponent(lot_id)}`, { method:'DELETE' }),
   deleteFeedsByLot: (lot_id) => sbFetch(`feed_records?lot_id=eq.${encodeURIComponent(lot_id)}`, { method:'DELETE' }),
   deleteDeathsByLot: (lot_id) => sbFetch(`death_records?lot_id=eq.${encodeURIComponent(lot_id)}`, { method:'DELETE' }),
+  deleteShipsByLot: (lot_id) => sbFetch(`shipping_records?lot_id=eq.${encodeURIComponent(lot_id)}&sheet_id=is.null`, { method:'DELETE' }),
   deleteDeath: (id) => sbFetch(`death_records?id=eq.${id}`, { method:'DELETE' }),
   updateDeath: (id, data) => sbFetch(`death_records?id=eq.${id}`, { method:'PATCH', body: JSON.stringify(data) }),
 
@@ -7160,6 +7161,7 @@ async function deleteLot(id) {
     await api.deleteWeightsByLot(id);
     await api.deleteDeathsByLot(id);
     await api.deleteFeedsByLot(id);
+    await api.deleteShipsByLot(id);
     // ロット本体を削除
     await api.deleteLot(id);
     const [lots, weights, deaths, feeds] = await Promise.all([
@@ -7813,7 +7815,6 @@ async function confirmInvDeathSplit(id, totalCnt) {
   showLoading('確定中...');
   try {
     if(splits.length === 1) {
-      // 1行の場合は元レコードを更新
       await api.updateDeath(id, {
         lot_id:   splits[0].lotId,
         category: splits[0].category,
@@ -7836,7 +7837,15 @@ async function confirmInvDeathSplit(id, totalCnt) {
         });
       }
     }
-    DATA.deaths = await api.getDeaths();
+    // lots.deaths 同期（棚卸自動登録は旧lot_id=nullなので増加のみ）
+    const delta={};
+    for(const s of splits) if(s.lotId) delta[s.lotId]=(delta[s.lotId]||0)+s.count;
+    if(Object.keys(delta).length) {
+      DATA.lots=await api.getLots();
+      for(const [lid,d] of Object.entries(delta)) { const l=DATA.lots.find(x=>x.id===lid); if(l) await api.updateLot(lid,{deaths:(l.deaths||0)+d}); }
+    }
+    const [deaths, lots] = await Promise.all([api.getDeaths(), api.getLots()]);
+    DATA.deaths = deaths; DATA.lots = lots;
     rInvDeathList();
     rDthTb();
     notif(`事故記録を確定しました（${splits.length}ロット・合計${totalSplit}頭）`); refreshShipPlanIfActive();
@@ -7866,6 +7875,7 @@ async function confirmAllInvDeaths() {
 
   showLoading('一括確定中...');
   let confirmed = 0;
+  const deathsDelta = {};
   try {
     for(const row of rows) {
       const id = row.id.replace('id-row-','');
@@ -7888,9 +7898,17 @@ async function confirmAllInvDeaths() {
           await api.insertDeath({ farm:orig.farm, lot_id:s.lotId, occurred_at:orig.occurred_at, category:s.category, count:s.count, weight_kg:null, cause:'棚卸データより自動登録', confirmed:true });
         }
       }
+      // lots.deaths 集計（棚卸自動登録は旧lot_id=nullなので増加のみ）
+      for(const s of splits) if(s.lotId) deathsDelta[s.lotId]=(deathsDelta[s.lotId]||0)+s.count;
       confirmed++;
     }
-    DATA.deaths = await api.getDeaths();
+    // lots.deaths を一括更新
+    if(Object.keys(deathsDelta).length) {
+      DATA.lots = await api.getLots();
+      for(const [lid,d] of Object.entries(deathsDelta)) { const l=DATA.lots.find(x=>x.id===lid); if(l) await api.updateLot(lid,{deaths:(l.deaths||0)+d}); }
+    }
+    const [deaths, lots] = await Promise.all([api.getDeaths(), api.getLots()]);
+    DATA.deaths = deaths; DATA.lots = lots;
     rInvDeathList();
     rDthTb();
     notif(`${confirmed}件を一括確定しました`);
@@ -7905,8 +7923,15 @@ async function confirmInvDeath(id) {
   const cause    = document.getElementById(`id-cause-${id}`)?.value || null;
   showLoading('確定中...');
   try {
+    const orig = DATA.deaths.find(d=>d.id===id);
     await api.updateDeath(id, { lot_id: lotId, category, cause, confirmed: true });
-    DATA.deaths = await api.getDeaths();
+    // lots.deaths 同期（棚卸自動登録は旧lot_id=nullなので増加のみ）
+    if(orig?.count && lotId) {
+      const lot = DATA.lots.find(l=>l.id===lotId);
+      if(lot) await api.updateLot(lotId, { deaths: (lot.deaths||0)+orig.count });
+    }
+    const [deaths, lots] = await Promise.all([api.getDeaths(), api.getLots()]);
+    DATA.deaths = deaths; DATA.lots = lots;
     rInvDeathList();
     rDthTb();
     notif('事故記録を確定しました'); refreshShipPlanIfActive();
@@ -7938,13 +7963,22 @@ async function confirmAllInvDeaths() {
   if(!confirm(`${toConfirm.length}件を一括確定します。ロット未選択の行はスキップされます。`)) return;
 
   showLoading('一括確定中...');
+  const deathsDelta2 = {};
   try {
     for(const r of toConfirm) {
+      const orig = DATA.deaths.find(d=>d.id===r.id);
       const category = document.getElementById(`id-cat-${r.id}`)?.value || '死亡';
       const cause    = document.getElementById(`id-cause-${r.id}`)?.value || null;
       await api.updateDeath(r.id, { lot_id: r.lotId, category, cause, confirmed: true });
+      if(orig?.count) deathsDelta2[r.lotId]=(deathsDelta2[r.lotId]||0)+orig.count;
     }
-    DATA.deaths = await api.getDeaths();
+    // lots.deaths を一括更新（棚卸自動登録は旧lot_id=nullなので増加のみ）
+    if(Object.keys(deathsDelta2).length) {
+      DATA.lots = await api.getLots();
+      for(const [lid,d] of Object.entries(deathsDelta2)) { const l=DATA.lots.find(x=>x.id===lid); if(l) await api.updateLot(lid,{deaths:(l.deaths||0)+d}); }
+    }
+    const [deaths, lots] = await Promise.all([api.getDeaths(), api.getLots()]);
+    DATA.deaths = deaths; DATA.lots = lots;
     rInvDeathList();
     rDthTb();
     notif(`${toConfirm.length}件を確定しました`);
@@ -8003,8 +8037,15 @@ async function delDeath(id) {
   if(!confirm('この事故・死亡記録を削除しますか？')) return;
   showLoading('削除中...');
   try {
+    const rec = DATA.deaths.find(d=>d.id===id);
     await api.deleteDeath(id);
-    DATA.deaths = await api.getDeaths();
+    if(rec?.lot_id) {
+      const lot = DATA.lots.find(l=>l.id===rec.lot_id);
+      if(lot) await api.updateLot(rec.lot_id, { deaths: Math.max(0, (lot.deaths||0)-(rec.count||0)) });
+    }
+    const [deaths, lots] = await Promise.all([api.getDeaths(), api.getLots()]);
+    DATA.deaths = deaths;
+    DATA.lots = lots;
     rDthTb();
     updateSBInfo();
     notif('事故・死亡記録を削除しました'); refreshShipPlanIfActive();
@@ -8117,9 +8158,20 @@ async function confirmSplitDeath(id, totalCnt) {
 
   showLoading('分割中...');
   try {
+    const oldLotId = orig.lot_id;
+    const oldCount = orig.count || 0;
     if(splits.length === 1) {
-      // 1行のみ：元レコードを更新
       await api.updateDeath(id, { lot_id:splits[0].lotId, category:splits[0].category, count:splits[0].count, confirmed:true });
+      // lots.deaths 同期
+      const newLotId = splits[0].lotId;
+      const newCount = splits[0].count;
+      if(oldLotId === newLotId && oldLotId) {
+        const lot = DATA.lots.find(l=>l.id===oldLotId);
+        if(lot) await api.updateLot(oldLotId, { deaths: Math.max(0,(lot.deaths||0)-oldCount+newCount) });
+      } else {
+        if(oldLotId) { const ol=DATA.lots.find(l=>l.id===oldLotId); if(ol) await api.updateLot(oldLotId,{deaths:Math.max(0,(ol.deaths||0)-oldCount)}); }
+        if(newLotId) { DATA.lots=await api.getLots(); const nl=DATA.lots.find(l=>l.id===newLotId); if(nl) await api.updateLot(newLotId,{deaths:(nl.deaths||0)+newCount}); }
+      }
     } else {
       // 複数行：元を削除して複数新規作成
       await api.deleteDeath(id);
@@ -8135,8 +8187,15 @@ async function confirmSplitDeath(id, totalCnt) {
           confirmed:   true,
         });
       }
+      // lots.deaths 同期
+      if(oldLotId) { const ol=DATA.lots.find(l=>l.id===oldLotId); if(ol) await api.updateLot(oldLotId,{deaths:Math.max(0,(ol.deaths||0)-oldCount)}); }
+      DATA.lots=await api.getLots();
+      const delta={};
+      for(const s of splits) if(s.lotId) delta[s.lotId]=(delta[s.lotId]||0)+s.count;
+      for(const [lid,d] of Object.entries(delta)) { const l=DATA.lots.find(x=>x.id===lid); if(l) await api.updateLot(lid,{deaths:(l.deaths||0)+d}); }
     }
-    DATA.deaths = await api.getDeaths();
+    const [deaths, lots] = await Promise.all([api.getDeaths(), api.getLots()]);
+    DATA.deaths = deaths; DATA.lots = lots;
     document.getElementById('split-death-modal')?.remove();
     rDthTb();
     notif(`${splits.length}ロットに分割しました（合計${total}頭）`);
@@ -8168,8 +8227,9 @@ function editDeath(id) {
 async function updateDeath(id) {
   const cnt = parseInt(document.getElementById('dth-cnt').value)||0;
   if(!cnt) { notif('頭数を入力してください','r'); return; }
+  const newLotId = document.getElementById('dth-lot').value||null;
   const data = {
-    lot_id: document.getElementById('dth-lot').value||null,
+    lot_id: newLotId,
     occurred_at: document.getElementById('dth-date').value||null,
     category: document.getElementById('dth-type').value,
     count: cnt,
@@ -8177,8 +8237,28 @@ async function updateDeath(id) {
   };
   showLoading('更新中...');
   try {
+    const oldRec = DATA.deaths.find(d=>d.id===id);
+    const oldLotId = oldRec?.lot_id || null;
+    const oldCnt = oldRec?.count || 0;
     await api.updateDeath(id, { ...data, confirmed: true });
-    DATA.deaths = await api.getDeaths();
+    // lots.deathsを旧ロット減算・新ロット加算
+    if(oldLotId || newLotId) {
+      const lotsNow = DATA.lots;
+      if(oldLotId && oldLotId !== newLotId) {
+        const ol = lotsNow.find(l=>l.id===oldLotId);
+        if(ol) await api.updateLot(oldLotId, { deaths: Math.max(0, (ol.deaths||0)-oldCnt) });
+      }
+      if(newLotId) {
+        const nl = lotsNow.find(l=>l.id===newLotId);
+        if(nl) {
+          const base = (oldLotId===newLotId) ? Math.max(0,(nl.deaths||0)-oldCnt) : (nl.deaths||0);
+          await api.updateLot(newLotId, { deaths: base+cnt });
+        }
+      }
+    }
+    const [deaths, lots] = await Promise.all([api.getDeaths(), api.getLots()]);
+    DATA.deaths = deaths;
+    DATA.lots = lots;
     // ボタンを元に戻す
     const btn = document.querySelector(`[onclick="updateDeath('${id}')"]`);
     if(btn) { btn.textContent = '✓ 記録登録'; btn.setAttribute('onclick', 'addDeath()'); }
@@ -10478,15 +10558,19 @@ async function saveSlaughter() {
   const firstNo  = SL_DATA.details?.length ? Math.min(...SL_DATA.details.map(d=>d.carcass_no).filter(n=>n>0)) : null;
   const lastNo   = SL_DATA.details?.length ? Math.max(...SL_DATA.details.map(d=>d.carcass_no).filter(n=>n>0)) : null;
 
-  // 同一仕切書チェック（first_carcass_noが一致）
-  const sameSheet = firstNo ? DATA.slaughter.find(x=>x.farm===s.farm && x.first_carcass_no===firstNo) : null;
+  // 同一仕切書チェック（先頭枝番一致 OR 枝番範囲が重複）
+  const sameSheet = firstNo ? DATA.slaughter.find(x =>
+    x.farm === s.farm && (
+      x.first_carcass_no === firstNo ||
+      (x.first_carcass_no && x.last_carcass_no &&
+       firstNo <= x.last_carcass_no && lastNo >= x.first_carcass_no)
+    )
+  ) : null;
   if(sameSheet) {
     // 同一仕切書の再取込 → 自動上書き
-    notif(`枝肉番号${firstNo}〜${lastNo}の仕切書が既に登録されています。自動上書きします。`,'y');
+    notif(`枝肉番号${firstNo}〜${lastNo}の仕切書が既に登録されています（既存:${sameSheet.first_carcass_no}〜${sameSheet.last_carcass_no}）。自動上書きします。`,'y');
     showLoading('既存データを削除中...');
-    const oldShips = DATA.ships.filter(s=>
-      s.sheet_id===sameSheet.id || (s.farm===sameSheet.farm && s.shipped_at===sameSheet.shipped_at && !s.sheet_id)
-    );
+    const oldShips = DATA.ships.filter(s=> s.sheet_id===sameSheet.id);
     for(const os of oldShips) await api.deleteShip(os.id);
     await api.deleteSlaughterDetail(sameSheet.id);
     await api.deleteSlaughter(sameSheet.id);
@@ -10611,40 +10695,35 @@ async function saveSlaughter() {
         });
       }
     } else {
-      // ロット内訳なしの場合
-      const noBreakdownLiveWt = calcLiveWeightFromCarcass(avgCw, s.farm, s.slaughterhouse);
-      await api.insertShip({
-        farm: s.farm,
-        shipped_at: s.shipped_at,
-        slaughtered_at: s.slaughtered_at || s.shipped_at,
-        lot_id: null,
-        count: s.head_count,
-        live_weight: noBreakdownLiveWt,
-        live_weight_estimated: true,
-        carcass_weight: parseFloat(avgCw.toFixed(1)),
-        grade: s.upper_rate >= 80 ? '上' : '中',
-        unit_price: s.market_price,
-        slaughterhouse: s.slaughterhouse,
-        sheet_id: sheetId || null,
-      });
+      // ロット内訳なし → 保存中止
+      hideLoading();
+      notif('ロット内訳が入力されていません。出荷記録を登録するにはロット内訳を入力してください。', 'r');
+      return;
     }
 
     // 売上はslaughter_sheetsから動的集計するため個別登録不要
     // const mon = s.shipped_at?.slice(0,7);
 
-    // 廃棄頭数を事故として登録
+    // 廃棄頭数を事故として登録（再取込時の重複を防ぐ）
     if(registerDiscard && discardCount > 0) {
       try {
-        await api.insertDeath({
-          farm: s.farm,
-          lot_id: null,
-          occurred_at: s.shipped_at,
-          category: '廃棄（出荷後）',
-          count: discardCount,
-          weight_kg: null,
-          cause: `枝肉廃棄（出荷時）受付${receivedCount}頭→販売${soldCount}頭`,
-        });
-        notif(`${discardCount}頭を事故（廃棄）として登録しました`);
+        const existDiscard = DATA.deaths.find(d=>
+          d.farm===s.farm && d.occurred_at===s.shipped_at && d.category==='廃棄（出荷後）'
+        );
+        if(!existDiscard) {
+          await api.insertDeath({
+            farm: s.farm,
+            lot_id: null,
+            occurred_at: s.shipped_at,
+            category: '廃棄（出荷後）',
+            count: discardCount,
+            weight_kg: null,
+            cause: `枝肉廃棄（出荷時）受付${receivedCount}頭→販売${soldCount}頭`,
+          });
+          notif(`${discardCount}頭を事故（廃棄）として登録しました`);
+        } else {
+          notif(`廃棄記録は既に登録済みのためスキップしました（${existDiscard.count}頭）`,'y');
+        }
       } catch(e) {
         notif('廃棄の事故登録に失敗しました: '+e.message,'r');
       }
@@ -11285,11 +11364,8 @@ async function saveEditBreakdown() {
 
   showLoading('ロット内訳を更新中...');
   try {
-    // 既存のshipping_recordsを削除（sheet_idで照合・なければ同農場・同出荷日）
-    const oldShips = DATA.ships.filter(s=>
-      s.sheet_id===sheet.id ||
-      (s.farm===sheet.farm && s.shipped_at===sheet.shipped_at && !s.sheet_id)
-    );
+    // 既存のshipping_recordsを削除（sheet_idで照合）
+    const oldShips = DATA.ships.filter(s=> s.sheet_id===sheet.id);
     for(const s of oldShips) {
       await api.deleteShip(s.id);
     }

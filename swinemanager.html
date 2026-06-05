@@ -10584,44 +10584,18 @@ async function saveSlaughter() {
     return;
   }
 
-  // 同一仕切書チェック（先頭枝番一致 OR 枝番範囲が重複）
-  const sameSheet = firstNo ? DATA.slaughter.find(x =>
-    x.farm === s.farm && x.shipped_at === s.shipped_at && (
-      x.first_carcass_no === firstNo ||
-      (x.first_carcass_no && x.last_carcass_no &&
-       firstNo <= x.last_carcass_no && lastNo >= x.first_carcass_no)
-    )
-  ) : null;
+  // 同一仕切書チェック（farm + shipped_at + buyer で判定 → DB の on_conflict キーと一致）
+  const sameSheet = DATA.slaughter.find(x =>
+    x.farm === s.farm && x.shipped_at === s.shipped_at && x.buyer === s.buyer
+  );
   if(sameSheet) {
     // 同一仕切書の再取込 → 自動上書き
-    notif(`枝肉番号${firstNo}〜${lastNo}の仕切書が既に登録されています（既存:${sameSheet.first_carcass_no}〜${sameSheet.last_carcass_no}）。自動上書きします。`,'y');
+    notif(`${s.shipped_at} ${s.buyer} の仕切書が既に登録されています（${sameSheet.head_count}頭）。自動上書きします。`,'y');
     showLoading('既存データを削除中...');
-    const oldShips = DATA.ships.filter(s=> s.sheet_id===sameSheet.id);
+    const oldShips = DATA.ships.filter(os => os.sheet_id===sameSheet.id);
     for(const os of oldShips) await api.deleteShip(os.id);
     await api.deleteSlaughterDetail(sameSheet.id);
     await api.deleteSlaughter(sameSheet.id);
-  } else {
-    // 同日・同販売先の別仕切書チェック（同日に複数ある場合）
-    const sameDayList = DATA.slaughter.filter(x=>x.farm===s.farm && x.shipped_at===s.shipped_at && x.buyer===s.buyer);
-    if(sameDayList.length > 0) {
-      const totalExisting = sameDayList.reduce((a,x)=>a+(x.head_count||0),0);
-      // 枝肉番号が重複していなければ自動追加
-      const hasOverlap = firstNo && sameDayList.some(x=>
-        x.first_carcass_no && x.last_carcass_no &&
-        firstNo <= x.last_carcass_no && lastNo >= x.first_carcass_no
-      );
-      if(hasOverlap) {
-        const existSheet = sameDayList.find(x=>
-          x.first_carcass_no && x.last_carcass_no &&
-          firstNo <= x.last_carcass_no && lastNo >= x.first_carcass_no
-        );
-        const msg = `枝肉番号が既存仕切書（${existSheet?.first_carcass_no}〜${existSheet?.last_carcass_no}、${existSheet?.head_count}頭）と重複しています。\n\n保留分など意図的な重複の場合は「続行」を押してください。\n取込を中止する場合は「キャンセル」を押してください。`;
-        if(!confirm(msg)) return;
-        notif(`枝肉番号重複を確認の上、別仕切書として追加します。`, 'g');
-      } else {
-        notif(`${s.shipped_at}に既に${totalExisting}頭の仕切書があります。別仕切書として追加します。`,'g');
-      }
-    }
   }
 
   showLoading('保存中...');

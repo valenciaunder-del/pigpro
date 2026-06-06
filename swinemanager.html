@@ -11006,7 +11006,9 @@ async function slhSaveAll() {
   finally { hideLoading(); }
 }
 
+let SLH_DETAIL_CACHE = [];
 function slhRenderDetail(rows) {
+  SLH_DETAIL_CACHE = rows || [];
   const tb = document.getElementById('slh-detail-tb');
   if (!tb) return;
   if (!rows || !rows.length) {
@@ -11014,16 +11016,62 @@ function slhRenderDetail(rows) {
     return;
   }
   const gc = {'上':'var(--accent)','中':'var(--accent2)','並':'var(--warn)','等外':'var(--danger)'};
-  tb.innerHTML = rows.map(r => `<tr>
-    <td class="mn">${r.carcass_no||'-'}</td>
-    <td>${r.sex||'-'}</td>
-    <td style="color:${gc[r.grade]||'var(--text)'};font-weight:600">${r.grade||'-'}</td>
-    <td class="tr3">${r.carcass_weight!=null?r.carcass_weight.toFixed(1):'-'}kg</td>
-    <td class="tr3">${r.unit_price?'¥'+r.unit_price:'-'}</td>
-    <td class="tr3">${r.amount!=null?fM(r.amount):'-'}</td>
-    <td class="tr3">${r.backfat_thickness||'-'}cm</td>
-    <td style="color:var(--muted);font-size:11px">${r.defect_reason||r.note||''}</td>
+  const ec = (r, f, v, s='') => `<td style="cursor:pointer;${s}" onclick="slhEditCell(this,'${r.id}','${f}')">${v}</td>`;
+  tb.innerHTML = rows.map(r => `<tr data-detail-id="${r.id}">
+    ${ec(r,'carcass_no',r.carcass_no||'-')}
+    ${ec(r,'sex',r.sex||'-')}
+    ${ec(r,'grade',r.grade||'-',`color:${gc[r.grade]||'var(--text)'};font-weight:600`)}
+    ${ec(r,'carcass_weight',r.carcass_weight!=null?r.carcass_weight.toFixed(1)+' kg':'-','text-align:right')}
+    ${ec(r,'unit_price',r.unit_price?'¥'+r.unit_price:'-','text-align:right')}
+    <td class="tr3" style="color:var(--muted2)">${r.amount!=null?fM(r.amount):'-'}</td>
+    ${ec(r,'backfat_thickness',(r.backfat_thickness||r.backfat||'-')+' cm','text-align:right')}
+    ${ec(r,'defect_reason',r.defect_reason||r.note||'','color:var(--muted);font-size:11px')}
   </tr>`).join('');
+}
+function slhEditCell(td, rowId, field) {
+  if (td.querySelector('input,select')) return;
+  const row = SLH_DETAIL_CACHE.find(r => r.id == rowId);
+  if (!row) return;
+  const rawVal = row[field] ?? '';
+  let input;
+  if (field === 'grade') {
+    input = document.createElement('select'); input.className='fs'; input.style='font-size:12px;padding:2px 4px;width:60px';
+    ['上','中','並','等外'].forEach(g=>{const o=document.createElement('option');o.value=g;o.textContent=g;if(g===rawVal)o.selected=true;input.appendChild(o);});
+  } else if (field === 'sex') {
+    input = document.createElement('select'); input.className='fs'; input.style='font-size:12px;padding:2px 4px;width:55px';
+    ['雌','去勢','雄'].forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;if(s===rawVal)o.selected=true;input.appendChild(o);});
+  } else {
+    input = document.createElement('input');
+    input.type = ['carcass_weight','unit_price','backfat_thickness'].includes(field)?'number':'text';
+    input.className='fi'; input.style='font-size:12px;padding:2px 6px;width:75px';
+    if(field==='carcass_weight'||field==='backfat_thickness') input.step='0.1';
+    input.value = rawVal;
+  }
+  const origHTML = td.innerHTML;
+  td.innerHTML=''; td.appendChild(input); input.focus();
+  if(input.tagName==='INPUT') input.select();
+  const save = async () => {
+    const nv = input.value.trim();
+    const numF = ['carcass_weight','unit_price','backfat_thickness'];
+    const pv = numF.includes(field)?(nv===''?null:parseFloat(nv)):(nv||null);
+    const patch = {[field]:pv};
+    if(field==='carcass_weight'||field==='unit_price'){
+      const w=field==='carcass_weight'?parseFloat(nv)||0:(row.carcass_weight||0);
+      const p=field==='unit_price'?parseFloat(nv)||0:(row.unit_price||0);
+      if(w&&p) patch.amount=Math.round(w*p);
+    }
+    try {
+      await api.updateSlaughterDetail(rowId, patch);
+      Object.assign(row, patch);
+      slhRenderDetail(SLH_DETAIL_CACHE);
+      notif('更新しました','g');
+    } catch(e){ td.innerHTML=origHTML; notif('更新エラー: '+e.message,'r'); }
+  };
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){e.preventDefault();input.blur();}
+    if(e.key==='Escape'){td.innerHTML=origHTML;input.removeEventListener('blur',save);}
+  });
 }
 
 async function slhUpdateDates() {

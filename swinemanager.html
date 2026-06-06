@@ -3099,7 +3099,7 @@ const api = {
     const q = farm && farm !== 'both' ? `?farm=eq.${farm}&order=shipped_at.desc` : '?order=shipped_at.desc';
     return sbFetch('slaughter_detail' + q);
   },
-  getSlaughterDetailById: (sheetId) => sbFetch(`slaughter_detail?slaughter_sheet_id=eq.${sheetId}&order=carcass_no.asc`),
+  getSlaughterDetailById: (sheetId) => sbFetch(`slaughter_detail?sheet_id=eq.${sheetId}&order=carcass_no.asc`),
 
   // Inventory daily (棚卸)
   getInvDaily: (farm, month) => {

@@ -3119,6 +3119,9 @@ const api = {
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(data)
   }),
+  updateSlaughterDetail: (id, data) => sbFetch(`slaughter_detail?id=eq.${id}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json','Prefer':'return=representation'}, body: JSON.stringify(data)
+  }),
   insertSlaughterDetail: (rows) => sbFetch('slaughter_detail?on_conflict=sheet_id,carcass_no', {
     method:'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },

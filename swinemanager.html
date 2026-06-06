@@ -1559,6 +1559,32 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           </tr>
         </thead>
         <tbody id="slh-tb"></tbody>
+        <tbody id="slh-detail-row-wrap" style="display:none">
+          <tr><td colspan="14" style="padding:0">
+            <div id="slh-detail-panel" style="background:var(--surface2);border-top:2px solid var(--accent);padding:16px 20px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <span id="slh-detail-title" style="font-weight:600;font-size:15px"></span>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <label style="font-size:12px;color:var(--muted)">出荷日</label>
+                  <input type="date" id="slh-edit-shipped" class="fs" style="font-size:12px;padding:3px 8px">
+                  <label style="font-size:12px;color:var(--muted)">支払日</label>
+                  <input type="date" id="slh-edit-payment" class="fs" style="font-size:12px;padding:3px 8px">
+                  <button class="btn bs sm" onclick="slhUpdateDates()">保存</button>
+                  <button class="btn bd sm" onclick="slhCloseDetail()">✕</button>
+                </div>
+              </div>
+              <div id="slh-detail-body" style="overflow-x:auto">
+                <table class="tbl" style="font-size:12px;min-width:700px">
+                  <thead><tr>
+                    <th>枝番</th><th>性別</th><th>等級</th><th>枝重(kg)</th>
+                    <th>単価(円/kg)</th><th>金額(円)</th><th>備考</th>
+                  </tr></thead>
+                  <tbody id="slh-detail-tb"></tbody>
+                </table>
+              </div>
+            </div>
+          </td></tr>
+        </tbody>
       </table>
     </div>
   </div>
@@ -3072,6 +3098,7 @@ const api = {
     const q = farm && farm !== 'both' ? `?farm=eq.${farm}&order=shipped_at.desc` : '?order=shipped_at.desc';
     return sbFetch('slaughter_detail' + q);
   },
+  getSlaughterDetailById: (sheetId) => sbFetch(`slaughter_detail?slaughter_sheet_id=eq.${sheetId}&order=carcass_no.asc`),
 
   // Inventory daily (棚卸)
   getInvDaily: (farm, month) => {
@@ -10850,6 +10877,75 @@ function clearSlaughter() {
 // 仕切書履歴ページ
 // ══════════════════════════════════════════════
 let SLH_SORT = { key: 'created_at', dir: -1 };
+let SLH_OPEN_ID = null;
+
+async function slhToggleDetail(id, e) {
+  if (e) e.stopPropagation();
+  if (SLH_OPEN_ID === id) { slhCloseDetail(); return; }
+  SLH_OPEN_ID = id;
+  rSlHistory();
+  const panel = document.getElementById('slh-detail-row-wrap');
+  if (panel) panel.style.display = '';
+  const s = (DATA.slaughter||[]).find(x => x.id === id);
+  if (s) {
+    const titleEl = document.getElementById('slh-detail-title');
+    if (titleEl) titleEl.textContent = `${fb(s.farm)} ${s.shipped_at||''} ${s.buyer||''} (${s.head_count||0}頭)`;
+    const shippedEl = document.getElementById('slh-edit-shipped');
+    if (shippedEl) shippedEl.value = s.shipped_at || '';
+    const payEl = document.getElementById('slh-edit-payment');
+    if (payEl) payEl.value = s.payment_date || '';
+    document.getElementById('slh-detail-tb').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:12px">読み込み中...</td></tr>';
+    try {
+      const rows = await api.getSlaughterDetailById(id);
+      slhRenderDetail(rows);
+    } catch(err) {
+      document.getElementById('slh-detail-tb').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--danger)">読み込みエラー</td></tr>';
+    }
+  }
+}
+
+function slhCloseDetail() {
+  SLH_OPEN_ID = null;
+  const panel = document.getElementById('slh-detail-row-wrap');
+  if (panel) panel.style.display = 'none';
+  rSlHistory();
+}
+
+function slhRenderDetail(rows) {
+  const tb = document.getElementById('slh-detail-tb');
+  if (!tb) return;
+  if (!rows || !rows.length) {
+    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:12px">内訳データなし</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(r => `<tr>
+    <td class="mn">${r.carcass_no||'-'}</td>
+    <td>${r.sex||'-'}</td>
+    <td>${r.grade||'-'}</td>
+    <td class="tr3">${r.carcass_kg!=null?r.carcass_kg.toFixed(2):'-'}</td>
+    <td class="tr3">${r.unit_price||'-'}</td>
+    <td class="tr3">${r.amount!=null?fM(r.amount):'-'}</td>
+    <td style="color:var(--muted);font-size:11px">${r.note||''}</td>
+  </tr>`).join('');
+}
+
+async function slhUpdateDates() {
+  if (!SLH_OPEN_ID) return;
+  const shipped = document.getElementById('slh-edit-shipped')?.value;
+  const payment = document.getElementById('slh-edit-payment')?.value;
+  if (!shipped) { notif('出荷日を入力してください', 'r'); return; }
+  showLoading();
+  try {
+    await api.updateSlaughter(SLH_OPEN_ID, { shipped_at: shipped, payment_date: payment || null });
+    DATA.slaughter = await api.getSlaughter();
+    notif('保存しました', 'g');
+    const openId = SLH_OPEN_ID;
+    slhCloseDetail();
+    await slhToggleDetail(openId);
+  } catch(e) {
+    notif('保存エラー: ' + (e.message||e), 'r');
+  } finally { hideLoading(); }
+}
 
 function slhSort(key) {
   if (SLH_SORT.key === key) SLH_SORT.dir *= -1;
@@ -10911,10 +11007,11 @@ function rSlHistory() {
     return;
   }
   tb.innerHTML = items.map(s => {
+    const isOpen = SLH_OPEN_ID === s.id;
     const discardCount = (DATA.deaths||[]).filter(d =>
       d.category === '廃棄（出荷後）' && d.occurred_at === s.shipped_at && d.farm === s.farm
     ).reduce((a,d)=>a+(d.count||0), 0);
-    return `<tr>
+    return `<tr style="cursor:pointer${isOpen?';background:var(--hover)':''}" onclick="slhToggleDetail('${s.id}',event)">
       <td>${fb(s.farm)}</td>
       <td class="mn">${s.shipped_at||'-'}</td>
       <td class="mn" style="color:var(--muted2)">${s.slaughtered_at||s.shipped_at||'-'}</td>
@@ -10929,14 +11026,13 @@ function rSlHistory() {
       <td style="font-size:12px">${s.buyer||'-'}</td>
       <td style="font-size:11px;color:var(--muted);white-space:nowrap">${s.created_at?s.created_at.slice(0,16).replace('T',' '):'-'}</td>
       <td style="font-size:11px;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${s.source_file||''}">${s.source_file||'-'}</td>
-      <td style="white-space:nowrap;display:flex;gap:4px;align-items:center">
+      <td style="white-space:nowrap;display:flex;gap:4px;align-items:center" onclick="event.stopPropagation()">
         <select class="fs" style="font-size:11px;padding:3px 6px;width:80px"
           onchange="updateShipType('${s.id}',this.value)">
           <option value="通常" ${(s.ship_type||'通常')==='通常'?'selected':''}>通常</option>
           <option value="小慣" ${s.ship_type==='小慣'?'selected':''}>小慣</option>
           <option value="大慣" ${s.ship_type==='大慣'?'selected':''}>大慣</option>
         </select>
-        <button class="btn bs sm" onclick="editSlaughter('${s.id}')">編集</button>
         <button class="btn bs sm" style="color:var(--accent2)" onclick="openEditBreakdown('${s.id}')">内訳</button>
         <button class="btn bd sm" onclick="delSlaughterFull('${s.id}')">削除</button>
       </td>

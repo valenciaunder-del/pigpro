@@ -1573,11 +1573,12 @@ tbody td{padding:8px 10px;white-space:nowrap;}
                   <button class="btn bd sm" onclick="slhCloseDetail()">✕</button>
                 </div>
               </div>
+              <div id="slh-summary-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 16px;margin-bottom:12px;padding:10px;background:var(--surface);border-radius:6px"></div>
               <div id="slh-detail-body" style="overflow-x:auto">
                 <table class="tbl" style="font-size:12px;min-width:700px">
                   <thead><tr>
                     <th>枝番</th><th>性別</th><th>等級</th><th>枝重(kg)</th>
-                    <th>単価(円/kg)</th><th>金額(円)</th><th>備考</th>
+                    <th>単価(円/kg)</th><th>金額(円)</th><th>背脂肪</th><th>備考</th>
                   </tr></thead>
                   <tbody id="slh-detail-tb"></tbody>
                 </table>
@@ -10890,6 +10891,26 @@ async function slhToggleDetail(id, e) {
   if (s) {
     const titleEl = document.getElementById('slh-detail-title');
     if (titleEl) titleEl.textContent = `${fb(s.farm)} ${s.shipped_at||''} ${s.buyer||''} (${s.head_count||0}頭)`;
+    const sumEl = document.getElementById('slh-summary-body');
+    if (sumEl) {
+      const items = [
+        ['出荷頭数',`${s.head_count||'-'}頭`],
+        ['枝肉重量',`${s.total_carcass_kg?.toFixed(1)||'-'}kg`],
+        ['上物率',s.upper_rate?`${s.upper_rate}%`:'-'],
+        ['相場',s.market_price?`¥${s.market_price}/kg`:'-'],
+        ['枝肉金額',s.carcass_amount?fM(s.carcass_amount):'-'],
+        ['内臓代',s.internal_organ_sales?fM(s.internal_organ_sales):'-'],
+        ['原皮代',s.hide_amount?fM(s.hide_amount):'-'],
+        ['と畜経費',s.slaughter_fee?fM(-Math.abs(s.slaughter_fee)):'-'],
+        ['格付料',s.grading_fee?fM(-Math.abs(s.grading_fee)):'-'],
+        ['検査料',s.inspection_fee?fM(-Math.abs(s.inspection_fee)):'-'],
+        ['販売手数料',s.sales_fee?fM(-Math.abs(s.sales_fee)):'-'],
+        ['差引支払金額',s.total_amount?fM(s.total_amount):'-'],
+      ];
+      sumEl.innerHTML = items.map(([k,v])=>
+        `<div style="font-size:12px"><span style="color:var(--muted2)">${k}：</span><span style="color:var(--text);font-weight:500">${v}</span></div>`
+      ).join('');
+    }
     const shippedEl = document.getElementById('slh-edit-shipped');
     if (shippedEl) shippedEl.value = s.shipped_at || '';
     const payEl = document.getElementById('slh-edit-payment');
@@ -10915,17 +10936,19 @@ function slhRenderDetail(rows) {
   const tb = document.getElementById('slh-detail-tb');
   if (!tb) return;
   if (!rows || !rows.length) {
-    tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:12px">内訳データなし</td></tr>';
+    tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:12px">内訳データなし</td></tr>';
     return;
   }
+  const gc = {'上':'var(--accent)','中':'var(--accent2)','並':'var(--warn)','等外':'var(--danger)'};
   tb.innerHTML = rows.map(r => `<tr>
     <td class="mn">${r.carcass_no||'-'}</td>
     <td>${r.sex||'-'}</td>
-    <td>${r.grade||'-'}</td>
-    <td class="tr3">${r.carcass_kg!=null?r.carcass_kg.toFixed(2):'-'}</td>
-    <td class="tr3">${r.unit_price||'-'}</td>
+    <td style="color:${gc[r.grade]||'var(--text)'};font-weight:600">${r.grade||'-'}</td>
+    <td class="tr3">${r.carcass_weight!=null?r.carcass_weight.toFixed(1):'-'}kg</td>
+    <td class="tr3">${r.unit_price?'¥'+r.unit_price:'-'}</td>
     <td class="tr3">${r.amount!=null?fM(r.amount):'-'}</td>
-    <td style="color:var(--muted);font-size:11px">${r.note||''}</td>
+    <td class="tr3">${r.backfat_thickness||'-'}cm</td>
+    <td style="color:var(--muted);font-size:11px">${r.defect_reason||r.note||''}</td>
   </tr>`).join('');
 }
 

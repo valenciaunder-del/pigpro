@@ -1564,30 +1564,61 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   </div>
 </div>
 
-  <div id="slh-detail-row-wrap" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.88);backdrop-filter:blur(2px);overflow-y:auto;padding:20px" onclick="if(event.target===this)slhCloseDetail()">
-    <div id="slh-detail-panel" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;max-width:900px;margin:0 auto;padding:20px">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                <span id="slh-detail-title" style="font-weight:600;font-size:15px"></span>
-                <div style="display:flex;gap:8px;align-items:center">
-                  <label style="font-size:12px;color:var(--muted)">出荷日</label>
-                  <input type="date" id="slh-edit-shipped" class="fs" style="font-size:12px;padding:3px 8px">
-                  <label style="font-size:12px;color:var(--muted)">支払日</label>
-                  <input type="date" id="slh-edit-payment" class="fs" style="font-size:12px;padding:3px 8px">
-                  <button class="btn bs sm" onclick="slhUpdateDates()">保存</button>
-                  <button class="btn bd sm" onclick="slhCloseDetail()">✕</button>
-                </div>
-              </div>
-              <div id="slh-summary-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 16px;margin-bottom:12px;padding:10px;background:var(--surface);border-radius:6px"></div>
-              <div id="slh-detail-body" style="overflow-x:auto;max-height:50vh">
-                <table class="tbl" style="font-size:12px;min-width:700px">
-                  <thead><tr>
-                    <th>枝番</th><th>性別</th><th>等級</th><th>枝重(kg)</th>
-                    <th>単価(円/kg)</th><th>金額(円)</th><th>背脂肪</th><th>備考</th>
-                  </tr></thead>
-                  <tbody id="slh-detail-tb"></tbody>
-                </table>
-              </div>
-            </div>
+  <div id="slh-detail-row-wrap" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.88);overflow-y:auto;padding:20px" onclick="if(event.target===this)slhCloseDetail()">
+    <div id="slh-detail-panel" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;max-width:960px;margin:0 auto;padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <span id="slh-detail-title" style="font-weight:700;font-size:15px;color:var(--text)"></span>
+        <div style="display:flex;gap:8px">
+          <button class="btn bs sm" onclick="slhSaveAll()" style="background:var(--accent);color:#000;border-color:var(--accent);font-weight:600">✓ 保存</button>
+          <button class="btn bd sm" onclick="slhCloseDetail()">✕ 閉じる</button>
+        </div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">基本情報</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px">
+        <div><div class="fl">出荷日</div><input type="date" id="se-shipped_at" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">屠畜日</div><input type="date" id="se-slaughtered_at" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">支払日</div><input type="date" id="se-payment_date" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">出荷頭数</div><input type="number" id="se-head_count" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">枝肉重量合計(kg)</div><input type="number" step="0.1" id="se-total_carcass_kg" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">上物率(%)</div><input type="number" step="0.1" id="se-upper_rate" class="fi" style="font-size:12px;padding:4px 8px"></div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">仕切単価（円/kg）</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px">
+        <div><div class="fl">上</div><input type="number" id="se-market_price_jo" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">中</div><input type="number" id="se-market_price_chu" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">並</div><input type="number" id="se-market_price_nami" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">相場(代表値)</div><input type="number" id="se-market_price" class="fi" style="font-size:12px;padding:4px 8px"></div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">売上</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px">
+        <div><div class="fl">枝肉金額(税抜)</div><input type="number" id="se-carcass_amount" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">内臓代(税抜)</div><input type="number" id="se-internal_organ_sales" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">原皮代(税抜)</div><input type="number" id="se-hide_amount" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">消費税8%(枝肉・内臓)</div><input type="number" id="se-tax_carcass_organ" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">消費税10%(原皮)</div><input type="number" id="se-tax_hide" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">仕入金額</div><input type="number" id="se-total_amount" class="fi" style="font-size:12px;padding:4px 8px"></div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">控除</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px">
+        <div><div class="fl">屠畜経費(税込)</div><input type="number" id="se-slaughter_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">格付料経費(税込)</div><input type="number" id="se-grading_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">その他経費(税込)</div><input type="number" id="se-inspection_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">控除計(税込)</div><input type="number" id="se-deduction_total" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">内消費税額</div><input type="number" id="se-tax_deduction" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">差引支払金額</div><input type="number" id="se-net_payment" class="fi" style="font-size:12px;padding:4px 8px"></div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">頭別明細 <span id="slh-dp-detail-cnt" style="font-weight:400;color:var(--muted)"></span></div>
+      <div id="slh-detail-body" style="overflow-x:auto;max-height:45vh">
+        <table class="tbl" style="font-size:12px;min-width:700px">
+          <thead><tr>
+            <th>枝番</th><th>性別</th><th>等級</th><th>枝重(kg)</th>
+            <th>単価(円/kg)</th><th>金額(円)</th><th>背脂肪(cm)</th><th>備考</th>
+          </tr></thead>
+          <tbody id="slh-detail-tb"></tbody>
+        </table>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">※頭別明細の修正は削除→再取込で対応</div>
+    </div>
   </div>
 </div>
 
@@ -10884,44 +10915,43 @@ async function slhToggleDetail(id, e) {
   if (e) e.stopPropagation();
   if (SLH_OPEN_ID === id) { slhCloseDetail(); return; }
   SLH_OPEN_ID = id;
-  rSlHistory();
   const panel = document.getElementById('slh-detail-row-wrap');
   if (panel) { panel.style.display = ''; document.body.style.overflow = 'hidden'; }
   const s = (DATA.slaughter||[]).find(x => x.id === id);
-  if (s) {
-    const titleEl = document.getElementById('slh-detail-title');
-    if (titleEl) titleEl.innerHTML = `${fb(s.farm)} ${s.shipped_at||''} ${s.buyer||''} (${s.head_count||0}頭)`;
-    const sumEl = document.getElementById('slh-summary-body');
-    if (sumEl) {
-      const items = [
-        ['出荷頭数',`${s.head_count||'-'}頭`],
-        ['枝肉重量',`${s.total_carcass_kg?.toFixed(1)||'-'}kg`],
-        ['上物率',s.upper_rate?`${s.upper_rate}%`:'-'],
-        ['相場',s.market_price?`¥${s.market_price}/kg`:'-'],
-        ['枝肉金額',s.carcass_amount?fM(s.carcass_amount):'-'],
-        ['内臓代',s.internal_organ_sales?fM(s.internal_organ_sales):'-'],
-        ['原皮代',s.hide_amount?fM(s.hide_amount):'-'],
-        ['と畜経費',s.slaughter_fee?fM(-Math.abs(s.slaughter_fee)):'-'],
-        ['格付料',s.grading_fee?fM(-Math.abs(s.grading_fee)):'-'],
-        ['検査料',s.inspection_fee?fM(-Math.abs(s.inspection_fee)):'-'],
-        ['販売手数料',s.sales_fee?fM(-Math.abs(s.sales_fee)):'-'],
-        ['差引支払金額',s.total_amount?fM(s.total_amount):'-'],
-      ];
-      sumEl.innerHTML = items.map(([k,v])=>
-        `<div style="font-size:12px"><span style="color:var(--muted2)">${k}：</span><span style="color:var(--text);font-weight:500">${v}</span></div>`
-      ).join('');
-    }
-    const shippedEl = document.getElementById('slh-edit-shipped');
-    if (shippedEl) shippedEl.value = s.shipped_at || '';
-    const payEl = document.getElementById('slh-edit-payment');
-    if (payEl) payEl.value = s.payment_date || '';
-    document.getElementById('slh-detail-tb').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:12px">読み込み中...</td></tr>';
-    try {
-      const rows = await api.getSlaughterDetailById(id);
-      slhRenderDetail(rows);
-    } catch(err) {
-      document.getElementById('slh-detail-tb').innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--danger)">読み込みエラー</td></tr>';
-    }
+  if (!s) return;
+  const titleEl = document.getElementById('slh-detail-title');
+  if (titleEl) titleEl.innerHTML = `${fb(s.farm)} ${s.shipped_at||''} ${s.buyer||''} (${s.head_count||0}頭)`;
+  const sv = (id, v) => { const el = document.getElementById(id); if(el) el.value = v??''; };
+  sv('se-shipped_at', s.shipped_at||'');
+  sv('se-slaughtered_at', s.slaughtered_at||s.shipped_at||'');
+  sv('se-payment_date', s.payment_date||'');
+  sv('se-head_count', s.head_count||'');
+  sv('se-total_carcass_kg', s.total_carcass_kg||'');
+  sv('se-upper_rate', s.upper_rate||'');
+  sv('se-market_price_jo', s.market_price_jo||'');
+  sv('se-market_price_chu', s.market_price_chu||'');
+  sv('se-market_price_nami', s.market_price_nami||'');
+  sv('se-market_price', s.market_price||'');
+  sv('se-carcass_amount', s.carcass_amount||'');
+  sv('se-internal_organ_sales', s.internal_organ_sales||'');
+  sv('se-hide_amount', s.hide_amount||'');
+  sv('se-tax_carcass_organ', s.tax_carcass_organ||'');
+  sv('se-tax_hide', s.tax_hide||'');
+  sv('se-total_amount', s.total_amount||'');
+  sv('se-slaughter_fee', s.slaughter_fee||'');
+  sv('se-grading_fee', s.grading_fee||'');
+  sv('se-inspection_fee', s.inspection_fee||'');
+  sv('se-deduction_total', s.deduction_total||'');
+  sv('se-tax_deduction', s.tax_deduction||'');
+  sv('se-net_payment', s.net_payment||s.total_amount||'');
+  const cntEl = document.getElementById('slh-dp-detail-cnt');
+  document.getElementById('slh-detail-tb').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:12px">読み込み中...</td></tr>';
+  try {
+    const rows = await api.getSlaughterDetailById(id);
+    if(cntEl) cntEl.textContent = rows?.length ? rows.length+'頭' : '';
+    slhRenderDetail(rows);
+  } catch(err) {
+    document.getElementById('slh-detail-tb').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--danger)">読み込みエラー</td></tr>';
   }
 }
 
@@ -10930,6 +10960,47 @@ function slhCloseDetail() {
   const panel = document.getElementById('slh-detail-row-wrap');
   if (panel) panel.style.display = 'none';
   document.body.style.overflow = '';
+}
+
+async function slhSaveAll() {
+  if (!SLH_OPEN_ID) return;
+  const gV = (id) => document.getElementById(id)?.value||null;
+  const gN = (id) => { const v=document.getElementById(id)?.value; return v===''||v==null?null:Number(v); };
+  const gF = (id) => { const v=document.getElementById(id)?.value; return v===''||v==null?null:parseFloat(v); };
+  const data = {
+    shipped_at: gV('se-shipped_at')||null,
+    slaughtered_at: gV('se-slaughtered_at')||null,
+    payment_date: gV('se-payment_date')||null,
+    head_count: gN('se-head_count'),
+    total_carcass_kg: gF('se-total_carcass_kg'),
+    upper_rate: gF('se-upper_rate'),
+    market_price: gN('se-market_price'),
+    market_price_jo: gN('se-market_price_jo'),
+    market_price_chu: gN('se-market_price_chu'),
+    market_price_nami: gN('se-market_price_nami'),
+    carcass_amount: gN('se-carcass_amount'),
+    internal_organ_sales: gN('se-internal_organ_sales'),
+    hide_amount: gN('se-hide_amount'),
+    tax_carcass_organ: gN('se-tax_carcass_organ'),
+    tax_hide: gN('se-tax_hide'),
+    total_amount: gN('se-total_amount'),
+    slaughter_fee: gN('se-slaughter_fee'),
+    grading_fee: gN('se-grading_fee'),
+    inspection_fee: gN('se-inspection_fee'),
+    deduction_total: gN('se-deduction_total'),
+    tax_deduction: gN('se-tax_deduction'),
+    net_payment: gN('se-net_payment'),
+  };
+  if (!data.shipped_at) { notif('出荷日は必須です','r'); return; }
+  showLoading('保存中...');
+  try {
+    await api.updateSlaughter(SLH_OPEN_ID, data);
+    DATA.slaughter = await api.getSlaughter();
+    notif('保存しました','g');
+    slhCloseDetail();
+    rSlHistory();
+  } catch(e) { notif('保存エラー: '+(e.message||e),'r'); }
+  finally { hideLoading(); }
 }
 
 function slhRenderDetail(rows) {

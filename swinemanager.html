@@ -1559,9 +1559,13 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           </tr>
         </thead>
         <tbody id="slh-tb"></tbody>
-        <tbody id="slh-detail-row-wrap" style="display:none">
-          <tr><td colspan="14" style="padding:0">
-            <div id="slh-detail-panel" style="background:var(--surface2);border-top:2px solid var(--accent);padding:16px 20px">
+      </table>
+    </div>
+  </div>
+</div>
+
+  <div id="slh-detail-row-wrap" style="display:none;margin-top:12px">
+    <div id="slh-detail-panel" style="background:var(--surface2);border-top:2px solid var(--accent);padding:16px 20px">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
                 <span id="slh-detail-title" style="font-weight:600;font-size:15px"></span>
                 <div style="display:flex;gap:8px;align-items:center">
@@ -1584,10 +1588,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
                 </table>
               </div>
             </div>
-          </td></tr>
-        </tbody>
-      </table>
-    </div>
   </div>
 </div>
 
@@ -10890,7 +10890,7 @@ async function slhToggleDetail(id, e) {
   const s = (DATA.slaughter||[]).find(x => x.id === id);
   if (s) {
     const titleEl = document.getElementById('slh-detail-title');
-    if (titleEl) titleEl.textContent = `${fb(s.farm)} ${s.shipped_at||''} ${s.buyer||''} (${s.head_count||0}頭)`;
+    if (titleEl) titleEl.innerHTML = `${fb(s.farm)} ${s.shipped_at||''} ${s.buyer||''} (${s.head_count||0}頭)`;
     const sumEl = document.getElementById('slh-summary-body');
     if (sumEl) {
       const items = [

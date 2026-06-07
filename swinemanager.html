@@ -10854,7 +10854,7 @@ async function saveSlaughter() {
     x.farm === s.farm &&
     x.shipped_at === s.shipped_at &&
     x.buyer === s.buyer &&
-    newFirst !== null && x.first_carcass_no === newFirst
+    newFirst !== null && Number(x.first_carcass_no) === Number(newFirst)
   );
   if(sameSheet) {
     // 同一仕切書の再取込 → 自動上書き

@@ -9805,6 +9805,9 @@ async function processOtasanXls(file, suppressLoading=false) {
         if(labelF.includes('差引支払') && colJ != null) {
           detectedNetAmount = Math.round(colJ);
         }
+        if(labelA.includes('差引支払') && colE != null) {
+          detectedNetAmount = Math.round(colE);
+        }
       }
     }
 
@@ -10047,7 +10050,8 @@ function mergeOtasanData() {
       tax_hide: fees.taxHide || 0,
       tax_organ_disposal: fees.taxOrganDisposal || 0,
       tax_deduction: fees.taxDeduct || 0,
-      deduction_total: (()=>{const ds=(fees.slaughterFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0);return ds+(fees.organDisposal||0)+(fees.taxOrganDisposal||0)+(fees.taxDeduct||0);})(),
+      deduction_subtotal: (fees.slaughterFee||0)+(fees.storageFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0)+(fees.organDisposal||0),
+      deduction_total: (()=>{const ds=(fees.slaughterFee||0)+(fees.storageFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0);return ds+(fees.organDisposal||0)+(fees.taxOrganDisposal||0)+(fees.taxDeduct||0);})(),
       total_amount: finalTotal,
       net_payment: (()=>{const c=totalAmount,o=fees.internalOrgan||0,h=fees.hideAmount||0,t8=Math.round((c+o)*0.08),th=fees.taxHide||0,ds=(fees.slaughterFee||0)+(fees.storageFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0),od=fees.organDisposal||0,tod=fees.taxOrganDisposal||0,td=fees.taxDeduct||0;return c+o+h+t8+th-ds-od-tod-td;})(),
       market_price: marketPrice, price_per_kg: marketPrice,

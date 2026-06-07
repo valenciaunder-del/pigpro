@@ -9649,6 +9649,7 @@ async function processOtasanXls(file, suppressLoading=false) {
 
     const allRows = [];
     let detectedSlaughteredAt = null; // と畜日（屠畜日）
+    let detectedPaymentAt = null; // 支払日
     let detectedFarm = document.getElementById('ota-farm')?.value || 'farm1';
 
     for(const sheetName of wb.SheetNames) {
@@ -9685,6 +9686,16 @@ async function processOtasanXls(file, suppressLoading=false) {
             const m = normalized.match(/令和\s*(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/);
             if(m) detectedSlaughteredAt = `${2018+parseInt(m[1])}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
           }
+        }
+        if(rowStr.includes('支払日') && !detectedPaymentAt) {
+          for(const v of row) {
+            if(v instanceof Date && !isNaN(v)) {
+              const y=v.getFullYear(),mo=v.getMonth()+1,d=v.getDate();
+              if(y>=2020&&y<=2030){detectedPaymentAt=`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;break;}
+            }
+          }
+          if(!detectedPaymentAt){const mIso=rowStr.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);if(mIso&&parseInt(mIso[1])>=2020)detectedPaymentAt=`${mIso[1]}-${String(parseInt(mIso[2])).padStart(2,'0')}-${String(parseInt(mIso[3])).padStart(2,'0')}`;}
+          if(!detectedPaymentAt){const norm=rowStr.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));const m=norm.match(/令和\s*(\d+)\s*年\s*(\d+)\s*月\s*(\d+)\s*日/);if(m)detectedPaymentAt=`${2018+parseInt(m[1])}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;}
         }
         const kw1 = document.getElementById('sl-map1')?.value || '中田';
         const kw2 = document.getElementById('sl-map2')?.value || '米谷';
@@ -9806,6 +9817,7 @@ async function processOtasanXls(file, suppressLoading=false) {
     const calcTaxDeduct = deductBase > 0 ? Math.round(deductBase * 0.1) : null;
     window._otasanFees = {
       netAmount: detectedNetAmount,
+      paymentAt: detectedPaymentAt,
       slaughterFee: mergedSlaughterFee,
       salesFee: detectedSalesFee,
       inspFee: detectedInspFee,
@@ -10036,7 +10048,7 @@ function mergeOtasanData() {
       net_payment: (()=>{const c=totalAmount,o=fees.internalOrgan||0,h=fees.hideAmount||0,t8=Math.round((c+o)*0.08),th=fees.taxHide||0,ds=(fees.slaughterFee||0)+(fees.storageFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0),od=fees.organDisposal||0,tod=fees.taxOrganDisposal||0,td=fees.taxDeduct||0;return c+o+h+t8+th-ds-od-tod-td;})(),
       market_price: marketPrice, price_per_kg: marketPrice,
       upper_count: upperCount, upper_rate: upperRate,
-      payment_date: null, raw_text: null,
+      payment_date: fees.paymentAt || null, raw_text: null,
     },
     details,
     lotBreakdown: [],
@@ -10376,7 +10388,6 @@ function updateSlSummary() {
   s.deduction_total = dedTotal;
   const calcNet   = salesTotal - dedTotal;
   s.net_payment   = calcNet;
-  s.total_amount  = calcNet;
   const avgWt     = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
   const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
   setText('sl-r-tax-co',      tax8       ? fM(tax8)       : '-');
@@ -10388,7 +10399,6 @@ function updateSlSummary() {
   setText('sl-r-tax-ded',     taxDed10   ? fM(taxDed10)   : '-');
   setText('sl-r-ded-total',   dedTotal   ? fM(dedTotal)   : '-');
   setText('sl-r-total-calc',  calcNet    ? fM(calcNet)    : '-');
-  if(document.getElementById('sl-r-total')) document.getElementById('sl-r-total').value = calcNet || 0;
   setText('sl-r-avg-wt',      avgWt      ? avgWt + 'kg'   : '-');
   const enteredNet = parseFloat(document.getElementById('sl-r-total')?.value) || 0;
   const netWarn = document.getElementById('sl-net-warn');
@@ -11305,7 +11315,7 @@ function rSlHistory() {
       <td class="tr3 mn">${s.total_carcass_kg?.toFixed(1)||'-'}kg</td>
       <td class="tr3 mn ng">${s.upper_rate||'-'}%</td>
       <td class="tr3 mn">&yen;${s.market_price||'-'}/kg</td>
-      <td class="tr3 mn ng" style="font-weight:600">${(s.total_amount||s.net_payment)?fM(s.total_amount||s.net_payment):'-'}</td>
+      <td class="tr3 mn ng" style="font-weight:600">${s.total_amount?fM(s.total_amount):'-'}</td>
       <td style="color:var(--muted2);font-size:12px">${s.payment_date||'-'}</td>
       <td style="font-size:12px">${s.slaughterhouse||'-'}</td>
       <td style="font-size:12px">${s.buyer||'-'}</td>

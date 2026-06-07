@@ -9793,8 +9793,8 @@ async function processOtasanXls(file, suppressLoading=false) {
       }
     }
 
-    // 屠畜経費 = と畜料(並貫+並病) + 保管料
-    const mergedSlaughterFee = (detectedSlaughterFee||0) + (detectedStorageFee||0) || null;
+    // 屠畜経費 = と畜料のみ（保管料は storage_fee で別管理）
+    const mergedSlaughterFee = detectedSlaughterFee || null;
     // 内臓代はそのまま（内臓廃棄は控除側で別管理）
     const mergedInternalOrgan = detectedInternalOrgan;
     // 消費税10%（原皮）

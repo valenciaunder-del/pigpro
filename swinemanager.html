@@ -1415,27 +1415,27 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div>
             <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:4px;margin-top:2px">【売上】</div>
             <div class="sr"><span class="sl">枝肉金額（税抜）</span><input class="fi" type="number" id="sl-r-camt" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">原皮金額</span><input class="fi" type="number" id="sl-r-hide" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">内臓金額</span><input class="fi" type="number" id="sl-r-org" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">消費税_枝肉・内臓(8%)</span><span class="sv mn" id="sl-r-tax-co">-</span></div>
-            <div class="sr"><span class="sl">消費税_原皮・控除(10%)</span><span class="sv mn" id="sl-r-tax-hide">-</span></div>
-            <div class="sr" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span class="sl">売上小計</span><span class="sv mn" id="sl-r-sales-sub">-</span></div>
-            <div class="sr"><span class="sl" style="font-weight:700">売上総合計</span><span class="sv ng mn" style="font-weight:700" id="sl-r-sales-total">-</span></div>
+            <div class="sr"><span class="sl">内臓金額（税抜）</span><input class="fi" type="number" id="sl-r-org" style="width:120px" onchange="updateSlSummary()"></div>
+            <div class="sr"><span class="sl">原皮金額（税抜）</span><input class="fi" type="number" id="sl-r-hide" style="width:120px" onchange="updateSlSummary()"></div>
+            <div class="sr" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span class="sl">売上小計（税抜）</span><span class="sv mn" id="sl-r-sales-sub">-</span></div>
+            <div class="sr"><span class="sl">消費税8%（枝肉・内臓）</span><span class="sv mn" id="sl-r-tax-co">-</span></div>
+            <div class="sr"><span class="sl">消費税10%（原皮）</span><span class="sv mn" id="sl-r-tax-hide">-</span></div>
+            <div class="sr"><span class="sl" style="font-weight:700">売上合計</span><span class="sv ng mn" style="font-weight:700" id="sl-r-sales-total">-</span></div>
             <div style="font-size:11px;font-weight:700;color:var(--danger);margin-bottom:4px;margin-top:8px">【控除】</div>
             <div class="sr"><span class="sl">と畜料_並貫</span><input class="fi" type="number" id="sl-r-sfee" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">と畜料_並病</span><span class="sv nb mn" id="sl-r-sfee2">-</span></div>
+            <div class="sr"><span class="sl">と畜料_並病</span><input class="fi" type="number" id="sl-r-sfee2" style="width:120px" onchange="updateSlSummary()"></div>
             <div class="sr"><span class="sl">格付料</span><input class="fi" type="number" id="sl-r-grading" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">内臓廃棄</span><span class="sv nb mn" id="sl-r-organ-disp">-</span></div>
+            <div class="sr"><span class="sl">内臓廃棄（税抜）</span><input class="fi" type="number" id="sl-r-organ-disp" style="width:120px" onchange="updateSlSummary()"></div>
             <div class="sr"><span class="sl">焼却料</span><span class="sv nb mn" id="sl-r-incin">-</span></div>
             <div class="sr"><span class="sl">検査料（非課税）</span><span class="sv nb mn" id="sl-r-ifee">-</span></div>
-            <div class="sr"><span class="sl">保管料</span><span class="sv nb mn" id="sl-r-storage">-</span></div>
+            <div class="sr"><span class="sl">保管料</span><input class="fi" type="number" id="sl-r-storage" style="width:120px" onchange="updateSlSummary()"></div>
             <div class="sr"><span class="sl">販売手数料</span><input class="fi" type="number" id="sl-r-cfee" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span class="sl">控除小計</span><span class="sv nb mn" id="sl-r-ded-sub">-</span></div>
-            <div class="sr"><span class="sl">内臓廃棄消費税(8%)</span><span class="sv nb mn" id="sl-r-tax-organ">-</span></div>
-            <div class="sr"><span class="sl">控除額消費税(10%)</span><span class="sv nb mn" id="sl-r-tax-ded">-</span></div>
-            <div class="sr"><span class="sl" style="font-weight:700">控除総合計</span><span class="sv nb mn" style="font-weight:700" id="sl-r-ded-total">-</span></div>
+            <div class="sr" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span class="sl">控除小計（税抜）</span><span class="sv nb mn" id="sl-r-ded-sub">-</span></div>
+            <div class="sr"><span class="sl">消費税8%（内臓廃棄）</span><span class="sv nb mn" id="sl-r-tax-organ">-</span></div>
+            <div class="sr"><span class="sl">消費税10%（控除）</span><span class="sv nb mn" id="sl-r-tax-ded">-</span></div>
+            <div class="sr"><span class="sl" style="font-weight:700">控除合計</span><span class="sv nb mn" style="font-weight:700" id="sl-r-ded-total">-</span></div>
             <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:6px">
-              <div class="sr"><span class="sl" style="font-weight:700;color:var(--text)">差引支払金額</span><input class="fi" type="number" id="sl-r-total" style="width:120px;font-size:16px;font-weight:700" onchange="updateSlSummary()"></div>
+              <div class="sr"><span class="sl" style="font-weight:700;color:var(--text)">差引支払金額</span><span class="sv ng mn" style="font-size:16px;font-weight:700" id="sl-r-total-calc">-</span></div>
               <div id="sl-net-warn" style="display:none;font-size:11px;color:var(--warn);padding:4px 0"></div>
             </div>
             <div class="sr" style="margin-top:6px"><span class="sl">支払日</span><span class="sv mn" id="sl-r-pay">-</span></div>
@@ -10308,17 +10308,17 @@ function renderSlPreview(data) {
   if(document.getElementById('sl-r-tax-hide'))   document.getElementById('sl-r-tax-hide').textContent   = s.tax_hide ? fM(s.tax_hide) : '-';
   // 控除
   document.getElementById('sl-r-sfee').value          = s.slaughter_fee || 0;
-  if(document.getElementById('sl-r-sfee2'))      document.getElementById('sl-r-sfee2').textContent      = s.slaughter_fee_disease ? fM(s.slaughter_fee_disease) : '-';
+  if(document.getElementById('sl-r-sfee2'))      document.getElementById('sl-r-sfee2').value            = s.slaughter_fee_disease || 0;
   document.getElementById('sl-r-grading').value       = s.grading_fee || 0;
-  if(document.getElementById('sl-r-organ-disp')) document.getElementById('sl-r-organ-disp').textContent = s.organ_disposal_fee ? fM(s.organ_disposal_fee) : '-';
+  if(document.getElementById('sl-r-organ-disp')) document.getElementById('sl-r-organ-disp').value       = s.organ_disposal_fee || 0;
   if(document.getElementById('sl-r-incin'))      document.getElementById('sl-r-incin').textContent      = s.incineration_fee ? fM(s.incineration_fee) : '-';
   document.getElementById('sl-r-ifee').textContent    = s.inspection_fee ? fM(s.inspection_fee) : '-';
-  if(document.getElementById('sl-r-storage'))    document.getElementById('sl-r-storage').textContent    = s.storage_fee ? fM(s.storage_fee) : '-';
+  if(document.getElementById('sl-r-storage'))    document.getElementById('sl-r-storage').value          = s.storage_fee || 0;
   document.getElementById('sl-r-cfee').value          = s.sales_fee || 0;
   if(document.getElementById('sl-r-tax-organ'))  document.getElementById('sl-r-tax-organ').textContent  = s.tax_organ_disposal ? fM(s.tax_organ_disposal) : '-';
   if(document.getElementById('sl-r-tax-ded'))    document.getElementById('sl-r-tax-ded').textContent    = s.tax_deduction ? fM(s.tax_deduction) : '-';
   // 合計
-  document.getElementById('sl-r-total').value         = s.total_amount || 0;
+  if(document.getElementById('sl-r-total')) document.getElementById('sl-r-total').value = s.total_amount || 0;
   document.getElementById('sl-r-pay').textContent        = s.payment_date||'-';
   // 計算値の表示（要素があれば）
   if(document.getElementById('sl-r-upper-mid')) document.getElementById('sl-r-upper-mid').textContent = s.upper_mid_rate ? `${s.upper_mid_rate}% (${s.upper_mid_count}頭)` : '-';
@@ -10337,15 +10337,18 @@ function updateSlSummary() {
   const s = window.SL_DATA.sheet;
   const getVal = id => parseFloat(document.getElementById(id)?.value) || 0;
 
-  s.carcass_amount       = getVal('sl-r-camt');
-  s.hide_amount          = getVal('sl-r-hide');
-  s.internal_organ_sales = getVal('sl-r-org');
-  s.slaughter_fee        = getVal('sl-r-sfee');
-  s.grading_fee          = getVal('sl-r-grading');
-  s.sales_fee            = getVal('sl-r-cfee');
-  s.total_amount         = getVal('sl-r-total');
-  s.head_count           = getVal('sl-r-cnt');
-  s.total_carcass_kg     = getVal('sl-r-wt');
+  s.carcass_amount         = getVal('sl-r-camt');
+  s.hide_amount            = getVal('sl-r-hide');
+  s.internal_organ_sales   = getVal('sl-r-org');
+  s.slaughter_fee          = getVal('sl-r-sfee');
+  s.slaughter_fee_disease  = getVal('sl-r-sfee2');
+  s.grading_fee            = getVal('sl-r-grading');
+  s.organ_disposal_fee     = getVal('sl-r-organ-disp');
+  s.storage_fee            = getVal('sl-r-storage');
+  s.sales_fee              = getVal('sl-r-cfee');
+  s.total_amount           = getVal('sl-r-total');
+  s.head_count             = getVal('sl-r-cnt');
+  s.total_carcass_kg       = getVal('sl-r-wt');
 
   const tax8        = s.tax_carcass_organ || 0;
   const taxHide     = s.tax_hide || 0;

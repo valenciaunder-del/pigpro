@@ -282,6 +282,14 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div id="lb-yield-info" style="font-size:12px;color:var(--muted2)"></div>
     </div>
 
+    <!-- 豚舎 -->
+    <div id="lb-barn-wrap" style="margin-bottom:14px;display:none">
+      <div style="font-size:12px;font-weight:600;color:var(--muted2);margin-bottom:6px">豚舎</div>
+      <div id="lb-barn-auto" style="display:none;font-size:13px;padding:6px 10px;background:var(--panel2);border-radius:6px;color:var(--accent2)"></div>
+      <select id="lb-barn-select" class="fs" style="display:none;width:100%">
+        <option value="">選択してください</option>
+      </select>
+    </div>
     <!-- ロット内訳 -->
     <div style="font-size:12px;font-weight:600;color:var(--muted2);margin-bottom:8px">ロット別出荷頭数</div>
     <div id="lb-lot-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
@@ -10694,6 +10702,36 @@ function openLotBreakdown() {
 
   document.getElementById('lb-total-display').textContent = `0 / ${soldCount} 頭`;
   document.getElementById('lb-error').style.display = 'none';
+
+  // 豚舎自動判定
+  const barnWrap = document.getElementById('lb-barn-wrap');
+  const barnAuto = document.getElementById('lb-barn-auto');
+  const barnSelect = document.getElementById('lb-barn-select');
+  if(activeLots.length > 0) {
+    const barns = [...new Set(activeLots.map(l => l.barn).filter(Boolean))];
+    barnWrap.style.display = '';
+    if(barns.length === 1) {
+      barnAuto.textContent = `🏠 ${barns[0]}（自動）`;
+      barnAuto.style.display = '';
+      barnSelect.style.display = 'none';
+      SL_DATA.sheet.barn = barns[0];
+    } else if(barns.length > 1) {
+      barnAuto.style.display = 'none';
+      barnSelect.innerHTML = '<option value="">選択してください</option>' +
+        barns.map(b => `<option value="${b}">${b}</option>`).join('') +
+        '<option value="混合">混合（複数豚舎）</option>';
+      barnSelect.value = SL_DATA.sheet.barn || '';
+      barnSelect.style.display = '';
+      barnSelect.onchange = () => { SL_DATA.sheet.barn = barnSelect.value || null; };
+      SL_DATA.sheet.barn = null;
+    } else {
+      barnWrap.style.display = 'none';
+      SL_DATA.sheet.barn = null;
+    }
+  } else {
+    barnWrap.style.display = 'none';
+  }
+
   document.getElementById('lot-breakdown-modal').style.display = 'flex';
 }
 
@@ -10861,6 +10899,7 @@ async function saveSlaughter() {
       total_amount: ri(s.total_amount || s.net_payment),
       net_payment: ri(s.net_payment || s.total_amount),
       payment_date: s.payment_date,
+      barn: s.barn || null,
       price_per_kg: ri(s.price_per_kg),
       upper_count: ri(s.upper_count),
       upper_rate: s.upper_rate,

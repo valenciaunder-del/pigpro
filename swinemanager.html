@@ -10376,6 +10376,7 @@ function updateSlSummary() {
   s.deduction_total = dedTotal;
   const calcNet   = salesTotal - dedTotal;
   s.net_payment   = calcNet;
+  s.total_amount  = calcNet;
   const avgWt     = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
   const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
   setText('sl-r-tax-co',      tax8       ? fM(tax8)       : '-');
@@ -10387,6 +10388,7 @@ function updateSlSummary() {
   setText('sl-r-tax-ded',     taxDed10   ? fM(taxDed10)   : '-');
   setText('sl-r-ded-total',   dedTotal   ? fM(dedTotal)   : '-');
   setText('sl-r-total-calc',  calcNet    ? fM(calcNet)    : '-');
+  if(document.getElementById('sl-r-total')) document.getElementById('sl-r-total').value = calcNet || 0;
   setText('sl-r-avg-wt',      avgWt      ? avgWt + 'kg'   : '-');
   const enteredNet = parseFloat(document.getElementById('sl-r-total')?.value) || 0;
   const netWarn = document.getElementById('sl-net-warn');
@@ -11303,7 +11305,7 @@ function rSlHistory() {
       <td class="tr3 mn">${s.total_carcass_kg?.toFixed(1)||'-'}kg</td>
       <td class="tr3 mn ng">${s.upper_rate||'-'}%</td>
       <td class="tr3 mn">&yen;${s.market_price||'-'}/kg</td>
-      <td class="tr3 mn ng" style="font-weight:600">${s.total_amount?fM(s.total_amount):'-'}</td>
+      <td class="tr3 mn ng" style="font-weight:600">${(s.total_amount||s.net_payment)?fM(s.total_amount||s.net_payment):'-'}</td>
       <td style="color:var(--muted2);font-size:12px">${s.payment_date||'-'}</td>
       <td style="font-size:12px">${s.slaughterhouse||'-'}</td>
       <td style="font-size:12px">${s.buyer||'-'}</td>

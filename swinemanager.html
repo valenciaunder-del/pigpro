@@ -10397,7 +10397,7 @@ function updateSlSummary() {
   s.deduction_total = dedTotal;
   const calcNet   = salesTotal - dedTotal;
   s.net_payment   = calcNet;
-  s.total_amount  = calcNet;
+  s.total_amount  = calcNet || (window._otasanFees?.netAmount) || s.total_amount || 0;
   const avgWt     = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
   const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
   setText('sl-r-tax-co',      tax8       ? fM(tax8)       : '-');
@@ -10857,7 +10857,7 @@ async function saveSlaughter() {
       tax_deduction: ri(s.tax_deduction),
       deduction_total: ri(s.deduction_total),
       // 合計
-      total_amount: ri(s.total_amount),
+      total_amount: ri(s.total_amount || s.net_payment),
       net_payment: ri(s.net_payment || s.total_amount),
       payment_date: s.payment_date,
       price_per_kg: ri(s.price_per_kg),

@@ -1436,6 +1436,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <div class="sr"><span class="sl" style="font-weight:700">控除総合計</span><span class="sv nb mn" style="font-weight:700" id="sl-r-ded-total">-</span></div>
             <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:6px">
               <div class="sr"><span class="sl" style="font-weight:700;color:var(--text)">差引支払金額</span><input class="fi" type="number" id="sl-r-total" style="width:120px;font-size:16px;font-weight:700" onchange="updateSlSummary()"></div>
+              <div id="sl-net-warn" style="display:none;font-size:11px;color:var(--warn);padding:4px 0"></div>
             </div>
             <div class="sr" style="margin-top:6px"><span class="sl">支払日</span><span class="sv mn" id="sl-r-pay">-</span></div>
           </div>
@@ -9775,11 +9776,12 @@ async function processOtasanXls(file, suppressLoading=false) {
           detectedDeductTotal = colE;
         }
 
-        // 右ブロック（F列ラベル → J列金額、小数→round）
-        if(labelF.includes('内臓廃棄') && colJ != null) {
-          detectedOrganDisposal = Math.round(Math.abs(colJ));
+        if(labelA.includes('内臓廃棄') && colE != null && colE > 0) {
+          detectedOrganDisposal = colE;
         }
-        if(labelF.includes('内臓料金') && !labelF.includes('廃棄') && colJ != null) {
+
+        // 右ブロック（F列ラベル → J列金額、小数→round）
+        if(labelF.includes('内臓料金') && colJ != null) {
           detectedInternalOrgan = Math.round(colJ);
         }
         if(labelF.includes('原皮') && colJ != null && colJ > 0) {
@@ -10344,16 +10346,30 @@ function updateSlSummary() {
   s.head_count           = getVal('sl-r-cnt');
   s.total_carcass_kg     = getVal('sl-r-wt');
 
-  const salesSub = s.carcass_amount + (s.hide_amount || 0) + (s.internal_organ_sales || 0);
-  const dedSub   = (s.slaughter_fee || 0) + (s.grading_fee || 0) + (s.sales_fee || 0);
-  const avgWt    = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
+  const tax8        = s.tax_carcass_organ || 0;
+  const taxHide     = s.tax_hide || 0;
+  const salesSub    = s.carcass_amount + (s.hide_amount||0) + (s.internal_organ_sales||0);
+  const salesTotal  = salesSub + tax8 + taxHide;
+  const dedSub      = (s.slaughter_fee||0)+(s.grading_fee||0)+(s.incineration_fee||0)+(s.inspection_fee||0)+(s.sales_fee||0)+(s.organ_disposal_fee||0);
+  const taxOrganDisp = s.tax_organ_disposal || 0;
+  const taxDeduct   = s.tax_deduction || 0;
+  const dedTotal    = dedSub + taxOrganDisp + taxDeduct;
+  const calcNet     = salesTotal - dedTotal;
+  const avgWt       = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
 
   const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
-  setText('sl-r-sales-sub',   salesSub ? fM(salesSub) : '-');
-  setText('sl-r-sales-total', salesSub ? fM(salesSub) : '-');
-  setText('sl-r-ded-sub',     dedSub   ? fM(dedSub)   : '-');
-  setText('sl-r-ded-total',   dedSub   ? fM(dedSub)   : '-');
-  setText('sl-r-avg-wt',      avgWt    ? avgWt + 'kg' : '-');
+  setText('sl-r-sales-sub',   salesSub   ? fM(salesSub)   : '-');
+  setText('sl-r-sales-total', salesTotal ? fM(salesTotal) : '-');
+  setText('sl-r-ded-sub',     dedSub     ? fM(dedSub)     : '-');
+  setText('sl-r-ded-total',   dedTotal   ? fM(dedTotal)   : '-');
+  setText('sl-r-avg-wt',      avgWt      ? avgWt + 'kg'   : '-');
+  const netEl = document.getElementById('sl-r-total');
+  const enteredNet = parseFloat(netEl?.value) || 0;
+  const netWarn = document.getElementById('sl-net-warn');
+  if(netWarn && enteredNet > 0 && calcNet > 0 && Math.abs(calcNet - enteredNet) > 1) {
+    netWarn.textContent = `⚠️ 確かめ算: 売上${fM(salesTotal)} - 控除${fM(dedTotal)} = ${fM(calcNet)} (差額: ${fM(Math.abs(calcNet-enteredNet))})`;
+    netWarn.style.display = '';
+  } else if(netWarn) { netWarn.style.display = 'none'; }
 
   // 確かめ算：明細合計 vs サマリ枝肉重量
   const warn = document.getElementById('sl-weight-warn');

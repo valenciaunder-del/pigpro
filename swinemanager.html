@@ -10845,13 +10845,20 @@ async function saveSlaughter() {
     return;
   }
 
-  // 同一仕切書チェック（farm + shipped_at + buyer で判定 → DB の on_conflict キーと一致）
+  // 同一仕切書チェック：first_carcass_no が一致するものを上書き対象とする
+  // （同日同バイヤーでも枝番が違えば保留分などの別シートとして追加）
+  const newFirst = SL_DATA.details?.length
+    ? Math.min(...SL_DATA.details.map(d=>d.carcass_no).filter(n=>n>0))
+    : null;
   const sameSheet = DATA.slaughter.find(x =>
-    x.farm === s.farm && x.shipped_at === s.shipped_at && x.buyer === s.buyer
+    x.farm === s.farm &&
+    x.shipped_at === s.shipped_at &&
+    x.buyer === s.buyer &&
+    newFirst !== null && x.first_carcass_no === newFirst
   );
   if(sameSheet) {
     // 同一仕切書の再取込 → 自動上書き
-    notif(`${s.shipped_at} ${s.buyer} の仕切書が既に登録されています（${sameSheet.head_count}頭）。自動上書きします。`,'y');
+    notif(`${s.shipped_at} ${s.buyer} 枝番${newFirst}〜 の仕切書が既に登録されています（${sameSheet.head_count}頭）。自動上書きします。`,'y');
     showLoading('既存データを削除中...');
     const oldShips = DATA.ships.filter(os => os.sheet_id===sameSheet.id);
     for(const os of oldShips) await api.deleteShip(os.id);

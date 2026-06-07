@@ -10568,7 +10568,8 @@ function checkGradeMismatch(d) {
 function slDetailRow(d, i) {
   const calc = (d.carcass_weight && d.unit_price) ? Math.round(d.carcass_weight * d.unit_price) : null;
   const mismatch = checkGradeMismatch(d);
-  const rowStyle = mismatch ? 'background:rgba(251,146,60,.08);outline:1px solid rgba(251,146,60,.4)' : '';
+  const borderTop = (i > 0 && i % 5 === 0) ? 'border-top:2px solid var(--muted2)' : '';
+  const rowStyle = mismatch ? `background:rgba(251,146,60,.08);outline:1px solid rgba(251,146,60,.4);${borderTop}` : borderTop;
   const gradeCols = ['上','中','並','等外'].map(g=>`<option value="${g}" ${d.grade===g?'selected':''}>${g}</option>`).join('');
   const gradeWarn = mismatch
     ? `<div style="margin-top:3px;font-size:10px;color:var(--warn);line-height:1.3">⚠️ 基準: <b style="cursor:pointer;text-decoration:underline" onclick="updateSlDetail(${i},'grade','${mismatch.expected}');this.closest('td').querySelector('select').value='${mismatch.expected}';updateSlDetailRender(${i})">${mismatch.expected}</b><br><span style="color:var(--muted);font-size:9px">${mismatch.reason}</span></div>`

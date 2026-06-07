@@ -1612,6 +1612,8 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div><div class="fl">焼却料(税込)</div><input type="number" id="se-incineration_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">販売/委託手数料</div><input type="number" id="se-sales_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">検査料(非課税)</div><input type="number" id="se-inspection_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">内臓廃棄(税抜)</div><input type="number" id="se-organ_disposal_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">内臓廃棄消費税8%</div><input type="number" id="se-tax_organ_disposal" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">控除消費税10%</div><input type="number" id="se-tax_deduction" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">控除計(税込)</div><input type="number" id="se-deduction_total" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">内消費税額</div><input type="number" id="se-tax_deduction" class="fi" style="font-size:12px;padding:4px 8px"></div>
@@ -11047,6 +11049,8 @@ async function slhSaveAll() {
     slaughter_fee: gN('se-slaughter_fee'),
     grading_fee: gN('se-grading_fee'),
     incineration_fee: gN('se-incineration_fee'),
+    organ_disposal_fee: gN('se-organ_disposal_fee'),
+    tax_organ_disposal: gN('se-tax_organ_disposal'),
     sales_fee: gN('se-sales_fee'),
     inspection_fee: gN('se-inspection_fee'),
     deduction_total: gN('se-deduction_total'),

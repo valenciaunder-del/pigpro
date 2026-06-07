@@ -10366,7 +10366,7 @@ function updateSlSummary() {
   s.organ_disposal_fee     = getVal('sl-r-organ-disp');
   s.storage_fee            = getVal('sl-r-storage');
   s.sales_fee              = getVal('sl-r-cfee');
-  s.total_amount           = getVal('sl-r-total');
+  // total_amount は net_payment の計算後に代入
   s.head_count             = getVal('sl-r-cnt');
   s.total_carcass_kg       = getVal('sl-r-wt');
 
@@ -10397,6 +10397,7 @@ function updateSlSummary() {
   s.deduction_total = dedTotal;
   const calcNet   = salesTotal - dedTotal;
   s.net_payment   = calcNet;
+  s.total_amount  = calcNet;
   const avgWt     = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
   const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
   setText('sl-r-tax-co',      tax8       ? fM(tax8)       : '-');

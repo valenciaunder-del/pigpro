@@ -1606,21 +1606,23 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div><div class="fl">消費税10%(原皮)</div><input type="number" id="se-tax_hide" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">仕入金額</div><input type="number" id="se-total_amount" class="fi" style="font-size:12px;padding:4px 8px"></div>
       </div>
-      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">控除</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px">
-        <div><div class="fl">屠畜経費(税込)</div><input type="number" id="se-slaughter_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">うち並病料(参考)</div><input type="number" id="se-slaughter_fee_disease" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">保管料(税込)</div><input type="number" id="se-storage_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">格付料(税込)</div><input type="number" id="se-grading_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">焼却料(税込)</div><input type="number" id="se-incineration_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">販売/委託手数料</div><input type="number" id="se-sales_fee" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">検査料(非課税)</div><input type="number" id="se-inspection_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">内臓廃棄(税抜)</div><input type="number" id="se-organ_disposal_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">内臓廃棄消費税8%</div><input type="number" id="se-tax_organ_disposal" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">控除消費税10%</div><input type="number" id="se-tax_deduction" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">控除計(税込)</div><input type="number" id="se-deduction_total" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">内消費税額</div><input type="number" id="se-internal_consumption_tax" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">差引支払金額</div><input type="number" id="se-net_payment" class="fi" style="font-size:12px;padding:4px 8px"></div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">控除（税抜）</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;padding:12px;background:var(--surface2);border-radius:8px">
+        <div><div class="fl">と畜料_並貫</div><input type="number" id="se-slaughter_fee_regular" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">と畜料_並病</div><input type="number" id="se-slaughter_fee_disease" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">格付料</div><input type="number" id="se-grading_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">内臓廃棄（税抜）</div><input type="number" id="se-organ_disposal_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">焼却料</div><input type="number" id="se-incineration_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">保管料</div><input type="number" id="se-storage_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">販売手数料</div><input type="number" id="se-sales_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">検査料（非課税）</div><input type="number" id="se-inspection_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px;border-top:1px solid var(--border)">
+        <div><div class="fl" style="font-weight:700">控除小計（税抜）</div><input type="number" id="se-deduction_subtotal" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">消費税8%（内臓廃棄）</div><input type="number" id="se-tax_organ_disposal" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">消費税10%（その他経費）</div><input type="number" id="se-tax_deduction" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl" style="font-weight:700">控除合計（税込）</div><input type="number" id="se-deduction_total" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl" style="font-weight:700">差引支払金額</div><input type="number" id="se-net_payment" class="fi" style="font-size:12px;padding:4px 8px"></div>
       </div>
       <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">頭別明細 <span id="slh-dp-detail-cnt" style="font-weight:400;color:var(--muted)"></span></div>
       <div id="slh-detail-body" style="overflow-x:auto;max-height:45vh">
@@ -8964,13 +8966,13 @@ async function analyzeSlaughterWithClaude(b64, mimeType, fileName) {
 - sales_subtotal: 売上の小計（なければ0）
 - sales_total: 売上の総合計（なければ0）
 【控除項目】全て正の数で返すこと（マイナス表記しない）
-- slaughter_fee: と畜料_並貫＋と畜料_並病＋保管料の合計（合算すること）
+- slaughter_fee_regular: と畜料_並貫＋と畜料_並病＋保管料の合計（合算すること）
 - slaughter_fee_disease: と畜料_並病（個別値、参考用）
 - grading_fee: 格付料（なければ0）
 - organ_disposal_fee: 内臓廃棄料（なければ0）
 - incineration_fee: 焼却料（なければ0）
 - inspection_fee: 検査料_非課税（なければ0）
-- storage_fee: 保管料（個別値、参考用。slaughter_feeへ合算済み）
+- storage_fee: 保管料（個別値、参考用。slaughter_fee_regularへ合算済み）
 - sales_fee: 販売手数料（なければ0）
 - deduction_subtotal: 控除の小計（なければ0）
 - tax_organ_disposal: 内臓廃棄消費税(8%)（なければ0）
@@ -9029,7 +9031,7 @@ head_countは通常1〜40頭前後だが100頭を超える場合もある。極�
 - 複数ページにまたがる仕切書の場合、各ページに「小計」行があるが total_amount には使わない
 - total_amount は必ず最終集計ページ（「合計（税込）」行がある最後のページ）の「差引支払額」または「等支払額」の値を使用する
 - carcass_amount・internal_organ_sales・hide_amount も最終集計ページの合計行から読み取る
-- slaughter_fee: 最終集計ページの「と畜解体料（税込）」＋「冷蔵保管料（税込）」＋「と場使用料（税込）」の合計値
+- slaughter_fee_regular: 最終集計ページの「と畜解体料（税込）」＋「冷蔵保管料（税込）」＋「と場使用料（税込）」の合計値
 - sales_fee: 「委託手数料」または「販売手数料」の合計値（負値で返す）
 - inspection_fee: 「検査料（非課税）」の値（負値で返す）
 - 合計行に出てくる小さい数字（原皮合計など）を頭数と混同しないこと
@@ -9048,7 +9050,7 @@ head_countは通常1〜40頭前後だが100頭を超える場合もある。極�
   - carcass_amount: (F)枝肉金額
   - internal_organ_sales: (G)内臓売上
   - hide_amount: (H)皮代
-  - slaughter_fee: (I)屠場料（絶対値で返す）
+  - slaughter_fee_regular: (I)屠場料（絶対値で返す）
   - inspection_fee: (J)検査料（絶対値で返す）
   - sales_fee: (K)販売手数料（絶対値で返す）
   - total_amount: (Q)総合計
@@ -9089,7 +9091,7 @@ head_countは通常1〜40頭前後だが100頭を超える場合もある。極�
 - carcass_amount は合計行の枝肉金額合計を使用
 - 金額構成（1ページ目右側の集計欄）：
   - 屠畜頭数・格付頭数（head_countに使用）
-  - 屠畜経費（税込）→ slaughter_fee
+  - 屠畜経費（税込）→ slaughter_fee_regular
   - 格付料経費（税込）→ grading_fee
   - その他経費（税込、マイナス値の場合は控除）→ inspection_fee
   - 10%対象税込・内消費税 → tax_deduction
@@ -9127,7 +9129,7 @@ head_countは通常1〜40頭前後だが100頭を超える場合もある。極�
         "market_price": 590,
         "carcass_amount": 1843060,
         "internal_organ_sales": 20840,
-        "slaughter_fee": -111600,
+        "slaughter_fee_regular": -111600,
         "inspection_fee": -14000,
         "sales_fee": -8000,
         "total_amount": 1867496,
@@ -9160,7 +9162,7 @@ head_countは通常1〜40頭前後だが100頭を超える場合もある。極�
         "market_price": 590,
         "carcass_amount": 873200,
         "internal_organ_sales": 10400,
-        "slaughter_fee": -55800,
+        "slaughter_fee_regular": -55800,
         "inspection_fee": -7000,
         "sales_fee": -4000,
         "total_amount": 816800,
@@ -9392,7 +9394,7 @@ async function processOtasanSlaughterPdf(file) {
     }
   ],
   "fees": {
-    "slaughter_fee": と畜料金額,
+    "slaughter_fee_regular": と畜料金額,
     "grading_fee": 格付料金額,
     "storage_fee": 保管料金額,
     "sales_fee": 販売手数料金額,
@@ -9507,7 +9509,7 @@ function mergeOtasanSlPdf() {
       buyer: '太田産商株式会社',
       slaughterhouse: '庄内食肉公社',
       payment_date: parsed.payment_date||null,
-      slaughter_fee: fees.slaughter_fee||0,
+      slaughter_fee_regular: fees.slaughter_fee_regular||0,
       grading_fee: fees.grading_fee||0,
       storage_fee: fees.storage_fee||0,
       sales_fee: fees.sales_fee||0,
@@ -9522,7 +9524,7 @@ function mergeOtasanSlPdf() {
 
   window._otasanFees = {
     netAmount: fees.net_amount||totalAmount,
-    slaughterFee: fees.slaughter_fee||0,
+    slaughterFee: fees.slaughter_fee_regular||0,
     gradingFee: fees.grading_fee||0,
     storageFee: fees.storage_fee||0,
     salesFee: fees.sales_fee||0,
@@ -10034,7 +10036,7 @@ function mergeOtasanData() {
       internal_organ_sales: fees.internalOrgan || 0,
       hide_amount: fees.hideAmount || 0,
       grade_summary: window._otasanGradeCounts || null,
-      slaughter_fee: fees.slaughterFee || 0,
+      slaughter_fee_regular: fees.slaughterFee || 0,
       storage_fee: fees.storageFee || 0,
       grading_fee: fees.gradingFee || 0,
       incineration_fee: fees.incinerationFee || 0,
@@ -10321,7 +10323,7 @@ function renderSlPreview(data) {
   if(document.getElementById('sl-r-tax-co'))     document.getElementById('sl-r-tax-co').textContent     = s.tax_carcass_organ ? fM(s.tax_carcass_organ) : '-';
   if(document.getElementById('sl-r-tax-hide'))   document.getElementById('sl-r-tax-hide').textContent   = s.tax_hide ? fM(s.tax_hide) : '-';
   // 控除
-  document.getElementById('sl-r-sfee').value          = s.slaughter_fee || 0;
+  document.getElementById('sl-r-sfee').value          = s.slaughter_fee_regular || 0;
   if(document.getElementById('sl-r-sfee2'))      document.getElementById('sl-r-sfee2').value            = s.slaughter_fee_disease || 0;
   document.getElementById('sl-r-grading').value       = s.grading_fee || 0;
   if(document.getElementById('sl-r-organ-disp')) document.getElementById('sl-r-organ-disp').value       = s.organ_disposal_fee || 0;
@@ -10354,7 +10356,7 @@ function updateSlSummary() {
   s.carcass_amount         = getVal('sl-r-camt');
   s.hide_amount            = getVal('sl-r-hide');
   s.internal_organ_sales   = getVal('sl-r-org');
-  s.slaughter_fee          = getVal('sl-r-sfee');
+  s.slaughter_fee_regular          = getVal('sl-r-sfee');
   s.slaughter_fee_disease  = getVal('sl-r-sfee2');
   s.grading_fee            = getVal('sl-r-grading');
   s.organ_disposal_fee     = getVal('sl-r-organ-disp');
@@ -10373,7 +10375,7 @@ function updateSlSummary() {
   s.tax_hide = taxHide10;
   const salesSub   = carcass + organ + hide;
   const salesTotal = salesSub + tax8 + taxHide10;
-  const sfee      = s.slaughter_fee || 0;
+  const sfee      = s.slaughter_fee_regular || 0;
   const sfee2     = s.slaughter_fee_disease || 0;
   const grading   = s.grading_fee || 0;
   const organDisp = s.organ_disposal_fee || 0;
@@ -10387,6 +10389,7 @@ function updateSlSummary() {
   s.tax_organ_disposal = taxOrgan8;
   s.tax_deduction = taxDed10;
   const dedTotal  = dedSub + insp + taxOrgan8 + taxDed10;
+  s.deduction_subtotal = dedSub;
   s.deduction_total = dedTotal;
   const calcNet   = salesTotal - dedTotal;
   s.net_payment   = calcNet;
@@ -10836,7 +10839,7 @@ async function saveSlaughter() {
       sales_subtotal: ri(s.sales_subtotal),
       sales_total: ri(s.sales_total),
       // 控除
-      slaughter_fee: ri(s.slaughter_fee),
+      slaughter_fee_regular: ri(s.slaughter_fee_regular),
       slaughter_fee_disease: ri(s.slaughter_fee_disease),
       grading_fee: ri(s.grading_fee),
       organ_disposal_fee: ri(s.organ_disposal_fee),
@@ -11060,7 +11063,7 @@ async function slhToggleDetail(id, e) {
   sv('se-tax_carcass_organ', s.tax_carcass_organ||'');
   sv('se-tax_hide', s.tax_hide||'');
   sv('se-total_amount', s.total_amount||'');
-  sv('se-slaughter_fee', s.slaughter_fee||'');
+  sv('se-slaughter_fee_regular', s.slaughter_fee_regular||'');
   sv('se-slaughter_fee_disease', s.slaughter_fee_disease||'');
   sv('se-storage_fee', s.storage_fee||'');
   sv('se-grading_fee', s.grading_fee||'');
@@ -11069,6 +11072,7 @@ async function slhToggleDetail(id, e) {
   sv('se-tax_organ_disposal', s.tax_organ_disposal||'');
   sv('se-sales_fee', s.sales_fee||'');
   sv('se-inspection_fee', s.inspection_fee||'');
+  sv('se-deduction_subtotal', s.deduction_subtotal||'');
   sv('se-deduction_total', s.deduction_total||'');
   sv('se-tax_deduction', s.tax_deduction||'');
   sv('se-net_payment', s.net_payment||s.total_amount||'');
@@ -11113,7 +11117,7 @@ async function slhSaveAll() {
     tax_carcass_organ: gN('se-tax_carcass_organ'),
     tax_hide: gN('se-tax_hide'),
     total_amount: gN('se-total_amount'),
-    slaughter_fee: gN('se-slaughter_fee'),
+    slaughter_fee_regular: gN('se-slaughter_fee_regular'),
     slaughter_fee_disease: gN('se-slaughter_fee_disease'),
     storage_fee: gN('se-storage_fee'),
     grading_fee: gN('se-grading_fee'),
@@ -11124,7 +11128,7 @@ async function slhSaveAll() {
     inspection_fee: gN('se-inspection_fee'),
     deduction_total: gN('se-deduction_total'),
     tax_deduction: gN('se-tax_deduction'),
-    internal_consumption_tax: gN('se-internal_consumption_tax'),
+    deduction_subtotal: gN('se-deduction_subtotal'),
     net_payment: gN('se-net_payment'),
   };
   if (!data.shipped_at) { notif('出荷日は必須です','r'); return; }
@@ -11397,7 +11401,7 @@ function exportSlaughterCsv() {
     s.sales_subtotal || '',
     s.sales_total || '',
     // 控除
-    s.slaughter_fee || '',
+    s.slaughter_fee_regular || '',
     s.slaughter_fee_disease || '',
     s.grading_fee || '',
     s.organ_disposal_fee || '',

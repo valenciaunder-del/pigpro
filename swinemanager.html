@@ -9800,6 +9800,14 @@ async function processOtasanXls(file, suppressLoading=false) {
       salesFee: detectedSalesFee,
       inspFee: detectedInspFee,
       internalOrgan: mergedInternalOrgan,
+      internalOrganRaw: detectedInternalOrgan,
+      organDisposal: detectedOrganDisposal,
+      storageFee: detectedStorageFee,
+      hideAmount: detectedHideAmount,
+      gradingFee: detectedGradingFee,
+      incinerationFee: detectedIncinerationFee,
+      taxHide: calcTaxHide,
+      taxDeduct: calcTaxDeduct,
       deductTotal: detectedDeductTotal,
     };
     console.log('太田産商費用情報:', window._otasanFees);
@@ -10000,11 +10008,19 @@ function mergeOtasanData() {
       total_carcass_kg: parseFloat(totalCarcassKg.toFixed(1)),
       carcass_amount: totalAmount,
       internal_organ_sales: fees.internalOrgan || 0,
+      hide_amount: fees.hideAmount || 0,
       grade_summary: window._otasanGradeCounts || null,
-      slaughter_fee: fees.slaughterFee || 0,  // と畜料（並貫+並病）+保管料の合算
+      slaughter_fee: fees.slaughterFee || 0,
+      grading_fee: fees.gradingFee || 0,
+      incineration_fee: fees.incinerationFee || 0,
       inspection_fee: fees.inspFee || 0,
       sales_fee: fees.salesFee || 0,
+      tax_carcass_organ: Math.round(((totalAmount)+(fees.internalOrganRaw||fees.internalOrgan||0))*0.08),
+      tax_hide: fees.taxHide || 0,
+      tax_deduction: fees.taxDeduct || 0,
+      deduction_total: (()=>{const b=(fees.slaughterFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0);return b+(fees.taxDeduct||0);})(),
       total_amount: finalTotal,
+      net_payment: (()=>{const c=totalAmount,o=fees.internalOrgan||0,h=fees.hideAmount||0,t8=Math.round((c+(fees.internalOrganRaw||o))*0.08),th=fees.taxHide||0,db=(fees.slaughterFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0),td=fees.taxDeduct||0;return c+o+h+t8+th-db-td;})(),
       market_price: marketPrice, price_per_kg: marketPrice,
       upper_count: upperCount, upper_rate: upperRate,
       payment_date: null, raw_text: null,
@@ -10981,6 +10997,7 @@ async function slhToggleDetail(id, e) {
   sv('se-total_amount', s.total_amount||'');
   sv('se-slaughter_fee', s.slaughter_fee||'');
   sv('se-grading_fee', s.grading_fee||'');
+  sv('se-incineration_fee', s.incineration_fee||'');
   sv('se-sales_fee', s.sales_fee||'');
   sv('se-inspection_fee', s.inspection_fee||'');
   sv('se-deduction_total', s.deduction_total||'');

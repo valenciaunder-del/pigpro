@@ -9791,9 +9791,15 @@ async function processOtasanXls(file, suppressLoading=false) {
       }
     }
 
+    // 屠畜経費 = と畜料(並貫+並病) + 保管料
     const mergedSlaughterFee = (detectedSlaughterFee||0) + (detectedStorageFee||0) || null;
-    const mergedInternalOrgan = detectedInternalOrgan != null ? detectedInternalOrgan - (detectedOrganDisposal||0) : null;
+    // 内臓代はそのまま（内臓廃棄は控除側で別管理）
+    const mergedInternalOrgan = detectedInternalOrgan;
+    // 消費税10%（原皮）
     const calcTaxHide = detectedHideAmount ? Math.round(detectedHideAmount * 0.1) : null;
+    // 内臓廃棄消費税8%（控除）
+    const calcTaxOrganDisposal = detectedOrganDisposal ? Math.round(detectedOrganDisposal * 0.08) : null;
+    // 控除消費税10% = (と畜料+格付料+焼却料+保管料+販売手数料) * 0.1
     const deductBase = (detectedSlaughterFee||0)+(detectedStorageFee||0)+(detectedGradingFee||0)+(detectedIncinerationFee||0)+(detectedSalesFee||0);
     const calcTaxDeduct = deductBase > 0 ? Math.round(deductBase * 0.1) : null;
     window._otasanFees = {
@@ -9802,13 +9808,13 @@ async function processOtasanXls(file, suppressLoading=false) {
       salesFee: detectedSalesFee,
       inspFee: detectedInspFee,
       internalOrgan: mergedInternalOrgan,
-      internalOrganRaw: detectedInternalOrgan,
       organDisposal: detectedOrganDisposal,
       storageFee: detectedStorageFee,
       hideAmount: detectedHideAmount,
       gradingFee: detectedGradingFee,
       incinerationFee: detectedIncinerationFee,
       taxHide: calcTaxHide,
+      taxOrganDisposal: calcTaxOrganDisposal,
       taxDeduct: calcTaxDeduct,
       deductTotal: detectedDeductTotal,
     };
@@ -10017,12 +10023,14 @@ function mergeOtasanData() {
       incineration_fee: fees.incinerationFee || 0,
       inspection_fee: fees.inspFee || 0,
       sales_fee: fees.salesFee || 0,
-      tax_carcass_organ: Math.round(((totalAmount)+(fees.internalOrganRaw||fees.internalOrgan||0))*0.08),
+      organ_disposal_fee: fees.organDisposal || 0,
+      tax_carcass_organ: Math.round((totalAmount+(fees.internalOrgan||0))*0.08),
       tax_hide: fees.taxHide || 0,
+      tax_organ_disposal: fees.taxOrganDisposal || 0,
       tax_deduction: fees.taxDeduct || 0,
-      deduction_total: (()=>{const b=(fees.slaughterFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0);return b+(fees.taxDeduct||0);})(),
+      deduction_total: (()=>{const ds=(fees.slaughterFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0);return ds+(fees.organDisposal||0)+(fees.taxOrganDisposal||0)+(fees.taxDeduct||0);})(),
       total_amount: finalTotal,
-      net_payment: (()=>{const c=totalAmount,o=fees.internalOrgan||0,h=fees.hideAmount||0,t8=Math.round((c+(fees.internalOrganRaw||o))*0.08),th=fees.taxHide||0,db=(fees.slaughterFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0),td=fees.taxDeduct||0;return c+o+h+t8+th-db-td;})(),
+      net_payment: (()=>{const c=totalAmount,o=fees.internalOrgan||0,h=fees.hideAmount||0,t8=Math.round((c+o)*0.08),th=fees.taxHide||0,ds=(fees.slaughterFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0),od=fees.organDisposal||0,tod=fees.taxOrganDisposal||0,td=fees.taxDeduct||0;return c+o+h+t8+th-ds-od-tod-td;})(),
       market_price: marketPrice, price_per_kg: marketPrice,
       upper_count: upperCount, upper_rate: upperRate,
       payment_date: null, raw_text: null,
@@ -11000,6 +11008,8 @@ async function slhToggleDetail(id, e) {
   sv('se-slaughter_fee', s.slaughter_fee||'');
   sv('se-grading_fee', s.grading_fee||'');
   sv('se-incineration_fee', s.incineration_fee||'');
+  sv('se-organ_disposal_fee', s.organ_disposal_fee||'');
+  sv('se-tax_organ_disposal', s.tax_organ_disposal||'');
   sv('se-sales_fee', s.sales_fee||'');
   sv('se-inspection_fee', s.inspection_fee||'');
   sv('se-deduction_total', s.deduction_total||'');

@@ -10333,8 +10333,8 @@ function renderSlPreview(data) {
 }
 
 function updateSlSummary() {
-  if(!window.SL_DATA?.sheet) return;
-  const s = window.SL_DATA.sheet;
+  if(!SL_DATA?.sheet) return;
+  const s = SL_DATA.sheet;
   const getVal = id => parseFloat(document.getElementById(id)?.value) || 0;
 
   s.carcass_amount         = getVal('sl-r-camt');
@@ -10398,7 +10398,7 @@ function updateSlSummary() {
   // 確かめ算：明細合計 vs サマリ枝肉重量
   const warn = document.getElementById('sl-weight-warn');
   if(warn) {
-    const details = window.SL_DATA?.details || [];
+    const details = SL_DATA?.details || [];
     const detailTotal = Math.round(details.reduce((a, d) => a + (d.carcass_weight || 0), 0) * 10) / 10;
     const summaryWt = s.total_carcass_kg || 0;
     if(detailTotal > 0 && summaryWt > 0 && Math.abs(detailTotal - summaryWt) >= 1) {
@@ -10412,7 +10412,7 @@ function updateSlSummary() {
 
 // OCR整合性チェック：単価×枝肉重量 vs OCR読取金額、明細合計 vs total_amount
 function checkSlConsistency(data) {
-  if(!data) data = window.SL_DATA;
+  if(!data) data = SL_DATA;
   if(!data) return;
   const s = data.sheet || {};
   const details = data.details || [];

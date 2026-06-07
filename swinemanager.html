@@ -10329,7 +10329,7 @@ function renderSlPreview(data) {
   document.getElementById('sl-detail-cnt').textContent = details.length+'頭';
   document.getElementById('sl-detail-tb').innerHTML = details.map((d,i)=>slDetailRow(d,i)).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">頭別データなし</td></tr>';
   updateSlSummary();
-  checkSlConsistency(data);
+  try { checkSlConsistency(data); } catch(e) { console.warn('checkSlConsistency error:', e); }
 }
 
 function updateSlSummary() {
@@ -10454,6 +10454,7 @@ function checkSlConsistency(data) {
       const actual = gradeMap[g] || 0;
       if(expected !== actual) gradeErrors.push(`${g}: 集計表${expected}頭 vs 明細${actual}頭`);
     }
+    let summaryErrors = 0;
     if(gradeErrors.length > 0) {
       summaryErrors++;
       const banner = document.getElementById('sl-consistency-banner');

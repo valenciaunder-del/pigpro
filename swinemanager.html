@@ -10021,6 +10021,7 @@ function mergeOtasanData() {
       hide_amount: fees.hideAmount || 0,
       grade_summary: window._otasanGradeCounts || null,
       slaughter_fee: fees.slaughterFee || 0,
+      storage_fee: fees.storageFee || 0,
       grading_fee: fees.gradingFee || 0,
       incineration_fee: fees.incinerationFee || 0,
       inspection_fee: fees.inspFee || 0,
@@ -10032,7 +10033,7 @@ function mergeOtasanData() {
       tax_deduction: fees.taxDeduct || 0,
       deduction_total: (()=>{const ds=(fees.slaughterFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0);return ds+(fees.organDisposal||0)+(fees.taxOrganDisposal||0)+(fees.taxDeduct||0);})(),
       total_amount: finalTotal,
-      net_payment: (()=>{const c=totalAmount,o=fees.internalOrgan||0,h=fees.hideAmount||0,t8=Math.round((c+o)*0.08),th=fees.taxHide||0,ds=(fees.slaughterFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0),od=fees.organDisposal||0,tod=fees.taxOrganDisposal||0,td=fees.taxDeduct||0;return c+o+h+t8+th-ds-od-tod-td;})(),
+      net_payment: (()=>{const c=totalAmount,o=fees.internalOrgan||0,h=fees.hideAmount||0,t8=Math.round((c+o)*0.08),th=fees.taxHide||0,ds=(fees.slaughterFee||0)+(fees.storageFee||0)+(fees.gradingFee||0)+(fees.incinerationFee||0)+(fees.inspFee||0)+(fees.salesFee||0),od=fees.organDisposal||0,tod=fees.taxOrganDisposal||0,td=fees.taxDeduct||0;return c+o+h+t8+th-ds-od-tod-td;})(),
       market_price: marketPrice, price_per_kg: marketPrice,
       upper_count: upperCount, upper_rate: upperRate,
       payment_date: null, raw_text: null,
@@ -10350,7 +10351,7 @@ function updateSlSummary() {
   const taxHide     = s.tax_hide || 0;
   const salesSub    = s.carcass_amount + (s.hide_amount||0) + (s.internal_organ_sales||0);
   const salesTotal  = salesSub + tax8 + taxHide;
-  const dedSub      = (s.slaughter_fee||0)+(s.grading_fee||0)+(s.incineration_fee||0)+(s.inspection_fee||0)+(s.sales_fee||0)+(s.organ_disposal_fee||0);
+  const dedSub      = (s.slaughter_fee||0)+(s.storage_fee||0)+(s.grading_fee||0)+(s.incineration_fee||0)+(s.inspection_fee||0)+(s.sales_fee||0)+(s.organ_disposal_fee||0);
   const taxOrganDisp = s.tax_organ_disposal || 0;
   const taxDeduct   = s.tax_deduction || 0;
   const dedTotal    = dedSub + taxOrganDisp + taxDeduct;

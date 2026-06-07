@@ -3139,7 +3139,7 @@ const api = {
     return sbFetch('slaughter_sheets' + q);
   },
   updateSlaughter: (id, data) => sbFetch(`slaughter_sheets?id=eq.${id}`, { method:'PATCH', headers:{'Content-Type':'application/json','Prefer':'return=representation'}, body: JSON.stringify(data) }),
-  insertSlaughter: (data) => sbFetch('slaughter_sheets?on_conflict=farm,shipped_at,buyer', {
+  insertSlaughter: (data) => sbFetch('slaughter_sheets', {
     method:'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(data)

@@ -10350,28 +10350,48 @@ function updateSlSummary() {
   s.head_count             = getVal('sl-r-cnt');
   s.total_carcass_kg       = getVal('sl-r-wt');
 
-  const tax8        = s.tax_carcass_organ || 0;
-  const taxHide     = s.tax_hide || 0;
-  const salesSub    = s.carcass_amount + (s.hide_amount||0) + (s.internal_organ_sales||0);
-  const salesTotal  = salesSub + tax8 + taxHide;
-  const dedSub      = (s.slaughter_fee||0)+(s.storage_fee||0)+(s.grading_fee||0)+(s.incineration_fee||0)+(s.inspection_fee||0)+(s.sales_fee||0)+(s.organ_disposal_fee||0);
-  const taxOrganDisp = s.tax_organ_disposal || 0;
-  const taxDeduct   = s.tax_deduction || 0;
-  const dedTotal    = dedSub + taxOrganDisp + taxDeduct;
-  const calcNet     = salesTotal - dedTotal;
-  const avgWt       = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
-
+  const carcass   = s.carcass_amount || 0;
+  const organ     = s.internal_organ_sales || 0;
+  const hide      = s.hide_amount || 0;
+  const tax8      = Math.round((carcass + organ) * 0.08);
+  const taxHide10 = Math.round(hide * 0.1);
+  s.tax_carcass_organ = tax8;
+  s.tax_hide = taxHide10;
+  const salesSub   = carcass + organ + hide;
+  const salesTotal = salesSub + tax8 + taxHide10;
+  const sfee      = s.slaughter_fee || 0;
+  const sfee2     = s.slaughter_fee_disease || 0;
+  const grading   = s.grading_fee || 0;
+  const organDisp = s.organ_disposal_fee || 0;
+  const incin     = s.incineration_fee || 0;
+  const insp      = s.inspection_fee || 0;
+  const storage   = s.storage_fee || 0;
+  const salesFee  = s.sales_fee || 0;
+  const dedSub    = sfee + sfee2 + grading + organDisp + incin + storage + salesFee;
+  const taxOrgan8 = Math.round(organDisp * 0.08);
+  const taxDed10  = Math.round((sfee + sfee2 + grading + incin + storage + salesFee) * 0.1);
+  s.tax_organ_disposal = taxOrgan8;
+  s.tax_deduction = taxDed10;
+  const dedTotal  = dedSub + insp + taxOrgan8 + taxDed10;
+  s.deduction_total = dedTotal;
+  const calcNet   = salesTotal - dedTotal;
+  s.net_payment   = calcNet;
+  const avgWt     = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
   const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+  setText('sl-r-tax-co',      tax8       ? fM(tax8)       : '-');
+  setText('sl-r-tax-hide',    taxHide10  ? fM(taxHide10)  : '-');
   setText('sl-r-sales-sub',   salesSub   ? fM(salesSub)   : '-');
   setText('sl-r-sales-total', salesTotal ? fM(salesTotal) : '-');
   setText('sl-r-ded-sub',     dedSub     ? fM(dedSub)     : '-');
+  setText('sl-r-tax-organ',   taxOrgan8  ? fM(taxOrgan8)  : '-');
+  setText('sl-r-tax-ded',     taxDed10   ? fM(taxDed10)   : '-');
   setText('sl-r-ded-total',   dedTotal   ? fM(dedTotal)   : '-');
+  setText('sl-r-total-calc',  calcNet    ? fM(calcNet)    : '-');
   setText('sl-r-avg-wt',      avgWt      ? avgWt + 'kg'   : '-');
-  const netEl = document.getElementById('sl-r-total');
-  const enteredNet = parseFloat(netEl?.value) || 0;
+  const enteredNet = parseFloat(document.getElementById('sl-r-total')?.value) || 0;
   const netWarn = document.getElementById('sl-net-warn');
   if(netWarn && enteredNet > 0 && calcNet > 0 && Math.abs(calcNet - enteredNet) > 1) {
-    netWarn.textContent = `⚠️ 確かめ算: 売上${fM(salesTotal)} - 控除${fM(dedTotal)} = ${fM(calcNet)} (差額: ${fM(Math.abs(calcNet-enteredNet))})`;
+    netWarn.textContent = `⚠️ 確かめ算: 売上${fM(salesTotal)} - 控除${fM(dedTotal)} = ${fM(calcNet)}（仕切書値: ${fM(enteredNet)}、差額: ${fM(Math.abs(calcNet-enteredNet))}）`;
     netWarn.style.display = '';
   } else if(netWarn) { netWarn.style.display = 'none'; }
 

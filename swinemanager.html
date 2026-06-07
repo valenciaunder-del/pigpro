@@ -8951,19 +8951,19 @@ async function analyzeSlaughterWithClaude(b64, mimeType, fileName) {
 【売上項目】全て税抜・正の数で返すこと（マイナス表記しない）
 - carcass_amount: 枝肉金額（税抜）
 - hide_amount: 原皮金額（なければ0）
-- internal_organ_sales: 内臓金額（なければ0）
+- internal_organ_sales: 内臓料金(税抜) - 内臓廃棄(税抜) の差引値（内臓廃棄なければ内臓料金をそのまま）
 - tax_carcass_organ: 消費税_枝肉・内臓(8%)（なければ0）
 - tax_hide: 消費税_原皮・控除(10%)（なければ0）
 - sales_subtotal: 売上の小計（なければ0）
 - sales_total: 売上の総合計（なければ0）
 【控除項目】全て正の数で返すこと（マイナス表記しない）
-- slaughter_fee: と畜料_並貫（なければ0）
-- slaughter_fee_disease: と畜料_並病（なければ0）
+- slaughter_fee: と畜料_並貫＋と畜料_並病＋保管料の合計（合算すること）
+- slaughter_fee_disease: と畜料_並病（個別値、参考用）
 - grading_fee: 格付料（なければ0）
 - organ_disposal_fee: 内臓廃棄料（なければ0）
 - incineration_fee: 焼却料（なければ0）
 - inspection_fee: 検査料_非課税（なければ0）
-- storage_fee: 保管料（なければ0）
+- storage_fee: 保管料（個別値、参考用。slaughter_feeへ合算済み）
 - sales_fee: 販売手数料（なければ0）
 - deduction_subtotal: 控除の小計（なければ0）
 - tax_organ_disposal: 内臓廃棄消費税(8%)（なければ0）
@@ -9730,6 +9730,8 @@ async function processOtasanXls(file, suppressLoading=false) {
     let detectedSalesFee = null;
     let detectedInspFee = null;
     let detectedInternalOrgan = null;
+    let detectedOrganDisposal = null;
+    let detectedStorageFee = null;
     let detectedDeductTotal = null;
 
     for(const sheetName of wb.SheetNames) {
@@ -9753,12 +9755,18 @@ async function processOtasanXls(file, suppressLoading=false) {
         if(labelA.includes('検査料') && colE != null && colE > 0) {
           detectedInspFee = colE;
         }
+        if(labelA.includes('保管料') && colE != null && colE > 0) {
+          detectedStorageFee = colE;
+        }
         if(labelA.includes('控除額合計') && colE != null && colE > 0) {
           detectedDeductTotal = colE;
         }
 
         // 右ブロック（F列ラベル → J列金額、小数→round）
-        if(labelF.includes('内臓料金') && colJ != null) {
+        if(labelF.includes('内臓廃棄') && colJ != null) {
+          detectedOrganDisposal = Math.round(Math.abs(colJ));
+        }
+        if(labelF.includes('内臓料金') && !labelF.includes('廃棄') && colJ != null) {
           detectedInternalOrgan = Math.round(colJ);
         }
         if(labelF.includes('差引支払') && colJ != null) {
@@ -9767,12 +9775,14 @@ async function processOtasanXls(file, suppressLoading=false) {
       }
     }
 
+    const mergedSlaughterFee = (detectedSlaughterFee||0) + (detectedStorageFee||0) || null;
+    const mergedInternalOrgan = detectedInternalOrgan != null ? detectedInternalOrgan - (detectedOrganDisposal||0) : null;
     window._otasanFees = {
       netAmount: detectedNetAmount,
-      slaughterFee: detectedSlaughterFee,
+      slaughterFee: mergedSlaughterFee,
       salesFee: detectedSalesFee,
       inspFee: detectedInspFee,
-      internalOrgan: detectedInternalOrgan,
+      internalOrgan: mergedInternalOrgan,
       deductTotal: detectedDeductTotal,
     };
     console.log('太田産商費用情報:', window._otasanFees);
@@ -9974,7 +9984,7 @@ function mergeOtasanData() {
       carcass_amount: totalAmount,
       internal_organ_sales: fees.internalOrgan || 0,
       grade_summary: window._otasanGradeCounts || null,
-      slaughter_fee: fees.slaughterFee || 0,  // と畜料（並貫）のみ
+      slaughter_fee: fees.slaughterFee || 0,  // と畜料（並貫+並病）+保管料の合算
       inspection_fee: fees.inspFee || 0,
       sales_fee: fees.salesFee || 0,
       total_amount: finalTotal,

@@ -1608,9 +1608,11 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">控除</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px">
         <div><div class="fl">屠畜経費(税込)</div><input type="number" id="se-slaughter_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">格付料経費(税込)</div><input type="number" id="se-grading_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">格付料(税込)</div><input type="number" id="se-grading_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">焼却料(税込)</div><input type="number" id="se-incineration_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">販売/委託手数料</div><input type="number" id="se-sales_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">検査料(非課税)</div><input type="number" id="se-inspection_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">控除消費税10%</div><input type="number" id="se-tax_deduction" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">控除計(税込)</div><input type="number" id="se-deduction_total" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">内消費税額</div><input type="number" id="se-tax_deduction" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">差引支払金額</div><input type="number" id="se-net_payment" class="fi" style="font-size:12px;padding:4px 8px"></div>
@@ -9732,6 +9734,9 @@ async function processOtasanXls(file, suppressLoading=false) {
     let detectedInternalOrgan = null;
     let detectedOrganDisposal = null;
     let detectedStorageFee = null;
+    let detectedHideAmount = null;
+    let detectedGradingFee = null;
+    let detectedIncinerationFee = null;
     let detectedDeductTotal = null;
 
     for(const sheetName of wb.SheetNames) {
@@ -9758,6 +9763,12 @@ async function processOtasanXls(file, suppressLoading=false) {
         if(labelA.includes('保管料') && colE != null && colE > 0) {
           detectedStorageFee = colE;
         }
+        if(labelA.includes('格付料') && colE != null && colE > 0) {
+          detectedGradingFee = colE;
+        }
+        if(labelA.includes('焼却料') && colE != null && colE > 0) {
+          detectedIncinerationFee = colE;
+        }
         if(labelA.includes('控除額合計') && colE != null && colE > 0) {
           detectedDeductTotal = colE;
         }
@@ -9769,6 +9780,9 @@ async function processOtasanXls(file, suppressLoading=false) {
         if(labelF.includes('内臓料金') && !labelF.includes('廃棄') && colJ != null) {
           detectedInternalOrgan = Math.round(colJ);
         }
+        if(labelF.includes('原皮') && colJ != null && colJ > 0) {
+          detectedHideAmount = Math.round(colJ);
+        }
         if(labelF.includes('差引支払') && colJ != null) {
           detectedNetAmount = Math.round(colJ);
         }
@@ -9777,6 +9791,9 @@ async function processOtasanXls(file, suppressLoading=false) {
 
     const mergedSlaughterFee = (detectedSlaughterFee||0) + (detectedStorageFee||0) || null;
     const mergedInternalOrgan = detectedInternalOrgan != null ? detectedInternalOrgan - (detectedOrganDisposal||0) : null;
+    const calcTaxHide = detectedHideAmount ? Math.round(detectedHideAmount * 0.1) : null;
+    const deductBase = (detectedSlaughterFee||0)+(detectedStorageFee||0)+(detectedGradingFee||0)+(detectedIncinerationFee||0)+(detectedSalesFee||0);
+    const calcTaxDeduct = deductBase > 0 ? Math.round(deductBase * 0.1) : null;
     window._otasanFees = {
       netAmount: detectedNetAmount,
       slaughterFee: mergedSlaughterFee,
@@ -11012,6 +11029,7 @@ async function slhSaveAll() {
     total_amount: gN('se-total_amount'),
     slaughter_fee: gN('se-slaughter_fee'),
     grading_fee: gN('se-grading_fee'),
+    incineration_fee: gN('se-incineration_fee'),
     sales_fee: gN('se-sales_fee'),
     inspection_fee: gN('se-inspection_fee'),
     deduction_total: gN('se-deduction_total'),

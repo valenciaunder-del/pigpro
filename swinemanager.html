@@ -3418,18 +3418,18 @@ function calcFarmFcr(farm, monthStr) {
     mon = rows[rows.length-1];
   }
 
-  // 期首・期末方式で消費量計算（タンク別に集計）
+  // daily_usageベースで月間消費量を集計（タンク別前日差分方式）
   let totalFeedT = 0;
   const tankRows = DATA.feedTank.filter(r=>r.farm===farm && r.date && r.date.startsWith(mon));
   const tankNames = [...new Set(tankRows.map(r=>r.tank_name).filter(Boolean))];
   for(const tank of tankNames) {
     const rows = tankRows.filter(r=>r.tank_name===tank).sort((a,b)=>a.date.localeCompare(b.date));
     if(rows.length < 2) continue;
-    const first = rows[0].tank_remaining || 0;
-    const last  = rows[rows.length-1].tank_remaining || 0;
-    const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0), 0);
-    const usage = first + delivery - last;
-    if(usage > 0) totalFeedT += usage;
+    for(let i=1; i<rows.length; i++) {
+      const prev = rows[i-1], curr = rows[i];
+      const du = (prev.tank_remaining||0) + (curr.delivery_ton||0) - (curr.tank_remaining||0);
+      if(du > 0) totalFeedT += du;
+    }
   }
   if(totalFeedT <= 0) return null;
 

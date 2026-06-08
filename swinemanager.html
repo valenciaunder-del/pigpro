@@ -3446,9 +3446,25 @@ function calcFarmFcr(farm, monthStr) {
   if(!totalHead) return null;
   const adg = weightedAdg / totalHead;
 
-  // 日頭数（inv_dailyのstock_headの月合計）
-  const headDays = DATA.invDaily.filter(r=>r.farm===farm && r.date && r.date.startsWith(mon))
+  // 日頭数（inv_dailyがあればそれを使い、なければロットデータから過去月推定）
+  let headDays = DATA.invDaily.filter(r=>r.farm===farm && r.date && r.date.startsWith(mon))
     .reduce((a,r)=>a+(r.stock_head||0), 0);
+  if(!headDays) {
+    const [y, m] = mon.split('-').map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const monEnd = `${mon}-${String(daysInMonth).padStart(2,'0')}`;
+    const farmLots = DATA.lots.filter(l=>l.farm===farm && l.start_date && l.start_date <= monEnd);
+    let estHead = 0;
+    farmLots.forEach(l => {
+      const intro = l.count || 0;
+      const shipped = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at && s.shipped_at <= monEnd)
+        .reduce((a,s)=>a+s.count,0);
+      const dead = calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id && d.date && d.date <= monEnd));
+      const inStock = intro - shipped - dead;
+      if(inStock > 0) estHead += inStock;
+    });
+    headDays = estHead * daysInMonth;
+  }
   if(!headDays) return null;
 
   const fcr = totalFeedT / (headDays * adg / 1e6);

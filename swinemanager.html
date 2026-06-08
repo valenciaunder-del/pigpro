@@ -6168,7 +6168,8 @@ function rPerf() {
     if(head > 0) { adgWsum += adg * head; adgHsum += head; }
   });
   const avgAdg = adgHsum > 0 ? Math.round(adgWsum / adgHsum) : 0;
-  const avgFcr = lots.length ? (lots.reduce((a,l)=>a+(l.fcr||0),0)/lots.length).toFixed(2) : '-';
+  const fcrLots = lots.filter(l=>calcCurrentHead(l)===0).map(l=>calcLotFcr(l)).filter(v=>v!==null);
+  const avgFcr = fcrLots.length ? (fcrLots.reduce((a,v)=>a+v,0)/fcrLots.length).toFixed(2) : '-';
   document.getElementById('pf-kpi').innerHTML = `
     <div class="kcard g"><div class="kl">平均ADG</div><div class="kv">${avgAdg}<span class="ku">g/日</span></div></div>
     <div class="kcard c"><div class="kl">平均FCR</div><div class="kv">${avgFcr}</div></div>

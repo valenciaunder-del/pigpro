@@ -10557,12 +10557,12 @@ function updateSlSummary() {
   const insp      = s.inspection_fee || 0;
   const storage   = s.storage_fee || 0;
   const salesFee  = s.sales_fee || 0;
-  const dedSub    = sfee + sfee2 + grading + organDisp + incin + storage + salesFee;
+  const dedSub    = sfee + sfee2 + grading + organDisp + incin + storage + salesFee + insp;
   const taxOrgan8 = Math.round(organDisp * 0.08);
   const taxDed10  = Math.round((sfee + sfee2 + grading + incin + storage + salesFee) * 0.1);
   s.tax_organ_disposal = taxOrgan8;
   s.tax_deduction = taxDed10;
-  const dedTotal  = dedSub + insp + taxOrgan8 + taxDed10;
+  const dedTotal  = dedSub + taxOrgan8 + taxDed10;
   s.deduction_subtotal = dedSub;
   s.deduction_total = dedTotal;
   const calcNet   = salesTotal - dedTotal;

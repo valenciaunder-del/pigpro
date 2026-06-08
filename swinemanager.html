@@ -13561,8 +13561,8 @@ function rFeedTank() {
   // 在庫変動テーブル描画（KPI・タンクカードに使用）
   const allTankRowsForInv = DATA.feedTank.filter(r=>r.farm===farm && r.date);
   const invResult = renderFtInvTable(farm, mon, items, allTankRowsForInv);
-  const pigletUseInv   = invResult?.pigletUseInv   ?? pigletUse;
-  const finisherUseInv = invResult?.finisherUseInv ?? finisherUse;
+  const pigletUseInv   = invResult?.pigletUseInv   || pigletUse;
+  const finisherUseInv = invResult?.finisherUseInv || finisherUse;
   const totalUseInv    = pigletUseInv + finisherUseInv;
 
   // KPI

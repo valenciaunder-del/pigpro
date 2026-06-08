@@ -3418,18 +3418,32 @@ function calcFarmFcr(farm, monthStr) {
     mon = rows[rows.length-1];
   }
 
-  // daily_usageベースで月間消費量を集計（タンク別前日差分方式）
+  // 期首残 + 月間入荷合計 - 期末残 方式
   let totalFeedT = 0;
   const tankRows = DATA.feedTank.filter(r=>r.farm===farm && r.date && r.date.startsWith(mon));
   const tankNames = [...new Set(tankRows.map(r=>r.tank_name).filter(Boolean))];
+
+  // 全タンクデータ（期首残算出用）
+  const allTankRows = DATA.feedTank.filter(r=>r.farm===farm && r.date);
+  const monStart = `${mon}-01`;
+
   for(const tank of tankNames) {
     const rows = tankRows.filter(r=>r.tank_name===tank).sort((a,b)=>a.date.localeCompare(b.date));
-    if(rows.length < 2) continue;
-    for(let i=1; i<rows.length; i++) {
-      const prev = rows[i-1], curr = rows[i];
-      const du = (prev.tank_remaining||0) + (curr.delivery_ton||0) - (curr.tank_remaining||0);
-      if(du > 0) totalFeedT += du;
-    }
+    if(!rows.length) continue;
+
+    // 期首残：当月1日より前の直近レコードのtank_remaining（なければ当月最初レコードの値）
+    const prevRows = allTankRows.filter(r=>r.tank_name===tank && r.date < monStart)
+      .sort((a,b)=>b.date.localeCompare(a.date));
+    const openingStock = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
+
+    // 期末残：当月最終レコードのtank_remaining
+    const closingStock = rows[rows.length-1].tank_remaining || 0;
+
+    // 月間入荷合計
+    const monthDelivery = rows.reduce((a,r)=>a+(r.delivery_ton||0), 0);
+
+    const consumption = openingStock + monthDelivery - closingStock;
+    if(consumption > 0) totalFeedT += consumption;
   }
   if(totalFeedT <= 0) return null;
 

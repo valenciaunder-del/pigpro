@@ -13491,10 +13491,11 @@ function renderFtInvTable(farm, mon, items, allTankRows) {
       <td></td>
     </tr>`;
   }
-  // ステージ別消費量を返す
+  // ステージ別・タンク別消費量を返す
   const pigletStage  = stageData.find(d=>d.stage==='子豚用') || {consumption:0};
   const finisherStage= stageData.find(d=>d.stage==='肉豚用') || {consumption:0};
-  return { pigletUseInv: pigletStage.consumption, finisherUseInv: finisherStage.consumption };
+  const tankConsumption = Object.fromEntries(tankData.map(d=>[d.tn, d.consumption]));
+  return { pigletUseInv: pigletStage.consumption, finisherUseInv: finisherStage.consumption, tankConsumption };
 }
 
 function rFeedTank() {
@@ -13557,9 +13558,16 @@ function rFeedTank() {
   const avgAdg = tHead>0 ? wAdg/tHead : FARMS[farm]?.adgT||750;
   const gainTon = headDays * avgAdg / 1e9; // t単位
 
+  // 在庫変動テーブル描画（KPI・タンクカードに使用）
+  const allTankRowsForInv = DATA.feedTank.filter(r=>r.farm===farm && r.date);
+  const invResult = renderFtInvTable(farm, mon, items, allTankRowsForInv);
+  const pigletUseInv   = invResult?.pigletUseInv   ?? pigletUse;
+  const finisherUseInv = invResult?.finisherUseInv ?? finisherUse;
+  const totalUseInv    = pigletUseInv + finisherUseInv;
+
   // KPI
   document.getElementById('ft-kpi').innerHTML = `
-    <div class="kcard c"><div class="kl">月間飼料使用量</div><div class="kv">${totalUse.toFixed(2)}<span class="ku">t</span></div></div>
+    <div class="kcard c"><div class="kl">月間飼料使用量</div><div class="kv">${totalUseInv.toFixed(2)}<span class="ku">t</span></div></div>
     <div class="kcard o"><div class="kl">月間入荷量</div><div class="kv">${(pigletIn+finisherIn).toFixed(1)}<span class="ku">t</span></div></div>
     <div class="kcard ${parseFloat(fcr)<=2.7?'g':parseFloat(fcr)<=3.0?'y':'r'}"><div class="kl">FCR（推計）</div><div class="kv">${fcr}</div><div class="kd nt">目標2.70以下</div></div>
     <div class="kcard g"><div class="kl">対象年月</div><div style="font-family:var(--mono);font-size:18px;font-weight:600">${mon}</div></div>`;
@@ -13577,9 +13585,9 @@ function rFeedTank() {
   cardsEl.innerHTML = displayTanks.map((tn, idx) => {
     const tRows = items.filter(r=>(r.tank_name||(FEED_TYPE_LABEL[r.feed_type]||r.feed_type))===tn);
     const last  = tRows[tRows.length-1];
-    const use   = tRows.reduce((a,r)=>a+(r.daily_usage||0),0);
+    const use   = invResult?.tankConsumption?.[tn] ?? tRows.reduce((a,r)=>a+(r.daily_usage||0),0);
     const inT   = tRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
-    const avg   = use / (tRows.filter(r=>r.daily_usage>0).length||1);
+    const avg   = use / (tRows.length || 1);
     const col   = TANK_COLORS[idx % TANK_COLORS.length];
     const ft    = tRows[0]?.feed_type==='piglet' ? '🐣 子豚用' : '🥩 肉豚用';
     const fname = last?.feed_name || '';
@@ -13647,13 +13655,6 @@ function rFeedTank() {
   });
   const svg=document.getElementById('ft-tank-svg');
   if(svg) svg.innerHTML=c;
-
-  // 在庫変動テーブル描画（消費量をKPIに使用）
-  const allTankRowsForInv = DATA.feedTank.filter(r=>r.farm===farm && r.date);
-  const invResult = renderFtInvTable(farm, mon, items, allTankRowsForInv);
-  const pigletUseInv   = invResult?.pigletUseInv   ?? pigletUse;
-  const finisherUseInv = invResult?.finisherUseInv ?? finisherUse;
-  const totalUseInv    = pigletUseInv + finisherUseInv;
 
   // FCR詳細タブ
   const p2name = pigletRows[0]?.feed_name || '子豚用飼料';

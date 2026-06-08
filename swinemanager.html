@@ -3451,9 +3451,8 @@ function calcLotFcr(lot) {
 
   const lastShipDate = lotShips.map(s=>s.shipped_at).sort().pop();
 
-  const totalLiveWeightKg = lotShips.reduce((a,s)=>a+(s.live_weight||0)*s.count, 0);
-  const introWeightKg = (lot.count||0) * (lot.start_weight||0);
-  const totalGainT = (totalLiveWeightKg - introWeightKg) / 1000;
+  // calcLotAdgと同じく出荷レコードごとに増体量を計算（死亡頭数を除外）
+  const totalGainT = lotShips.reduce((a,s) => a + ((s.live_weight - (lot.start_weight||0)) * (s.count||0)), 0) / 1000;
   if(totalGainT <= 0) return null;
 
   const startYM = lot.start_date.slice(0,7);

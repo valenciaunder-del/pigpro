@@ -3743,6 +3743,9 @@ function switchFarm(f, el) {
     const hasOpt = [...el2.options].some(o=>o.value===f);
     el2.value = hasOpt ? f : 'farm1';
   });
+  // 成績分析ページの農場フィルターをCFに同期
+  const pfFarm = document.getElementById('pf-f-farm');
+  if(pfFarm) pfFarm.value = f==='both' ? '' : f;
   renderPage(CP);
 }
 

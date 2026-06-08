@@ -13468,17 +13468,17 @@ function renderFtInvTable(farm, mon, items, allTankRows) {
   // ステージ別集計（子豚用・肉豚用）
   const stages = ['子豚用', '肉豚用'];
   const stageTb = document.getElementById('ft-inv-stage-tb');
+  const stageData = stages.map(stage => {
+    const d = tankData.filter(t=>t.stage===stage);
+    return {
+      stage,
+      opening: d.reduce((a,t)=>a+t.opening,0),
+      delivery: d.reduce((a,t)=>a+t.delivery,0),
+      consumption: d.reduce((a,t)=>a+t.consumption,0),
+      closing: d.reduce((a,t)=>a+t.closing,0),
+    };
+  });
   if(stageTb) {
-    const stageData = stages.map(stage => {
-      const d = tankData.filter(t=>t.stage===stage);
-      return {
-        stage,
-        opening: d.reduce((a,t)=>a+t.opening,0),
-        delivery: d.reduce((a,t)=>a+t.delivery,0),
-        consumption: d.reduce((a,t)=>a+t.consumption,0),
-        closing: d.reduce((a,t)=>a+t.closing,0),
-      };
-    });
     const tot = stageData.reduce((a,d)=>({
       opening: a.opening+d.opening,
       delivery: a.delivery+d.delivery,
@@ -13506,6 +13506,10 @@ function renderFtInvTable(farm, mon, items, allTankRows) {
       <td></td>
     </tr>`;
   }
+  // ステージ別消費量を返す
+  const pigletStage  = stageData.find(d=>d.stage==='子豚用') || {consumption:0};
+  const finisherStage= stageData.find(d=>d.stage==='肉豚用') || {consumption:0};
+  return { pigletUseInv: pigletStage.consumption, finisherUseInv: finisherStage.consumption };
 }
 
 function rFeedTank() {
@@ -13663,15 +13667,15 @@ function rFeedTank() {
   const p2name = pigletRows[0]?.feed_name || '子豚用飼料';
   const p3name = finisherRows[0]?.feed_name || '肉豚用飼料';
   document.getElementById('ft-fcr-kpi').innerHTML = `
-    <div class="kcard g"><div class="kl">子豚用 使用量</div><div class="kv">${pigletUse.toFixed(2)}<span class="ku">t</span></div><div class="kd nt">${p2name}</div></div>
-    <div class="kcard o"><div class="kl">肉豚用 使用量</div><div class="kv">${finisherUse.toFixed(2)}<span class="ku">t</span></div><div class="kd nt">${p3name}</div></div>
+    <div class="kcard g"><div class="kl">子豚用 使用量</div><div class="kv">${pigletUseInv.toFixed(2)}<span class="ku">t</span></div><div class="kd nt">${p2name}</div></div>
+    <div class="kcard o"><div class="kl">肉豚用 使用量</div><div class="kv">${finisherUseInv.toFixed(2)}<span class="ku">t</span></div><div class="kd nt">${p3name}</div></div>
     <div class="kcard ${parseFloat(fcr)<=2.7?'g':parseFloat(fcr)<=3.0?'y':'r'}"><div class="kl">FCR（推計）</div><div class="kv">${fcr}</div><div class="kd nt">使用量÷推計増体重</div></div>`;
 
   document.getElementById('ft-usage-bars').innerHTML = [
-    [p2name, pigletUse, 'var(--accent2)'],
-    [p3name, finisherUse, 'var(--accent3)'],
+    [p2name, pigletUseInv, 'var(--accent2)'],
+    [p3name, finisherUseInv, 'var(--accent3)'],
   ].map(([name,use,color])=>{
-    const p=(use/totalUse*100)||0;
+    const p=(use/totalUseInv*100)||0;
     return `<div style="margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
         <span style="font-size:12px;color:var(--muted2)">${name}</span>
@@ -13682,7 +13686,7 @@ function rFeedTank() {
   }).join('');
 
   document.getElementById('ft-fcr-detail').innerHTML = `
-    <div class="sr"><span class="sl">合計使用量</span><span class="sv mn">${totalUse.toFixed(2)} t</span></div>
+    <div class="sr"><span class="sl">合計使用量</span><span class="sv mn">${totalUseInv.toFixed(2)} t</span></div>
     <div class="sr"><span class="sl">在場頭数（推計）</span><span class="sv mn">${avgHeads}頭</span></div>
     <div class="sr"><span class="sl">平均ADG</span><span class="sv mn">${Math.round(avgAdg)} g/日</span></div>
     <div class="sr"><span class="sl">推計増体重</span><span class="sv mn">${gainTon.toFixed(3)} t</span></div>
@@ -13692,9 +13696,12 @@ function rFeedTank() {
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:6px">※ ADG・在場頭数はロット管理のデータを使用</div>`;
 
-  // 在庫変動テーブル描画
+  // 在庫変動テーブル描画（消費量をKPIに使用）
   const allTankRowsForInv = DATA.feedTank.filter(r=>r.farm===farm && r.date);
-  renderFtInvTable(farm, mon, items, allTankRowsForInv);
+  const invResult = renderFtInvTable(farm, mon, items, allTankRowsForInv);
+  const pigletUseInv   = invResult?.pigletUseInv   ?? pigletUse;
+  const finisherUseInv = invResult?.finisherUseInv ?? finisherUse;
+  const totalUseInv    = pigletUseInv + finisherUseInv;
 
   // 日次明細（タンク別列）
   // tank_nameがない旧データはfeed_typeを日本語に変換して表示

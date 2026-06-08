@@ -13663,6 +13663,13 @@ function rFeedTank() {
   const svg=document.getElementById('ft-tank-svg');
   if(svg) svg.innerHTML=c;
 
+  // 在庫変動テーブル描画（消費量をKPIに使用）
+  const allTankRowsForInv = DATA.feedTank.filter(r=>r.farm===farm && r.date);
+  const invResult = renderFtInvTable(farm, mon, items, allTankRowsForInv);
+  const pigletUseInv   = invResult?.pigletUseInv   ?? pigletUse;
+  const finisherUseInv = invResult?.finisherUseInv ?? finisherUse;
+  const totalUseInv    = pigletUseInv + finisherUseInv;
+
   // FCR詳細タブ
   const p2name = pigletRows[0]?.feed_name || '子豚用飼料';
   const p3name = finisherRows[0]?.feed_name || '肉豚用飼料';
@@ -13695,13 +13702,6 @@ function rFeedTank() {
       <span class="sv mn" style="font-size:22px;font-weight:700;color:${parseFloat(fcr)<=2.7?'var(--accent)':parseFloat(fcr)<=3.0?'var(--warn)':'var(--danger)'}">${fcr}</span>
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:6px">※ ADG・在場頭数はロット管理のデータを使用</div>`;
-
-  // 在庫変動テーブル描画（消費量をKPIに使用）
-  const allTankRowsForInv = DATA.feedTank.filter(r=>r.farm===farm && r.date);
-  const invResult = renderFtInvTable(farm, mon, items, allTankRowsForInv);
-  const pigletUseInv   = invResult?.pigletUseInv   ?? pigletUse;
-  const finisherUseInv = invResult?.finisherUseInv ?? finisherUse;
-  const totalUseInv    = pigletUseInv + finisherUseInv;
 
   // 日次明細（タンク別列）
   // tank_nameがない旧データはfeed_typeを日本語に変換して表示

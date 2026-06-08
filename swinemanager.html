@@ -3440,6 +3440,102 @@ function calcLotAdg(lot, allowPartial=false) {
 }
 
 // ══════════════════════════════════════════════
+// FCR計算（ロット確定・在場頭日数按分方式）
+// ══════════════════════════════════════════════
+function calcLotFcr(lot) {
+  if(calcCurrentHead(lot) !== 0) return null;
+  if(!lot.start_weight || !lot.start_date) return null;
+
+  const lotShips = DATA.ships.filter(s=>s.lot_id===lot.id && s.live_weight>0 && s.shipped_at);
+  if(!lotShips.length) return null;
+
+  const lastShipDate = lotShips.map(s=>s.shipped_at).sort().pop();
+
+  const totalLiveWeightKg = lotShips.reduce((a,s)=>a+(s.live_weight||0)*s.count, 0);
+  const introWeightKg = (lot.count||0) * (lot.start_weight||0);
+  const totalGainT = (totalLiveWeightKg - introWeightKg) / 1000;
+  if(totalGainT <= 0) return null;
+
+  const startYM = lot.start_date.slice(0,7);
+  const endYM = lastShipDate.slice(0,7);
+  const months = [];
+  let cur = new Date(startYM+'-01');
+  const end = new Date(endYM+'-01');
+  while(cur <= end) {
+    months.push(cur.toISOString().slice(0,7));
+    cur.setMonth(cur.getMonth()+1);
+  }
+
+  let totalFeedT = 0;
+  for(const mon of months) {
+    const [y,m] = mon.split('-').map(Number);
+    const daysInMonth = new Date(y,m,0).getDate();
+    const monStart = `${mon}-01`;
+
+    let lotHeadDays = 0;
+    for(let d=1; d<=daysInMonth; d++) {
+      const dateStr = `${mon}-${String(d).padStart(2,'0')}`;
+      if(dateStr < lot.start_date) continue;
+      if(dateStr > lastShipDate) break;
+      const shippedByDate = DATA.ships
+        .filter(s=>s.lot_id===lot.id && s.shipped_at && s.shipped_at<=dateStr)
+        .reduce((a,s)=>a+(s.count||0),0);
+      const deadByDate = DATA.deaths
+        .filter(d=>d.lot_id===lot.id && d.date && d.date<=dateStr && d.category!=='廃棄（出荷後）')
+        .reduce((a,d)=>a+(d.count||0),0);
+      const headOnDay = Math.max(0,(lot.count||0)-shippedByDate-deadByDate);
+      lotHeadDays += headOnDay;
+    }
+
+    if(lotHeadDays <= 0) continue;
+
+    const farmLots = DATA.lots.filter(l=>l.farm===lot.farm);
+    let farmHeadDays = 0;
+    for(const fl of farmLots) {
+      for(let d=1; d<=daysInMonth; d++) {
+        const dateStr = `${mon}-${String(d).padStart(2,'0')}`;
+        const flStart = fl.start_date||'';
+        if(dateStr < flStart) continue;
+        const flLastShip = DATA.ships.filter(s=>s.lot_id===fl.id && s.shipped_at)
+          .map(s=>s.shipped_at).sort().pop()||'9999-99-99';
+        if(calcCurrentHead(fl)===0 && dateStr>flLastShip) continue;
+        const shippedByDate = DATA.ships
+          .filter(s=>s.lot_id===fl.id && s.shipped_at && s.shipped_at<=dateStr)
+          .reduce((a,s)=>a+(s.count||0),0);
+        const deadByDate = DATA.deaths
+          .filter(d=>d.lot_id===fl.id && d.date && d.date<=dateStr && d.category!=='廃棄（出荷後）')
+          .reduce((a,d)=>a+(d.count||0),0);
+        farmHeadDays += Math.max(0,(fl.count||0)-shippedByDate-deadByDate);
+      }
+    }
+
+    if(farmHeadDays <= 0) continue;
+
+    const tankRows = DATA.feedTank.filter(r=>r.farm===lot.farm && r.date && r.date.startsWith(mon));
+    const tankNames = [...new Set(tankRows.map(r=>r.tank_name).filter(Boolean))];
+    const allTankRows = DATA.feedTank.filter(r=>r.farm===lot.farm && r.date);
+    let monFeedT = 0;
+    for(const tn of tankNames) {
+      const rows = tankRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+      if(!rows.length) continue;
+      const prevRows = allTankRows.filter(r=>r.tank_name===tn && r.date<monStart)
+        .sort((a,b)=>b.date.localeCompare(a.date));
+      const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
+      const closing = rows[rows.length-1].tank_remaining||0;
+      const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const consumption = opening+delivery-closing;
+      if(consumption>0) monFeedT += consumption;
+    }
+
+    totalFeedT += monFeedT * (lotHeadDays / farmHeadDays);
+  }
+
+  if(totalFeedT <= 0) return null;
+  const fcr = totalFeedT / totalGainT;
+  return fcr > 0 && fcr < 20 ? Math.round(fcr*100)/100 : null;
+}
+
+// ══════════════════════════════════════════════
 // FCR計算（農場全体・月次）
 // 期間消費量(t) ÷ 期間増体量(t) = FCR
 // ══════════════════════════════════════════════
@@ -5748,7 +5844,7 @@ function rPerfFull() {
   document.getElementById('pf-lot-tb').innerHTML = lots.length
     ? lots.map(l=>{
         const adg = calcLotAdg(l,true);
-        const fcrVal = calcFarmFcr(l.farm, null);
+        const fcrVal = calcCurrentHead(l)===0 ? calcLotFcr(l) : null;
         const lDetails = DATA.slaughterDetail.filter(d=>DATA.ships.some(s=>s.lot_id===l.id&&s.farm===d.farm&&s.shipped_at===d.shipped_at));
         const lUpper = lDetails.length ? Math.round(lDetails.filter(d=>d.grade==='上').length/lDetails.length*100) : null;
         const lDeath = calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id&&d.confirmed!==false));

@@ -1029,17 +1029,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <option value="">全て</option>
           </select>
         </div>
-        <!-- 季節 -->
-        <div class="fg" style="min-width:100px">
-          <label class="fl">導入季節</label>
-          <select class="fs" id="pf-f-season" onchange="rPerfFull()">
-            <option value="">全て</option>
-            <option value="春">春（3〜5月）</option>
-            <option value="夏">夏（6〜8月）</option>
-            <option value="秋">秋（9〜11月）</option>
-            <option value="冬">冬（12〜2月）</option>
-          </select>
-        </div>
         <!-- 導入期間 -->
         <div class="fg" style="min-width:120px">
           <label class="fl">導入日（from）</label>
@@ -4846,7 +4835,6 @@ function getPfLots() {
   const barn     = document.getElementById('pf-f-barn')?.value || '';
   const source   = document.getElementById('pf-f-source')?.value || '';
   const buyer    = document.getElementById('pf-f-buyer')?.value || '';
-  const season   = document.getElementById('pf-f-season')?.value || '';
   const inFrom   = document.getElementById('pf-f-in-from')?.value || '';
   const inTo     = document.getElementById('pf-f-in-to')?.value || '';
   const outFrom  = document.getElementById('pf-f-out-from')?.value || '';
@@ -4856,7 +4844,6 @@ function getPfLots() {
     if(farm   && l.farm !== farm) return false;
     if(barn   && l.barn !== barn) return false;
     if(source && l.source !== source) return false;
-    if(season && getPfSeason(l.start_date) !== season) return false;
     if(inFrom && (l.start_date||'') < inFrom) return false;
     if(inTo   && (l.start_date||'') > inTo)   return false;
     if(outFrom || outTo) {
@@ -4886,7 +4873,7 @@ function getLotBuyer(lot) {
 }
 
 function resetPfFilter() {
-  ['pf-f-farm','pf-f-barn','pf-f-source','pf-f-buyer','pf-f-season'].forEach(id=>{
+  ['pf-f-farm','pf-f-barn','pf-f-source','pf-f-buyer'].forEach(id=>{
     const el = document.getElementById(id); if(el) el.value='';
   });
   ['pf-f-in-from','pf-f-in-to','pf-f-out-from','pf-f-out-to'].forEach(id=>{
@@ -5880,6 +5867,15 @@ function renderPfChart(lots) {
     }
 
     function calcTrendData(monthList) {
+      const fcrData = monthList.map(mon=>{
+        // 出荷があったロットの農場を特定してタンクベースFCRを取得
+        const mShips = DATA.ships.filter(s=>lotIds.has(s.lot_id)&&(s.shipped_at||'').startsWith(mon));
+        const farms = [...new Set(mShips.map(s=>{const l=DATA.lots.find(ll=>ll.id===s.lot_id);return l?.farm;}).filter(Boolean))];
+        if(!farms.length) return null;
+        const fcrVals = farms.map(f=>calcFarmFcr(f,mon)).filter(v=>v!==null);
+        if(!fcrVals.length) return null;
+        return parseFloat((fcrVals.reduce((a,v)=>a+v,0)/fcrVals.length).toFixed(2));
+      });
       const adgData = monthList.map(mon=>{
         const mShips = DATA.ships.filter(s=>lotIds.has(s.lot_id)&&(s.shipped_at||'').startsWith(mon)&&s.live_weight>0);
         let ws=0,hs=0;
@@ -5915,7 +5911,7 @@ function renderPfChart(lots) {
         });
         return headSum>0 ? parseFloat((deathWsum/headSum*100).toFixed(1)) : null;
       });
-      return { adgData, deathData };
+      return { adgData, deathData, fcrData };
     }
 
     const tRange = getPfTrendRange(false);
@@ -5923,7 +5919,7 @@ function renderPfChart(lots) {
     if(!months.length) { canvas.style.display='none'; emptyEl.style.display=''; return; }
     canvas.style.display=''; emptyEl.style.display='none';
 
-    const { adgData, deathData } = calcTrendData(months);
+    const { adgData, deathData, fcrData } = calcTrendData(months);
     // 横軸ラベル：月のみ表示（MM月）
     const labels = months.map(m=>m.slice(0,4)===(months[0].slice(0,4))?`${m.slice(5)}月`:`${m.slice(2,4)}/${m.slice(5)}月`);
     const fyLabel = PF_TREND_PERIOD==='all' ? '全期間' : `${PF_FISCAL_YEAR}年度`;
@@ -5931,17 +5927,19 @@ function renderPfChart(lots) {
     const datasets = [
       {label:`ADG ${fyLabel}`,data:adgData,borderColor:'#4ade80',backgroundColor:'rgba(74,222,128,.1)',yAxisID:'y',tension:.3,spanGaps:true},
       {label:`事故率 ${fyLabel}`,data:deathData,borderColor:'#f87171',backgroundColor:'rgba(248,113,113,.1)',yAxisID:'y2',tension:.3,spanGaps:true},
+      {label:`FCR(タンク) ${fyLabel}`,data:fcrData,borderColor:'#60a5fa',backgroundColor:'rgba(96,165,250,.1)',yAxisID:'y3',tension:.3,spanGaps:true},
     ];
 
     // 前年比較
     if(showPrev && PF_TREND_PERIOD!=='all') {
       const prevRange = getPfTrendRange(true);
       const prevMonths = getMonthsInRange(prevRange);
-      const { adgData:prevAdg, deathData:prevDeath } = calcTrendData(prevMonths);
+      const { adgData:prevAdg, deathData:prevDeath, fcrData:prevFcr } = calcTrendData(prevMonths);
       const prevFyLabel = `${PF_FISCAL_YEAR-1}年度`;
       datasets.push(
         {label:`ADG ${prevFyLabel}`,data:prevAdg,borderColor:'#34d399',backgroundColor:'transparent',yAxisID:'y',tension:.3,spanGaps:true,borderDash:[4,4]},
-        {label:`事故率 ${prevFyLabel}`,data:prevDeath,borderColor:'#fb923c',backgroundColor:'transparent',yAxisID:'y2',tension:.3,spanGaps:true,borderDash:[4,4]}
+        {label:`事故率 ${prevFyLabel}`,data:prevDeath,borderColor:'#fb923c',backgroundColor:'transparent',yAxisID:'y2',tension:.3,spanGaps:true,borderDash:[4,4]},
+        {label:`FCR(タンク) ${prevFyLabel}`,data:prevFcr,borderColor:'#93c5fd',backgroundColor:'transparent',yAxisID:'y3',tension:.3,spanGaps:true,borderDash:[4,4]}
       );
     }
 
@@ -5953,7 +5951,8 @@ function renderPfChart(lots) {
         scales:{
           x:{ticks:{color:'#94a3b8'},grid:{color:'rgba(255,255,255,.05)'}},
           y:{type:'linear',position:'left',ticks:{color:'#4ade80'},grid:{color:'rgba(255,255,255,.05)'},title:{display:true,text:'ADG(g/日)',color:'#4ade80'}},
-          y2:{type:'linear',position:'right',ticks:{color:'#f87171'},grid:{drawOnChartArea:false},title:{display:true,text:'事故率(%)',color:'#f87171'}}
+          y2:{type:'linear',position:'right',ticks:{color:'#f87171'},grid:{drawOnChartArea:false},title:{display:true,text:'事故率(%)',color:'#f87171'}},
+          y3:{type:'linear',position:'right',ticks:{color:'#60a5fa'},grid:{drawOnChartArea:false},title:{display:true,text:'FCR',color:'#60a5fa'}}
         }}});
 
   } else if(PF_GRAPH_TYPE === 'compare') {

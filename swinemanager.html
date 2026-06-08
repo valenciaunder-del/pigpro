@@ -2324,6 +2324,45 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div class="cb" id="ft-fcr-detail"></div>
       </div>
     </div>
+    <!-- 在庫変動カード -->
+    <div class="card mb18">
+      <div class="ch">
+        <span class="ct">📦 在庫変動（期首・入荷・消費・期末）</span>
+        <div style="display:flex;gap:4px;margin-left:auto">
+          <button id="ft-inv-tab-tank" class="btn-sm active" onclick="ftInvTab('tank')">タンク別</button>
+          <button id="ft-inv-tab-stage" class="btn-sm" onclick="ftInvTab('stage')">ステージ別</button>
+        </div>
+      </div>
+      <div class="cb">
+        <div id="ft-inv-tank">
+          <div class="tw"><table>
+            <thead><tr>
+              <th>タンク</th><th>飼料種</th>
+              <th class="tr3">期首残(t)</th>
+              <th class="tr3 ng">入荷合計(t)</th>
+              <th class="tr3 nw">消費量(t)</th>
+              <th class="tr3">期末残(t)</th>
+              <th class="tr3">検算</th>
+            </tr></thead>
+            <tbody id="ft-inv-tank-tb"></tbody>
+          </table></div>
+        </div>
+        <div id="ft-inv-stage" style="display:none">
+          <div class="tw"><table>
+            <thead><tr>
+              <th>ステージ</th>
+              <th class="tr3">期首残(t)</th>
+              <th class="tr3 ng">入荷合計(t)</th>
+              <th class="tr3 nw">消費量(t)</th>
+              <th class="tr3">期末残(t)</th>
+              <th class="tr3">検算</th>
+            </tr></thead>
+            <tbody id="ft-inv-stage-tb"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="ch"><span class="ct">日次 使用量明細</span></div>
       <div class="tw"><table>
@@ -13342,6 +13381,133 @@ function buildFeedTankRowsFromCsv(csvText) {
 // ══════════════════════════════════════════════
 // FEED TANK（飼料タンク管理）
 // ══════════════════════════════════════════════
+function ftInvTab(tab) {
+  document.getElementById('ft-inv-tank').style.display = tab==='tank' ? '' : 'none';
+  document.getElementById('ft-inv-stage').style.display = tab==='stage' ? '' : 'none';
+  document.getElementById('ft-inv-tab-tank').classList.toggle('active', tab==='tank');
+  document.getElementById('ft-inv-tab-stage').classList.toggle('active', tab==='stage');
+}
+
+function renderFtInvTable(farm, mon, items, allTankRows) {
+  const monStart = `${mon}-01`;
+  const [y,m] = mon.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const monEnd = `${mon}-${String(daysInMonth).padStart(2,'0')}`;
+
+  // タンク一覧
+  const tankNames = [...new Set(items.map(r=>r.tank_name).filter(Boolean))].sort();
+
+  // タンク別集計
+  const tankData = tankNames.map(tn => {
+    const rows = items.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+
+    // 期首残：当月1日より前の直近レコード
+    const prevRows = allTankRows.filter(r=>r.tank_name===tn && r.date < monStart)
+      .sort((a,b)=>b.date.localeCompare(a.date));
+    const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0]?.tank_remaining||0);
+
+    // 期末残：当月最終レコード
+    const closing = rows.length ? (rows[rows.length-1].tank_remaining||0) : 0;
+
+    // 月間入荷合計
+    const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0), 0);
+
+    // 消費量（日次差分積算）
+    let consumption = 0;
+    for(let i=0; i<rows.length; i++) {
+      const curr = rows[i];
+      const prevRem = i===0 ? opening : (rows[i-1].tank_remaining||0);
+      const du = prevRem + (curr.delivery_ton||0) - (curr.tank_remaining||0);
+      if(du > 0) consumption += du;
+    }
+
+    // feedType
+    const feedType = rows[0]?.feed_type || '';
+    const stage = feedType==='piglet' ? '子豚用' : feedType==='finisher' ? '肉豚用' : '-';
+    const feedName = rows[0]?.feed_name || stage;
+
+    // 検算：期首+入荷-消費 ≈ 期末
+    const check = opening + delivery - consumption;
+    const checkDiff = Math.abs(check - closing);
+    const checkOk = checkDiff < 0.01;
+
+    return { tn, feedName, stage, opening, delivery, consumption, closing, check, checkOk };
+  });
+
+  // タンク別テーブル描画
+  const tankTb = document.getElementById('ft-inv-tank-tb');
+  if(tankTb) {
+    // 合計行
+    const tot = tankData.reduce((a,d)=>({
+      opening: a.opening+d.opening,
+      delivery: a.delivery+d.delivery,
+      consumption: a.consumption+d.consumption,
+      closing: a.closing+d.closing,
+    }), {opening:0,delivery:0,consumption:0,closing:0});
+
+    tankTb.innerHTML = tankData.map(d=>`
+      <tr>
+        <td>${d.tn}</td>
+        <td style="color:var(--muted);font-size:11px">${d.feedName}</td>
+        <td class="mn tr3">${d.opening.toFixed(3)}</td>
+        <td class="mn tr3 ng">+${d.delivery.toFixed(3)}</td>
+        <td class="mn tr3 nw">${d.consumption.toFixed(3)}</td>
+        <td class="mn tr3">${d.closing.toFixed(3)}</td>
+        <td class="tr3" style="font-size:11px;color:${d.checkOk?'var(--accent)':'var(--danger)'}">${d.checkOk?'✓':'△'+d.check.toFixed(3)}</td>
+      </tr>`).join('') +
+    `<tr style="font-weight:700;border-top:2px solid var(--border2)">
+      <td colspan="2">合計</td>
+      <td class="mn tr3">${tot.opening.toFixed(3)}</td>
+      <td class="mn tr3 ng">+${tot.delivery.toFixed(3)}</td>
+      <td class="mn tr3 nw">${tot.consumption.toFixed(3)}</td>
+      <td class="mn tr3">${tot.closing.toFixed(3)}</td>
+      <td></td>
+    </tr>`;
+  }
+
+  // ステージ別集計（子豚用・肉豚用）
+  const stages = ['子豚用', '肉豚用'];
+  const stageTb = document.getElementById('ft-inv-stage-tb');
+  if(stageTb) {
+    const stageData = stages.map(stage => {
+      const d = tankData.filter(t=>t.stage===stage);
+      return {
+        stage,
+        opening: d.reduce((a,t)=>a+t.opening,0),
+        delivery: d.reduce((a,t)=>a+t.delivery,0),
+        consumption: d.reduce((a,t)=>a+t.consumption,0),
+        closing: d.reduce((a,t)=>a+t.closing,0),
+      };
+    });
+    const tot = stageData.reduce((a,d)=>({
+      opening: a.opening+d.opening,
+      delivery: a.delivery+d.delivery,
+      consumption: a.consumption+d.consumption,
+      closing: a.closing+d.closing,
+    }), {opening:0,delivery:0,consumption:0,closing:0});
+
+    stageTb.innerHTML = stageData.map(d=>`
+      <tr>
+        <td>${d.stage}</td>
+        <td class="mn tr3">${d.opening.toFixed(3)}</td>
+        <td class="mn tr3 ng">+${d.delivery.toFixed(3)}</td>
+        <td class="mn tr3 nw">${d.consumption.toFixed(3)}</td>
+        <td class="mn tr3">${d.closing.toFixed(3)}</td>
+        <td class="tr3" style="font-size:11px;color:var(--muted)">
+          ${(d.opening+d.delivery-d.consumption).toFixed(3)}
+        </td>
+      </tr>`).join('') +
+    `<tr style="font-weight:700;border-top:2px solid var(--border2)">
+      <td>合計</td>
+      <td class="mn tr3">${tot.opening.toFixed(3)}</td>
+      <td class="mn tr3 ng">+${tot.delivery.toFixed(3)}</td>
+      <td class="mn tr3 nw">${tot.consumption.toFixed(3)}</td>
+      <td class="mn tr3">${tot.closing.toFixed(3)}</td>
+      <td></td>
+    </tr>`;
+  }
+}
+
 function rFeedTank() {
   const farm = CF==='both' ? 'farm1' : CF;
   const mon = document.getElementById('ft-mon')?.value || new Date().toISOString().slice(0,7);
@@ -13525,6 +13691,10 @@ function rFeedTank() {
       <span class="sv mn" style="font-size:22px;font-weight:700;color:${parseFloat(fcr)<=2.7?'var(--accent)':parseFloat(fcr)<=3.0?'var(--warn)':'var(--danger)'}">${fcr}</span>
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:6px">※ ADG・在場頭数はロット管理のデータを使用</div>`;
+
+  // 在庫変動テーブル描画
+  const allTankRowsForInv = DATA.feedTank.filter(r=>r.farm===farm && r.date);
+  renderFtInvTable(farm, mon, items, allTankRowsForInv);
 
   // 日次明細（タンク別列）
   // tank_nameがない旧データはfeed_typeを日本語に変換して表示

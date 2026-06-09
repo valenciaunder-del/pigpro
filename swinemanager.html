@@ -10706,7 +10706,7 @@ function updateSlSummary() {
   setText('sl-r-sales-total', salesTotal ? fM(salesTotal) : '-');
   setText('sl-r-ded-sub',     dedSub     ? fM(dedSub)     : '-');
   setText('sl-r-tax-organ',   tax8ded    ? fM(tax8ded)    : '-');
-  setText('sl-r-tax-ded',     tax10ded   ? fM(tax10ded)   : '-');
+  setText('sl-r-tax-ded',     (!isSendai && tax10ded) ? fM(tax10ded) : '-');
   setText('sl-r-ded-total',   dedTotal   ? fM(dedTotal)   : '-');
   setText('sl-r-total-calc',  calcNet    ? fM(calcNet)    : '-');
   const avgWt = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;

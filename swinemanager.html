@@ -1419,14 +1419,20 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <div class="sr"><span class="sl">消費税10%（原皮）</span><span class="sv mn" id="sl-r-tax-hide">-</span></div>
             <div class="sr"><span class="sl" style="font-weight:700">売上合計</span><span class="sv ng mn" style="font-weight:700" id="sl-r-sales-total">-</span></div>
             <div style="font-size:11px;font-weight:700;color:var(--danger);margin-bottom:4px;margin-top:8px">【控除】</div>
-            <div class="sr"><span class="sl">と畜料_並貫</span><input class="fi" type="number" id="sl-r-sfee" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">と畜料_並病</span><input class="fi" type="number" id="sl-r-sfee2" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">格付料</span><input class="fi" type="number" id="sl-r-grading" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">内臓廃棄（税抜）</span><input class="fi" type="number" id="sl-r-organ-disp" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">焼却料</span><span class="sv nb mn" id="sl-r-incin">-</span></div>
-            <div class="sr"><span class="sl">検査料（非課税）</span><span class="sv nb mn" id="sl-r-ifee">-</span></div>
-            <div class="sr"><span class="sl">保管料／と場使用料</span><input class="fi" type="number" id="sl-r-storage" style="width:120px" onchange="updateSlSummary()"></div>
-            <div class="sr"><span class="sl">販売手数料</span><input class="fi" type="number" id="sl-r-cfee" style="width:120px" onchange="updateSlSummary()"></div>
+            <div id="sl-ded-table-wrap">
+              <table style="width:100%;border-collapse:collapse;font-size:12px" id="sl-ded-table">
+                <thead>
+                  <tr style="color:var(--muted2);border-bottom:1px solid var(--border)">
+                    <th style="text-align:left;padding:4px 6px;font-weight:600">項目</th>
+                    <th style="text-align:right;padding:4px 6px;font-weight:600">金額</th>
+                    <th style="text-align:center;padding:4px 6px;font-weight:600">税区分</th>
+                    <th style="width:24px"></th>
+                  </tr>
+                </thead>
+                <tbody id="sl-ded-tbody"></tbody>
+              </table>
+              <button class="btn bs sm" style="margin-top:6px;font-size:11px" onclick="slDedAddRow()">＋ 行追加</button>
+            </div>
             <div class="sr" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span class="sl">控除小計（税抜）</span><span class="sv nb mn" id="sl-r-ded-sub">-</span></div>
             <div class="sr"><span class="sl">消費税8%（内臓廃棄）</span><span class="sv nb mn" id="sl-r-tax-organ">-</span></div>
             <div class="sr"><span class="sl">消費税10%（控除）</span><span class="sv nb mn" id="sl-r-tax-ded">-</span></div>
@@ -10510,17 +10516,9 @@ function renderSlPreview(data) {
   document.getElementById('sl-r-org').value           = s.internal_organ_sales || 0;
   if(document.getElementById('sl-r-tax-co'))     document.getElementById('sl-r-tax-co').textContent     = s.tax_carcass_organ ? fM(s.tax_carcass_organ) : '-';
   if(document.getElementById('sl-r-tax-hide'))   document.getElementById('sl-r-tax-hide').textContent   = s.tax_hide ? fM(s.tax_hide) : '-';
-  // 控除
-  document.getElementById('sl-r-sfee').value          = s.slaughter_fee_regular || 0;
-  if(document.getElementById('sl-r-sfee2'))      document.getElementById('sl-r-sfee2').value            = s.slaughter_fee_disease || 0;
-  document.getElementById('sl-r-grading').value       = s.grading_fee || 0;
-  if(document.getElementById('sl-r-organ-disp')) document.getElementById('sl-r-organ-disp').value       = s.organ_disposal_fee || 0;
-  if(document.getElementById('sl-r-incin'))      document.getElementById('sl-r-incin').textContent      = s.incineration_fee ? fM(s.incineration_fee) : '-';
-  document.getElementById('sl-r-ifee').textContent    = s.inspection_fee ? fM(s.inspection_fee) : '-';
-  if(document.getElementById('sl-r-storage'))    document.getElementById('sl-r-storage').value          = s.storage_fee || 0;
-  document.getElementById('sl-r-cfee').value          = s.sales_fee || 0;
-  if(document.getElementById('sl-r-tax-organ'))  document.getElementById('sl-r-tax-organ').textContent  = s.tax_organ_disposal ? fM(s.tax_organ_disposal) : '-';
-  if(document.getElementById('sl-r-tax-ded'))    document.getElementById('sl-r-tax-ded').textContent    = s.tax_deduction ? fM(s.tax_deduction) : '-';
+  // 控除（汎用テーブル初期化）
+  window._slDedItems = slOcrToDeductionItems(s);
+  slDedRenderTable(window._slDedItems);
   // 合計
   if(document.getElementById('sl-r-total')) document.getElementById('sl-r-total').value = s.total_amount || 0;
   document.getElementById('sl-r-pay').textContent        = s.payment_date||'-';
@@ -10536,89 +10534,183 @@ function renderSlPreview(data) {
   try { checkSlConsistency(data); } catch(e) { console.warn('checkSlConsistency error:', e); }
 }
 
+const SL_DED_PRESETS = {
+  '仙台中央': [
+    { name: '委託手数料',   tax: 'tax10_inc' },
+    { name: 'と畜解体料',   tax: 'tax10_inc' },
+    { name: '冷蔵保管料',   tax: 'tax10_inc' },
+    { name: 'と場使用料',   tax: 'tax10_inc' },
+    { name: '格付料',       tax: 'tax10_inc' },
+    { name: '病畜冷蔵庫料', tax: 'tax10_inc' },
+    { name: '検査料',       tax: 'non_tax'   },
+  ],
+  '太田産商': [
+    { name: 'と畜料_並貫',  tax: 'tax10_ex' },
+    { name: 'と畜料_並病',  tax: 'tax10_ex' },
+    { name: '格付料',       tax: 'tax10_ex' },
+    { name: '内臓廃棄',     tax: 'tax8_ex'  },
+    { name: '焼却料',       tax: 'tax10_ex' },
+    { name: '検査料',       tax: 'non_tax'  },
+    { name: '保管料',       tax: 'tax10_ex' },
+    { name: '販売手数料',   tax: 'tax10_ex' },
+  ],
+  'default': [
+    { name: 'と畜料',       tax: 'tax10_ex' },
+    { name: '格付料',       tax: 'tax10_ex' },
+    { name: '検査料',       tax: 'non_tax'  },
+    { name: '販売手数料',   tax: 'tax10_ex' },
+  ]
+};
+
+function slOcrToDeductionItems(sheet) {
+  const isSendai = sheet.slaughterhouse?.includes('仙台') || sheet.buyer?.includes('仙台');
+  const isOtasan = sheet.buyer?.includes('太田');
+  if(isSendai) {
+    const items = [];
+    if(sheet.sales_fee)             items.push({ name:'委託手数料',          amount: sheet.sales_fee,             tax:'tax10_inc' });
+    if(sheet.slaughter_fee_regular) items.push({ name:'と畜解体料+冷蔵保管料', amount: sheet.slaughter_fee_regular, tax:'tax10_inc' });
+    if(sheet.storage_fee)           items.push({ name:'と場使用料',           amount: sheet.storage_fee,           tax:'tax10_inc' });
+    if(sheet.grading_fee)           items.push({ name:'格付料',               amount: sheet.grading_fee,           tax:'tax10_inc' });
+    if(sheet.slaughter_fee_disease) items.push({ name:'病畜冷蔵庫料',         amount: sheet.slaughter_fee_disease, tax:'tax10_inc' });
+    if(sheet.inspection_fee)        items.push({ name:'検査料',               amount: sheet.inspection_fee,        tax:'non_tax'   });
+    return items;
+  } else if(isOtasan) {
+    const items = [];
+    if(sheet.slaughter_fee_regular) items.push({ name:'と畜料_並貫',  amount: sheet.slaughter_fee_regular, tax:'tax10_ex' });
+    if(sheet.slaughter_fee_disease) items.push({ name:'と畜料_並病',  amount: sheet.slaughter_fee_disease, tax:'tax10_ex' });
+    if(sheet.grading_fee)           items.push({ name:'格付料',       amount: sheet.grading_fee,           tax:'tax10_ex' });
+    if(sheet.organ_disposal_fee)    items.push({ name:'内臓廃棄',     amount: sheet.organ_disposal_fee,    tax:'tax8_ex'  });
+    if(sheet.incineration_fee)      items.push({ name:'焼却料',       amount: sheet.incineration_fee,      tax:'tax10_ex' });
+    if(sheet.inspection_fee)        items.push({ name:'検査料',       amount: sheet.inspection_fee,        tax:'non_tax'  });
+    if(sheet.storage_fee)           items.push({ name:'保管料',       amount: sheet.storage_fee,           tax:'tax10_ex' });
+    if(sheet.sales_fee)             items.push({ name:'販売手数料',   amount: sheet.sales_fee,             tax:'tax10_ex' });
+    return items;
+  } else {
+    const items = [];
+    if(sheet.slaughter_fee_regular) items.push({ name:'と畜料',     amount: sheet.slaughter_fee_regular, tax:'tax10_ex' });
+    if(sheet.grading_fee)           items.push({ name:'格付料',     amount: sheet.grading_fee,           tax:'tax10_ex' });
+    if(sheet.inspection_fee)        items.push({ name:'検査料',     amount: sheet.inspection_fee,        tax:'non_tax'  });
+    if(sheet.sales_fee)             items.push({ name:'販売手数料', amount: sheet.sales_fee,             tax:'tax10_ex' });
+    return items;
+  }
+}
+
+function slDedRenderTable(items) {
+  const tbody = document.getElementById('sl-ded-tbody');
+  if(!tbody) return;
+  tbody.innerHTML = items.map((item, i) => `
+    <tr data-idx="${i}">
+      <td style="padding:3px 4px">
+        <input class="fi" style="width:100%;font-size:11px;padding:3px 6px"
+          value="${item.name||''}"
+          onchange="slDedUpdateRow(${i},'name',this.value)">
+      </td>
+      <td style="padding:3px 4px;width:110px">
+        <input class="fi" type="number" style="width:100%;font-size:11px;padding:3px 6px;text-align:right"
+          value="${item.amount||0}"
+          onchange="slDedUpdateRow(${i},'amount',parseFloat(this.value)||0)">
+      </td>
+      <td style="padding:3px 4px;width:110px">
+        <select class="fs" style="width:100%;font-size:11px;padding:2px 4px"
+          onchange="slDedUpdateRow(${i},'tax',this.value)">
+          <option value="tax10_inc" ${item.tax==='tax10_inc'?'selected':''}>10%税込</option>
+          <option value="tax10_ex"  ${item.tax==='tax10_ex' ?'selected':''}>10%税抜</option>
+          <option value="tax8_inc"  ${item.tax==='tax8_inc' ?'selected':''}>8%税込</option>
+          <option value="tax8_ex"   ${item.tax==='tax8_ex'  ?'selected':''}>8%税抜</option>
+          <option value="non_tax"   ${item.tax==='non_tax'  ?'selected':''}>非課税</option>
+        </select>
+      </td>
+      <td style="padding:3px 2px">
+        <button onclick="slDedRemoveRow(${i})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;padding:0 4px">×</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function slDedUpdateRow(idx, field, val) {
+  if(!window._slDedItems) return;
+  window._slDedItems[idx][field] = val;
+  updateSlSummary();
+}
+
+function slDedRemoveRow(idx) {
+  if(!window._slDedItems) return;
+  window._slDedItems.splice(idx, 1);
+  slDedRenderTable(window._slDedItems);
+  updateSlSummary();
+}
+
+function slDedAddRow() {
+  if(!window._slDedItems) window._slDedItems = [];
+  window._slDedItems.push({ name:'', amount:0, tax:'tax10_ex' });
+  slDedRenderTable(window._slDedItems);
+  updateSlSummary();
+}
+
 function updateSlSummary() {
   if(!SL_DATA?.sheet) return;
   const s = SL_DATA.sheet;
   const getVal = id => parseFloat(document.getElementById(id)?.value) || 0;
 
-  s.carcass_amount         = getVal('sl-r-camt');
-  s.hide_amount            = getVal('sl-r-hide');
-  s.internal_organ_sales   = getVal('sl-r-org');
-  s.slaughter_fee_regular          = getVal('sl-r-sfee');
-  s.slaughter_fee_disease  = getVal('sl-r-sfee2');
-  s.grading_fee            = getVal('sl-r-grading');
-  s.organ_disposal_fee     = getVal('sl-r-organ-disp');
-  s.storage_fee            = getVal('sl-r-storage');
-  s.sales_fee              = getVal('sl-r-cfee');
-  // total_amount は net_payment の計算後に代入
-  s.head_count             = getVal('sl-r-cnt');
-  s.total_carcass_kg       = getVal('sl-r-wt');
+  s.head_count           = getVal('sl-r-cnt');
+  s.total_carcass_kg     = getVal('sl-r-wt');
+  s.carcass_amount       = getVal('sl-r-camt');
+  s.hide_amount          = getVal('sl-r-hide');
+  s.internal_organ_sales = getVal('sl-r-org');
 
-  const isSendai  = s.slaughterhouse?.includes('仙台');
-  const carcass   = s.carcass_amount || 0;
-  const organ     = s.internal_organ_sales || 0;
-  const hide      = s.hide_amount || 0;
-  const sfee      = s.slaughter_fee_regular || 0;
-  const sfee2     = s.slaughter_fee_disease || 0;
-  const grading   = s.grading_fee || 0;
-  const organDisp = s.organ_disposal_fee || 0;
-  const incin     = s.incineration_fee || 0;
-  const insp      = s.inspection_fee || 0;
-  const storage   = s.storage_fee || 0;
-  const salesFee  = s.sales_fee || 0;
+  const isSendai = s.slaughterhouse?.includes('仙台');
+  const carcass  = s.carcass_amount || 0;
+  const organ    = s.internal_organ_sales || 0;
+  const hide     = s.hide_amount || 0;
 
-  let tax8, taxHide10, salesSub, salesTotal, taxOrgan8, taxDed10, dedSub, dedTotal;
-
+  let tax8, taxHide10, salesSub, salesTotal;
   if(isSendai) {
-    // 仙台市場：売上・控除とも税込で格納済み → 消費税を逆算して表示
-    tax8      = Math.round((carcass + organ) / 1.08 * 0.08);
-    taxHide10 = Math.round(hide / 1.1 * 0.1);
+    tax8       = Math.round((carcass + organ) / 1.08 * 0.08);
+    taxHide10  = Math.round(hide / 1.1 * 0.1);
     salesTotal = carcass + organ + hide;
     salesSub   = salesTotal - tax8 - taxHide10;
-    // 控除は全て税込・追加税なし
-    taxOrgan8 = 0;
-    taxDed10  = 0;
-    dedSub    = sfee + sfee2 + grading + organDisp + incin + storage + salesFee + insp;
-    dedTotal  = dedSub;
   } else {
-    // 通常フォーマット：売上・控除は税抜 → 消費税を加算
-    tax8      = Math.round((carcass + organ) * 0.08);
-    taxHide10 = Math.round(hide * 0.1);
-    salesSub  = carcass + organ + hide;
+    tax8       = Math.round((carcass + organ) * 0.08);
+    taxHide10  = Math.round(hide * 0.1);
+    salesSub   = carcass + organ + hide;
     salesTotal = salesSub + tax8 + taxHide10;
-    taxOrgan8 = Math.round(organDisp * 0.08);
-    taxDed10  = Math.round((sfee + sfee2 + grading + incin + storage + salesFee) * 0.1);
-    dedSub    = sfee + sfee2 + grading + organDisp + incin + storage + salesFee + insp;
-    dedTotal  = dedSub + taxOrgan8 + taxDed10;
   }
 
-  s.tax_carcass_organ  = tax8;
-  s.tax_hide           = taxHide10;
-  s.tax_organ_disposal = taxOrgan8;
-  s.tax_deduction      = taxDed10;
+  // 控除計算（汎用テーブルから）
+  const items = window._slDedItems || [];
+  let dedSubEx = 0, dedSubInc = 0, tax8ded = 0, tax10ded = 0, nonTax = 0;
+  items.forEach(item => {
+    const amt = item.amount || 0;
+    switch(item.tax) {
+      case 'tax10_inc': dedSubInc += amt; tax10ded += Math.round(amt / 1.1 * 0.1);   break;
+      case 'tax10_ex':  dedSubEx  += amt; tax10ded += Math.round(amt * 0.1);          break;
+      case 'tax8_inc':  dedSubInc += amt; tax8ded  += Math.round(amt / 1.08 * 0.08); break;
+      case 'tax8_ex':   dedSubEx  += amt; tax8ded  += Math.round(amt * 0.08);         break;
+      case 'non_tax':   nonTax    += amt; break;
+    }
+  });
+  const dedSub   = dedSubEx + dedSubInc + nonTax;
+  const dedTotal = dedSub + (isSendai ? 0 : tax8ded + tax10ded);
+
+  s.deduction_items    = items;
   s.deduction_subtotal = dedSub;
   s.deduction_total    = dedTotal;
-  const calcNet   = salesTotal - dedTotal;
-  s.net_payment   = calcNet;
-  s.total_amount  = calcNet || (window._otasanFees?.netAmount) || s.total_amount || 0;
-  const avgWt     = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
+  const calcNet  = salesTotal - dedTotal;
+  s.net_payment  = calcNet;
+  s.total_amount = calcNet;
+
   const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
   setText('sl-r-tax-co',      tax8       ? fM(tax8)       : '-');
   setText('sl-r-tax-hide',    taxHide10  ? fM(taxHide10)  : '-');
   setText('sl-r-sales-sub',   salesSub   ? fM(salesSub)   : '-');
   setText('sl-r-sales-total', salesTotal ? fM(salesTotal) : '-');
   setText('sl-r-ded-sub',     dedSub     ? fM(dedSub)     : '-');
-  setText('sl-r-tax-organ',   taxOrgan8  ? fM(taxOrgan8)  : '-');
-  setText('sl-r-tax-ded',     taxDed10   ? fM(taxDed10)   : '-');
+  setText('sl-r-tax-organ',   tax8ded    ? fM(tax8ded)    : '-');
+  setText('sl-r-tax-ded',     tax10ded   ? fM(tax10ded)   : '-');
   setText('sl-r-ded-total',   dedTotal   ? fM(dedTotal)   : '-');
   setText('sl-r-total-calc',  calcNet    ? fM(calcNet)    : '-');
+  const avgWt = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
   setText('sl-r-avg-wt',      avgWt      ? avgWt + 'kg'   : '-');
-  const enteredNet = parseFloat(document.getElementById('sl-r-total')?.value) || 0;
-  const netWarn = document.getElementById('sl-net-warn');
-  if(netWarn && enteredNet > 0 && calcNet > 0 && Math.abs(calcNet - enteredNet) > 1) {
-    netWarn.textContent = `⚠️ 確かめ算: 売上${fM(salesTotal)} - 控除${fM(dedTotal)} = ${fM(calcNet)}（仕切書値: ${fM(enteredNet)}、差額: ${fM(Math.abs(calcNet-enteredNet))}）`;
-    netWarn.style.display = '';
-  } else if(netWarn) { netWarn.style.display = 'none'; }
 
   // 確かめ算：明細合計 vs サマリ枝肉重量
   const warn = document.getElementById('sl-weight-warn');
@@ -10629,9 +10721,7 @@ function updateSlSummary() {
     if(detailTotal > 0 && summaryWt > 0 && Math.abs(detailTotal - summaryWt) >= 1) {
       warn.textContent = `⚠️ 明細合計(${detailTotal}kg) とサマリ枝肉重量(${summaryWt}kg) が一致しません`;
       warn.style.display = '';
-    } else {
-      warn.style.display = 'none';
-    }
+    } else { warn.style.display = 'none'; }
   }
 }
 
@@ -11097,6 +11187,7 @@ async function saveSlaughter() {
       tax_organ_disposal: ri(s.tax_organ_disposal),
       tax_deduction: ri(s.tax_deduction),
       deduction_total: ri(s.deduction_total),
+      deduction_items: JSON.stringify(window._slDedItems || []),
       // 合計
       total_amount: ri(s.total_amount || s.net_payment),
       net_payment: ri(s.net_payment || s.total_amount),
@@ -11265,6 +11356,7 @@ async function saveSlaughter() {
 
 function clearSlaughter() {
   SL_DATA = null;
+  window._slDedItems = [];
   document.getElementById('sl-preview-area').style.display='none';
   document.getElementById('sl-status').textContent='';
   document.getElementById('sl-file-input').value='';

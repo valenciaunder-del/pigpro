@@ -7158,7 +7158,8 @@ function showLD(id) {
 
       // 過去実績から適正肥育日数の統計を取得
       const details = DATA.slaughterDetail || [];
-      const optDaysArr = [];
+      const optDaysArrSource = []; // 同じ導入元に絞った実績
+      const optDaysArrFarm   = []; // 農場全体の実績（フォールバック用）
       const sheetMap2 = {};
       (DATA.slaughter||[]).forEach(s=>{ sheetMap2[s.id]=s; });
       const shipMap2 = {};
@@ -7190,8 +7191,16 @@ function showLD(id) {
         if(!lt3?.start_date||!sheet.shipped_at) return;
         const actD = (new Date(sheet.shipped_at)-new Date(lt3.start_date))/86400000;
         if(actD<=0) return;
-        optDaysArr.push(Math.round(actD+diffD));
+        const optDay = Math.round(actD+diffD);
+        optDaysArrFarm.push(optDay);
+        if(l.source && lt3.source === l.source) optDaysArrSource.push(optDay);
       });
+
+      const useSource = optDaysArrSource.length >= 5;
+      const optDaysArr = useSource ? optDaysArrSource : optDaysArrFarm;
+      const forecastLabel = useSource
+        ? `過去${optDaysArr.length}頭の実績から（導入元：${l.source}）`
+        : `農場全体${optDaysArr.length}頭の実績から`;
 
       let forecastHtml = '';
       if(optDaysArr.length >= 5) {
@@ -7229,7 +7238,7 @@ function showLD(id) {
 
         forecastHtml = `
         <div class="sep" style="margin:12px 0"></div>
-        <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:10px">🗓 出荷予測（過去${optDaysArr.length}頭の実績から）</div>
+        <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:10px">🗓 出荷予測（${forecastLabel}）</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
           <div style="background:var(--panel2);border-radius:6px;padding:8px 10px;text-align:center;flex:1;min-width:70px">
             <div style="font-size:10px;color:var(--muted);margin-bottom:3px">現在推定枝重</div>

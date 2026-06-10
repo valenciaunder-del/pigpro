@@ -7196,11 +7196,11 @@ function showLD(id) {
         if(l.source && lt3.source === l.source) optDaysArrSource.push(optDay);
       });
 
-      const useSource = optDaysArrSource.length >= 5;
+      const useSource = !!(l.source && optDaysArrSource.length >= 5);
       const optDaysArr = useSource ? optDaysArrSource : optDaysArrFarm;
       const forecastLabel = useSource
-        ? `過去${optDaysArr.length}頭の実績から（導入元：${l.source}）`
-        : `農場全体${optDaysArr.length}頭の実績から`;
+        ? `過去${optDaysArrSource.length}頭の実績から（導入元：${l.source}）`
+        : `農場全体${optDaysArrFarm.length}頭の実績から`;
 
       let forecastHtml = '';
       if(optDaysArr.length >= 5) {

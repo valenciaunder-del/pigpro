@@ -10593,9 +10593,9 @@ function slOcrToDeductionItems(sheet) {
     if(sheet.sales_fee)             items.push({ name:'委託手数料',          amount: sheet.sales_fee,             tax:'tax10_inc' });
     if(sheet.slaughter_fee_regular) items.push({ name:'と畜解体料', amount: sheet.slaughter_fee_regular, tax:'tax10_inc' });
     if(sheet.cold_storage_fee)      items.push({ name:'冷蔵保管料', amount: sheet.cold_storage_fee,      tax:'tax10_inc' });
-    if(sheet.storage_fee)           items.push({ name:'と場使用料',           amount: sheet.storage_fee,           tax:'tax10_inc' });
+    items.push({ name:'と場使用料',   amount: sheet.storage_fee           ||0, tax:'tax10_inc' });
     if(sheet.grading_fee)           items.push({ name:'格付料',               amount: sheet.grading_fee,           tax:'tax10_inc' });
-    if(sheet.slaughter_fee_disease) items.push({ name:'病畜冷蔵庫料',         amount: sheet.slaughter_fee_disease, tax:'tax10_inc' });
+    items.push({ name:'病畜冷蔵庫料', amount: sheet.slaughter_fee_disease  ||0, tax:'tax10_inc' });
     if(sheet.inspection_fee)        items.push({ name:'検査料',               amount: sheet.inspection_fee,        tax:'non_tax'   });
     return items;
   } else if(isOtasan) {

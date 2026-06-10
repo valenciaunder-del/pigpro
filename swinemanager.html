@@ -1431,7 +1431,10 @@ tbody td{padding:8px 10px;white-space:nowrap;}
                 </thead>
                 <tbody id="sl-ded-tbody"></tbody>
               </table>
-              <button class="btn bs sm" style="margin-top:6px;font-size:11px" onclick="slDedAddRow()">＋ 行追加</button>
+              <div style="position:relative;display:inline-block;margin-top:6px">
+                <button class="btn bs sm" style="font-size:11px" onclick="slDedToggleMenu(event)">＋ 行追加 ▾</button>
+                <div id="sl-ded-menu" style="display:none;position:absolute;left:0;top:100%;z-index:200;background:var(--bg2);border:1px solid var(--border2);border-radius:6px;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,.18);padding:4px 0"></div>
+              </div>
             </div>
             <div class="sr" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span class="sl">控除小計（税抜）</span><span class="sv nb mn" id="sl-r-ded-sub">-</span></div>
             <div class="sr"><span class="sl">消費税8%（内臓廃棄）</span><span class="sv nb mn" id="sl-r-tax-organ">-</span></div>
@@ -10640,11 +10643,52 @@ function slDedRemoveRow(idx) {
   updateSlSummary();
 }
 
-function slDedAddRow() {
+function slDedAddRow(name, tax) {
   if(!window._slDedItems) window._slDedItems = [];
-  window._slDedItems.push({ name:'', amount:0, tax:'tax10_ex' });
+  window._slDedItems.push({ name: name||'', amount:0, tax: tax||'tax10_ex' });
   slDedRenderTable(window._slDedItems);
   updateSlSummary();
+}
+
+function slDedToggleMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById('sl-ded-menu');
+  if(!menu) return;
+  if(menu.style.display !== 'none') { menu.style.display = 'none'; return; }
+
+  const isSendai = SL_DATA?.sheet?.slaughterhouse?.includes('仙台');
+  const presets = isSendai ? [
+    { name:'委託手数料',   tax:'tax10_inc' },
+    { name:'と畜解体料',   tax:'tax10_inc' },
+    { name:'冷蔵保管料',   tax:'tax10_inc' },
+    { name:'と場使用料',   tax:'tax10_inc' },
+    { name:'格付料',       tax:'tax10_inc' },
+    { name:'病畜冷蔵庫料', tax:'tax10_inc' },
+    { name:'検査料',       tax:'non_tax'   },
+    { name:'カスタム',     tax:'tax10_inc', custom:true },
+  ] : [
+    { name:'と畜料',     tax:'tax10_ex' },
+    { name:'格付料',     tax:'tax10_ex' },
+    { name:'内臓廃棄',   tax:'tax8_ex'  },
+    { name:'焼却料',     tax:'tax10_ex' },
+    { name:'検査料',     tax:'non_tax'  },
+    { name:'保管料',     tax:'tax10_ex' },
+    { name:'販売手数料', tax:'tax10_ex' },
+    { name:'カスタム',   tax:'tax10_ex', custom:true },
+  ];
+
+  const taxLabel = { tax10_inc:'10%税込', tax10_ex:'10%税抜', tax8_ex:'8%税抜', non_tax:'非課税' };
+  menu.innerHTML = presets.map(p => {
+    const label = p.custom ? 'カスタム（空行追加）' : `${p.name}（${taxLabel[p.tax]||p.tax}）`;
+    const n = p.custom ? '' : p.name;
+    return `<div onclick="slDedAddRow('${n}','${p.tax}');document.getElementById('sl-ded-menu').style.display='none'"
+      style="padding:7px 14px;cursor:pointer;font-size:12px;white-space:nowrap"
+      onmouseover="this.style.background='var(--hover)'" onmouseout="this.style.background=''">${label}</div>`;
+  }).join('');
+  menu.style.display = '';
+
+  const close = ev => { menu.style.display='none'; document.removeEventListener('click',close); };
+  setTimeout(() => document.addEventListener('click', close), 0);
 }
 
 function updateSlSummary() {

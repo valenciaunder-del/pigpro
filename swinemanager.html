@@ -10519,8 +10519,9 @@ function renderSlPreview(data) {
   document.getElementById('sl-r-org').value           = s.internal_organ_sales || 0;
   if(document.getElementById('sl-r-tax-co'))     document.getElementById('sl-r-tax-co').textContent     = s.tax_carcass_organ ? fM(s.tax_carcass_organ) : '-';
   if(document.getElementById('sl-r-tax-hide'))   document.getElementById('sl-r-tax-hide').textContent   = s.tax_hide ? fM(s.tax_hide) : '-';
-  // 控除（汎用テーブル初期化）
-  window._slDedItems = slOcrToDeductionItems(s);
+  // 控除（保存済みdeduction_itemsがあれば復元、なければOCRマッピング）
+  const _savedDed = s.deduction_items ? (() => { try { return JSON.parse(s.deduction_items); } catch(e) { return null; } })() : null;
+  window._slDedItems = (_savedDed && _savedDed.length) ? _savedDed : slOcrToDeductionItems(s);
   slDedRenderTable(window._slDedItems);
   // 合計
   if(document.getElementById('sl-r-total')) document.getElementById('sl-r-total').value = s.total_amount || 0;
@@ -11459,6 +11460,10 @@ async function slhToggleDetail(id, e) {
   sv('se-deduction_total', s.deduction_total||'');
   sv('se-tax_deduction', s.tax_deduction||'');
   sv('se-net_payment', s.net_payment||s.total_amount||'');
+  // 控除テーブル復元（deduction_itemsがあれば復元、なければOCRマッピングでフォールバック）
+  const _slhDed = s.deduction_items ? (() => { try { return JSON.parse(s.deduction_items); } catch(e) { return null; } })() : null;
+  window._slDedItems = (_slhDed && _slhDed.length) ? _slhDed : slOcrToDeductionItems(s);
+  slDedRenderTable(window._slDedItems);
   const cntEl = document.getElementById('slh-dp-detail-cnt');
   document.getElementById('slh-detail-tb').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:12px">読み込み中...</td></tr>';
   try {

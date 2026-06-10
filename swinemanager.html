@@ -1085,6 +1085,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <button class="btn bs sm pf-graph-btn" onclick="setPfGraph('trend',this)">月別トレンド</button>
         <button class="btn bs sm pf-graph-btn" onclick="setPfGraph('compare',this)">条件比較</button>
         <button class="btn bs sm pf-graph-btn" onclick="setPfGraph('shipplan',this)" style="border-color:var(--f1);color:var(--f1)">🗓 出荷計画</button>
+        <button class="btn bs sm pf-graph-btn" onclick="setPfGraph('monthly-summary',this)">月次サマリー</button>
       </div>
       <!-- 月別トレンド期間選択（trendタブ時のみ表示） -->
       <div id="pf-trend-period" style="display:none;gap:6px;flex-wrap:wrap;align-items:center">
@@ -1217,6 +1218,29 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <span style="font-size:11px;color:var(--muted);margin-left:8px">過去実績のADG分布から推奨出荷スケジュールを生成</span>
       </div>
       <div class="cb"><div id="sp-forecast"></div></div>
+    </div>
+  </div>
+
+  <!-- 月次サマリーエリア -->
+  <div id="pf-monthly-summary" style="display:none">
+    <div class="tw">
+      <table>
+        <thead>
+          <tr>
+            <th>出荷月</th>
+            <th class="tr3">出荷頭数</th>
+            <th class="tr3">ロット数</th>
+            <th class="tr3">平均ADG<br><span style="font-weight:400;font-size:10px">g/日</span></th>
+            <th class="tr3">平均FCR</th>
+            <th class="tr3">事故率<br><span style="font-weight:400;font-size:10px">%</span></th>
+            <th class="tr3">事故頭数</th>
+            <th class="tr3">平均事故<br>発生日齢<br><span style="font-weight:400;font-size:10px">導入後日数</span></th>
+            <th class="tr3">上物率<br><span style="font-weight:400;font-size:10px">%</span></th>
+            <th class="tr3">平均枝重<br><span style="font-weight:400;font-size:10px">kg</span></th>
+          </tr>
+        </thead>
+        <tbody id="pf-monthly-summary-tb"></tbody>
+      </table>
     </div>
   </div>
 
@@ -5108,11 +5132,16 @@ function setPfGraph(type, el) {
   // 条件比較テーブルカードの表示切替
   const cmpCard = document.getElementById('pf-cmp-card');
   if(cmpCard) cmpCard.style.display = type==='compare' ? '' : 'none';
+  // 月次サマリーエリアの表示切替
+  const msArea = document.getElementById('pf-monthly-summary');
+  if(msArea) msArea.style.display = type==='monthly-summary' ? '' : 'none';
   // 通常グラフエリアの表示切替
   const chartCard = document.querySelector('#page-performance .card:has(#pf-chart)');
-  if(chartCard) chartCard.style.display = type==='shipplan' ? 'none' : '';
+  if(chartCard) chartCard.style.display = (type==='shipplan' || type==='monthly-summary') ? 'none' : '';
   if(type==='shipplan') {
     rShipPlan();
+  } else if(type==='monthly-summary') {
+    renderMonthlySummary();
   } else {
     renderPfChart(getPfLots());
   }
@@ -5786,7 +5815,149 @@ function rShipMonthly() {
   el.innerHTML = html;
 }
 
+// ══════════════════════════════════════════════
+// 月次サマリー
+// ══════════════════════════════════════════════
+function calcMonthlySummary(farm) {
+  const lots = DATA.lots.filter(l =>
+    (!farm || l.farm === farm) &&
+    calcCurrentHead(l) === 0
+  );
+
+  const monthMap = {};
+
+  lots.forEach(lot => {
+    const ships = DATA.ships.filter(s => s.lot_id === lot.id);
+    if(!ships.length) return;
+    const lastShipDate = ships.map(s=>s.shipped_at).sort().pop();
+    const mon = lastShipDate.slice(0,7);
+
+    if(!monthMap[mon]) monthMap[mon] = { lots:[], ships:[], deaths:[] };
+    monthMap[mon].lots.push(lot);
+    monthMap[mon].ships.push(...ships);
+
+    const deaths = DATA.deaths.filter(d =>
+      d.lot_id === lot.id && d.category !== '廃棄（出荷後）'
+    );
+    deaths.forEach(d => {
+      monthMap[mon].deaths.push({ ...d, lot });
+    });
+  });
+
+  return Object.entries(monthMap)
+    .sort((a,b) => b[0].localeCompare(a[0]))
+    .map(([mon, data]) => {
+      const { lots, ships, deaths } = data;
+
+      const totalShipped = ships.reduce((a,s) => a+(s.count||0), 0);
+      const totalDead = deaths.reduce((a,d) => a+(d.count||0), 0);
+      const totalIntro = lots.reduce((a,l) => a+(l.count||0), 0);
+      const accidentRate = totalIntro > 0 ? (totalDead/totalIntro*100) : 0;
+
+      const deathDays = deaths
+        .filter(d => d.date && d.lot?.start_date)
+        .map(d => {
+          const days = (new Date(d.date) - new Date(d.lot.start_date)) / 86400000;
+          return { days: Math.round(days), count: d.count||1 };
+        })
+        .filter(d => d.days >= 0);
+
+      let avgDeathDay = null;
+      if(deathDays.length > 0) {
+        const totalCount = deathDays.reduce((a,d) => a+d.count, 0);
+        avgDeathDay = Math.round(deathDays.reduce((a,d) => a+d.days*d.count, 0) / totalCount);
+      }
+
+      const adgData = lots.map(lot => {
+        const lotShips = ships.filter(s => s.lot_id === lot.id);
+        if(!lotShips.length || !lot.start_date) return null;
+        const lastD = lotShips.map(s=>s.shipped_at).sort().pop();
+        const days = (new Date(lastD) - new Date(lot.start_date)) / 86400000;
+        if(days <= 0) return null;
+        const lotCount = lotShips.reduce((a,s)=>a+(s.count||0),0);
+        if(!lotCount) return null;
+        const avgCw = lotShips.reduce((a,s)=>a+(s.carcass_weight||0)*(s.count||0),0) / lotCount;
+        const yieldRate = (FARMS[lot.farm]?.yieldRate || 72) / 100;
+        const avgLw = avgCw / yieldRate;
+        const adg = (avgLw - (lot.start_weight||30)) / days * 1000;
+        return { adg, count: lotCount };
+      }).filter(Boolean);
+
+      const totalAdgCount = adgData.reduce((a,d) => a+d.count, 0);
+      const avgAdg = totalAdgCount > 0
+        ? Math.round(adgData.reduce((a,d) => a+d.adg*d.count, 0) / totalAdgCount)
+        : null;
+
+      const fcrData = lots.map(lot => {
+        const fcr = calcLotFcr(lot);
+        if(!fcr) return null;
+        const count = ships.filter(s=>s.lot_id===lot.id).reduce((a,s)=>a+(s.count||0),0);
+        return { fcr, count };
+      }).filter(Boolean);
+
+      const totalFcrCount = fcrData.reduce((a,d) => a+d.count, 0);
+      const avgFcr = totalFcrCount > 0
+        ? Math.round(fcrData.reduce((a,d) => a+d.fcr*d.count, 0) / totalFcrCount * 100) / 100
+        : null;
+
+      const upperShips = ships.filter(s => s.grade === '上');
+      const upperRate = totalShipped > 0
+        ? Math.round(upperShips.reduce((a,s)=>a+(s.count||0),0) / totalShipped * 1000) / 10
+        : null;
+
+      const slDetails = (DATA.slaughterDetail || []).filter(d => {
+        const sheet = (DATA.slaughter||[]).find(s=>s.id===d.sheet_id);
+        return sheet && sheet.shipped_at?.startsWith(mon) && (!farm || sheet.farm===farm);
+      });
+      const avgCw = slDetails.length > 0
+        ? Math.round(slDetails.reduce((a,d)=>a+(d.carcass_weight||0),0) / slDetails.length * 10) / 10
+        : null;
+
+      return {
+        mon,
+        lotCount: lots.length,
+        totalShipped,
+        totalIntro,
+        totalDead,
+        accidentRate: Math.round(accidentRate*10)/10,
+        avgDeathDay,
+        avgAdg,
+        avgFcr,
+        upperRate,
+        avgCw,
+      };
+    });
+}
+
+function renderMonthlySummary() {
+  const farm = document.getElementById('pf-f-farm')?.value || '';
+  const data = calcMonthlySummary(farm);
+  const tbody = document.getElementById('pf-monthly-summary-tb');
+  if(!tbody) return;
+
+  if(!data.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--muted)">出荷済みロットのデータがありません</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.map(d => `
+    <tr>
+      <td class="mn" style="font-weight:600">${d.mon}</td>
+      <td class="tr3 mn">${d.totalShipped}頭</td>
+      <td class="tr3 mn">${d.lotCount}ロット</td>
+      <td class="tr3 mn ${d.avgAdg!=null && d.avgAdg>=750?'ng':''}">${d.avgAdg??'-'}</td>
+      <td class="tr3 mn ${d.avgFcr!=null ? (d.avgFcr<=2.7?'ng':d.avgFcr<=3.0?'nw':'nr') : ''}">${d.avgFcr??'-'}</td>
+      <td class="tr3 mn ${d.accidentRate>5?'nr':d.accidentRate>3?'nw':''}">${d.accidentRate}%</td>
+      <td class="tr3 mn">${d.totalDead}頭</td>
+      <td class="tr3 mn">${d.avgDeathDay!==null ? d.avgDeathDay+'日' : '-'}</td>
+      <td class="tr3 mn">${d.upperRate!==null ? d.upperRate+'%' : '-'}</td>
+      <td class="tr3 mn">${d.avgCw!==null ? d.avgCw+'kg' : '-'}</td>
+    </tr>
+  `).join('');
+}
+
 function rPerfFull() {
+  if(PF_GRAPH_TYPE === 'monthly-summary') { renderMonthlySummary(); return; }
   const lots = getPfLots();
 
   // フィルタセレクトの選択肢を更新

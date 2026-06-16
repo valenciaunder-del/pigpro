@@ -6176,6 +6176,16 @@ function rPerfFull() {
     const vals = filteredDetails.map(d=>d.carcass_weight).filter(v=>v>0);
     return vals.length ? (vals.reduce((a,v)=>a+v,0)/vals.length).toFixed(1) : null;
   })();
+  // 平均導入体重（対象ロットの頭数加重平均）
+  const avgStartWeight = (() => {
+    let wsum = 0, hsum = 0;
+    lots.forEach(l => {
+      if(!l.start_weight) return;
+      wsum += l.start_weight * l.count;
+      hsum += l.count;
+    });
+    return hsum > 0 ? (wsum / hsum).toFixed(1) : null;
+  })();
   // 相場単価（market_price の枝肉重量加重平均）
   const avgMarketPrice = (() => {
     let wSum = 0, kgSum = 0;
@@ -6204,6 +6214,7 @@ function rPerfFull() {
     <div class="kcard c"><div class="kl">平均FCR</div><div class="kv ${avgFcr?fc(parseFloat(avgFcr)):''}">${avgFcr||'-'}</div></div>
     <div class="kcard r"><div class="kl">事故率</div><div class="kv">${deathRate!==null?deathRate+' %':'-'}</div></div>
     <div class="kcard c"><div class="kl">上物率</div><div class="kv">${upperRate!==null?upperRate+' %':'-'}</div></div>
+    <div class="kcard o"><div class="kl">平均導入体重</div><div class="kv">${avgStartWeight||'−'}<span class="ku">kg</span></div></div>
     <div class="kcard y"><div class="kl">平均出荷枝重</div><div class="kv">${avgCwKpi||'-'}<span class="ku">kg</span></div></div>
     <div class="kcard g"><div class="kl">相場単価</div><div class="kv">${avgMarketPrice?'¥'+avgMarketPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard c"><div class="kl">手取単価（税込）</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>

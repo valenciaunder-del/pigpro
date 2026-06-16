@@ -999,7 +999,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <!-- 農場 -->
         <div class="fg" style="min-width:100px">
           <label class="fl">農場</label>
-          <select class="fs" id="pf-f-farm" onchange="rPerfFull()">
+          <select class="fs" id="pf-f-farm" onchange="rPerfFull();syncMonthlyFarm()">
             <option value="">両方</option>
             <option value="farm1">中田農場</option>
             <option value="farm2">米山農場</option>
@@ -5121,6 +5121,15 @@ function refreshShipPlanIfActive() {
   }
 }
 
+// pf-f-farm 変更時にカレンダーも同期
+function syncMonthlyFarm() {
+  const pfFarm = document.getElementById('pf-f-farm')?.value;
+  const monthlyFarmEl = document.getElementById('sp-monthly-farm');
+  if(!pfFarm || !monthlyFarmEl) return;
+  monthlyFarmEl.value = (pfFarm === 'both') ? 'all' : pfFarm;
+  refreshShipPlanIfActive();
+}
+
 function setPfGraph(type, el) {
   PF_GRAPH_TYPE = type;
   document.querySelectorAll('.pf-graph-btn').forEach(b=>b.classList.remove('active'));
@@ -5716,10 +5725,17 @@ function rShipMonthly() {
   if(!selVal) return;
   const [yr, mo] = selVal.split('-').map(Number);
   const DAY_NAMES = ['日','月','火','水','木','金','土'];
-  const farmFilter = document.getElementById('sp-monthly-farm')?.value || 'all';
+
+  // pf-f-farm（左サイドの農場選択）と sp-monthly-farm を同期
+  const pfFarm = document.getElementById('pf-f-farm')?.value;
+  const monthlyFarmEl = document.getElementById('sp-monthly-farm');
+  if(pfFarm && monthlyFarmEl && pfFarm !== 'both' && monthlyFarmEl.value !== pfFarm) {
+    monthlyFarmEl.value = pfFarm;
+  }
+  const farmFilter = monthlyFarmEl?.value || 'farm1';
 
   const activeLots = DATA.lots.filter(l => {
-    if(l.farm !== farmFilter) return false;
+    if(farmFilter !== 'all' && l.farm !== farmFilter) return false;
     return calcCurrentHead(l) > 0;
   });
   if(!activeLots.length) {
@@ -5755,13 +5771,33 @@ function rShipMonthly() {
     const currentHead = calcCurrentHead(lot);
     if(currentHead <= 0) return;
 
-    const cwTarget = ((farmObj.targetCwMin||76) + (farmObj.targetCwMax||82.5)) / 2;
-    const targetLw = cwTarget / yieldRate;
-    const optDays = calcLotOptDays(lot, targetLw);
-    const p50v = optDays.p50, p10v = optDays.p10, p90v = optDays.p90;
-    const mean = optDays.mean || p50v;
-    const sigma = Math.max(optDays.sigma || (p90v - p10v) / 2.56, 3);
     const startDate = new Date(lot.start_date);
+
+    // 成長曲線ベースで目標到達日を計算（growthLw/daysToTargetLw を使用）
+    // FORECAST_TARGET_LW=120kg（枝重78kg・歩留65%）が定義済みならそれを使用
+    const fcTargetLw = (typeof FORECAST_TARGET_LW !== 'undefined') ? FORECAST_TARGET_LW
+      : (((farmObj.targetCwMin||76) + (farmObj.targetCwMax||82.5)) / 2) / yieldRate;
+
+    // 導入元別ADGを取得（calcSourceAdgMapが定義済みの場合）
+    let useAdg;
+    if(typeof calcSourceAdgMap === 'function') {
+      const srcMap = calcSourceAdgMap(lot.farm);
+      const srcD = srcMap[lot.source || '不明'];
+      const farmAdg = (() => {
+        let ws=0, hs=0;
+        Object.values(srcMap).forEach(r => { if(r.adg) { ws+=r.adg*r.headSum; hs+=r.headSum; }});
+        return hs > 0 ? Math.round(ws/hs) : (farmObj.adgT||750);
+      })();
+      useAdg = (srcD?.adg && srcD.headSum >= 10) ? srcD.adg : farmAdg;
+    } else {
+      useAdg = farmObj.adgT || 750;
+    }
+
+    const p50v = (typeof daysToTargetLw === 'function')
+      ? daysToTargetLw(lot.start_weight||30, useAdg, fcTargetLw)
+      : Math.round((fcTargetLw - (lot.start_weight||30)) / (useAdg/1000));
+    const sigma = 18; // 固定σ（データ蓄積後に導入元別σに更新予定）
+    const mean = p50v;
 
     // 全出荷可能日のPDFを計算（月をまたいでOK）
     const rangeMin = Math.max(0, Math.floor(mean - sigma * 3));

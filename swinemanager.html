@@ -5150,11 +5150,14 @@ let _spChart = null;
 function rShipPlan() {
   const farm = document.getElementById('pf-f-farm')?.value || 'farm1';
   const farmObj = FARMS[farm];
-  const yieldRate = getYieldRate(farm) / 100; // 歩留まり率（小数）
+  // 歩留はFORECAST_YIELD固定（78kg枝重・65%）または農場設定の主要出荷先から取得
+  // 個頭計算では各頭の出荷先ごとに個別歩留を使う（下のoptDaysArr計算内で適用）
+  const defaultYieldRate = (typeof FORECAST_YIELD !== 'undefined') ? FORECAST_YIELD : getYieldRate(farm) / 100;
   const cwMin = farmObj.targetCwMin || 76;
   const cwMax = farmObj.targetCwMax || 82.5;
-  const cwTarget = (cwMin + cwMax) / 2; // 目標枝肉重量の中央値
-  const targetLw = cwTarget / yieldRate; // 目標生体重
+  const cwTarget = (typeof FORECAST_TARGET_CW !== 'undefined') ? FORECAST_TARGET_CW : (cwMin + cwMax) / 2;
+  const yieldRate = defaultYieldRate; // 後方互換のため保持（個頭計算では上書き）
+  const targetLw = (typeof FORECAST_TARGET_LW !== 'undefined') ? FORECAST_TARGET_LW : cwTarget / yieldRate;
   const shipDays = farmObj.shipDays || [];
 
   // 目標生体重を表示
@@ -5203,11 +5206,14 @@ function rShipPlan() {
     if(!lot.start_date || !lastShipDate) return null;
     const days = (new Date(lastShipDate) - new Date(lot.start_date)) / 86400000;
     if(days <= 0) return null;
-    // 実際の平均生体重から逆算
+    // 実際の平均生体重から逆算（出荷先ごとの歩留を使用）
     const avgCw = ships.reduce((a,s)=>a+(s.carcass_weight||0)*s.count,0) /
                   ships.reduce((a,s)=>a+(s.count||0),0);
     if(!avgCw) return null;
-    const avgLw = avgCw / yieldRate;
+    // 出荷先から歩留を取得（ship.slaughterhouse がある場合はそれを使用）
+    const slh = ships[0]?.slaughterhouse;
+    const lotYield = slh ? getYieldRate(lot.farm, slh) / 100 : yieldRate;
+    const avgLw = avgCw / lotYield;
     const initWeight = lot.start_weight || 30;
     return (avgLw - initWeight) / days * 1000; // g/日
   }
@@ -5227,8 +5233,10 @@ function rShipPlan() {
     const adg = adgList.length ? adgList.reduce((a,v)=>a+v,0)/adgList.length : (farmObj.adgT||750);
     const adgKg = adg / 1000; // kg/日
 
-    // 実際の生体重
-    const actualLw = d.carcass_weight / yieldRate;
+    // 各頭の出荷先から個別歩留を取得（精度向上）
+    const headYieldRate = getYieldRate(sheet.farm, sheet.slaughterhouse) / 100 || yieldRate;
+    // 実際の生体重（出荷先ごとの歩留で逆算）
+    const actualLw = d.carcass_weight / headYieldRate;
     // 差分日数（プラス=早すぎ、マイナス=遅すぎ）
     const diffDays = (usedTargetLw - actualLw) / adgKg;
     // 実際の出荷時の肥育日数を取得
@@ -6041,15 +6049,12 @@ function rPerfFull() {
   if(PF_GRAPH_TYPE === 'monthly-summary') { renderMonthlySummary(); return; }
   const lots = getPfLots();
 
-  // フィルタセレクトの選択肢を更新（出荷実績があるロットの導入元のみ）
-  const lotsWithShips = new Set(DATA.ships.map(s=>s.lot_id).filter(Boolean));
-  const sources = [...new Set(DATA.lots.filter(l=>lotsWithShips.has(l.id)).map(l=>l.source).filter(Boolean))];
+  // フィルタセレクトの選択肢を更新
+  const sources = [...new Set(DATA.lots.map(l=>l.source).filter(Boolean))];
   const buyers  = [...new Set(DATA.slaughter.map(s=>s.buyer).filter(Boolean))];
   const srcEl = document.getElementById('pf-f-source');
   const curSrc = srcEl?.value;
-  // 現在の選択値が実績なし導入元の場合はリセット
-  const validSrc = curSrc && sources.includes(curSrc) ? curSrc : '';
-  if(srcEl) srcEl.innerHTML = '<option value="">全て</option>' + sources.map(s=>`<option value="${s}" ${s===validSrc?'selected':''}>${s}</option>`).join('');
+  if(srcEl) srcEl.innerHTML = '<option value="">全て</option>' + sources.map(s=>`<option value="${s}" ${s===curSrc?'selected':''}>${s}</option>`).join('');
   const buyEl = document.getElementById('pf-f-buyer');
   const curBuy = buyEl?.value;
   if(buyEl) buyEl.innerHTML = '<option value="">全て</option>' + buyers.map(b=>`<option value="${b}" ${b===curBuy?'selected':''}>${b}</option>`).join('');

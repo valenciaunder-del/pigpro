@@ -6176,16 +6176,27 @@ function rPerfFull() {
     const vals = filteredDetails.map(d=>d.carcass_weight).filter(v=>v>0);
     return vals.length ? (vals.reduce((a,v)=>a+v,0)/vals.length).toFixed(1) : null;
   })();
-  const avgUnitPrice = (() => {
-    // unit_price が slaughter_detail にある場合はそこから、なければ sheet から
-    let totalAmt = 0, totalHead = 0;
+  // 相場単価（market_price の加重平均）
+  const avgMarketPrice = (() => {
+    let totalAmt = 0, totalKg = 0;
     filteredShips.forEach(s => {
       const sheet = DATA.slaughter.find(sh=>sh.id===s.sheet_id);
-      if(!sheet) return;
-      const up = sheet.market_price || (sheet.carcass_amount && sheet.head_count ? Math.round(sheet.carcass_amount / (sheet.total_carcass_kg||1)) : null);
-      if(up && s.count) { totalAmt += up * s.count; totalHead += s.count; }
+      if(!sheet?.market_price || !sheet.total_carcass_kg) return;
+      totalAmt += sheet.market_price * sheet.total_carcass_kg;
+      totalKg  += sheet.total_carcass_kg;
     });
-    return totalHead > 0 ? Math.round(totalAmt / totalHead) : null;
+    return totalKg > 0 ? Math.round(totalAmt / totalKg) : null;
+  })();
+  // 実績単価（枝肉金額÷枝肉重量、税抜）
+  const avgUnitPrice = (() => {
+    let totalAmt = 0, totalKg = 0;
+    filteredShips.forEach(s => {
+      const sheet = DATA.slaughter.find(sh=>sh.id===s.sheet_id);
+      if(!sheet?.carcass_amount || !sheet.total_carcass_kg) return;
+      totalAmt += sheet.carcass_amount;
+      totalKg  += sheet.total_carcass_kg;
+    });
+    return totalKg > 0 ? Math.round(totalAmt / totalKg) : null;
   })();
 
   document.getElementById('pf-kpi').innerHTML = `
@@ -6194,7 +6205,8 @@ function rPerfFull() {
     <div class="kcard r"><div class="kl">事故率</div><div class="kv">${deathRate!==null?deathRate+' %':'-'}</div></div>
     <div class="kcard c"><div class="kl">上物率</div><div class="kv">${upperRate!==null?upperRate+' %':'-'}</div></div>
     <div class="kcard y"><div class="kl">平均出荷枝重</div><div class="kv">${avgCwKpi||'-'}<span class="ku">kg</span></div></div>
-    <div class="kcard g"><div class="kl">平均単価</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
+    <div class="kcard g"><div class="kl">相場単価</div><div class="kv">${avgMarketPrice?'¥'+avgMarketPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
+    <div class="kcard c"><div class="kl">実績単価（税抜）</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard o"><div class="kl">枝肉達成率</div><div class="kv">${cwAch!==null?cwAch+' %':'-'}</div></div>
     <div class="kcard y"><div class="kl">平均肥育日数</div><div class="kv">${avgDays||'-'}<span class="ku">日</span></div></div>
     <div class="kcard p"><div class="kl">対象ロット</div><div class="kv">${lots.length}<span class="ku">ロット</span></div></div>`;

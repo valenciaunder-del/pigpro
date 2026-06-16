@@ -6050,11 +6050,17 @@ function rPerfFull() {
   const lots = getPfLots();
 
   // フィルタセレクトの選択肢を更新
-  const sources = [...new Set(DATA.lots.map(l=>l.source).filter(Boolean))];
+  // 出荷実績（shipping_records）があるロットの導入元のみ表示
+  const lotsWithShips = new Set(DATA.ships.map(s=>s.lot_id).filter(Boolean));
+  const sources = [...new Set(DATA.lots.filter(l=>lotsWithShips.has(l.id)).map(l=>l.source).filter(Boolean))];
   const buyers  = [...new Set(DATA.slaughter.map(s=>s.buyer).filter(Boolean))];
   const srcEl = document.getElementById('pf-f-source');
   const curSrc = srcEl?.value;
-  if(srcEl) srcEl.innerHTML = '<option value="">全て</option>' + sources.map(s=>`<option value="${s}" ${s===curSrc?'selected':''}>${s}</option>`).join('');
+  const validSrc = curSrc && sources.includes(curSrc) ? curSrc : '';
+  if(srcEl) {
+    srcEl.innerHTML = '<option value="">全て</option>' + sources.map(s=>`<option value="${s}" ${s===validSrc?'selected':''}>${s}</option>`).join('');
+    if(validSrc !== curSrc) { srcEl.value = ''; }
+  }
   const buyEl = document.getElementById('pf-f-buyer');
   const curBuy = buyEl?.value;
   if(buyEl) buyEl.innerHTML = '<option value="">全て</option>' + buyers.map(b=>`<option value="${b}" ${b===curBuy?'selected':''}>${b}</option>`).join('');

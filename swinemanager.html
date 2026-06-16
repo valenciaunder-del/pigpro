@@ -743,7 +743,21 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         </div>
       </div>
       <div class="tw"><table>
-        <thead><tr><th>農場</th><th>ロット</th><th>豚舎</th><th>品種</th><th>導入日</th><th>頭数</th><th>肥育日数</th><th>導入体重</th><th>現体重</th><th>ADG</th><th>FCR</th><th>死廃</th><th>事故率</th><th>状態</th><th></th></tr></thead>
+        <thead><tr id="lot-thead">
+          <th>農場</th>
+          <th style="cursor:pointer;user-select:none" onclick="sortLots('id')">ロット <span id="lot-sort-id"></span></th>
+          <th>豚舎</th><th>品種</th>
+          <th style="cursor:pointer;user-select:none" onclick="sortLots('start_date')">導入日 <span id="lot-sort-start_date">↓</span></th>
+          <th style="cursor:pointer;user-select:none" onclick="sortLots('head')">頭数 <span id="lot-sort-head"></span></th>
+          <th style="cursor:pointer;user-select:none" onclick="sortLots('days')">肥育日数 <span id="lot-sort-days"></span></th>
+          <th style="cursor:pointer;user-select:none" onclick="sortLots('start_weight')">導入体重 <span id="lot-sort-start_weight"></span></th>
+          <th style="cursor:pointer;user-select:none" onclick="sortLots('source')">導入元 <span id="lot-sort-source"></span></th>
+          <th>現体重</th>
+          <th style="cursor:pointer;user-select:none" onclick="sortLots('adg')">ADG <span id="lot-sort-adg"></span></th>
+          <th>FCR</th><th>死廃</th>
+          <th style="cursor:pointer;user-select:none" onclick="sortLots('accident')">事故率 <span id="lot-sort-accident"></span></th>
+          <th>状態</th><th></th>
+        </tr></thead>
         <tbody id="lot-tb"><tr><td colspan="13" style="text-align:center;color:var(--muted);padding:20px">読み込み中...</td></tr></tbody>
       </table></div>
     </div>
@@ -4797,12 +4811,49 @@ function rDashFcr() {
 }
 
 
+// ロット一覧ソート
+let _lotSortCol = 'start_date';
+let _lotSortAsc = false;
+function sortLots(col) {
+  _lotSortCol===col ? (_lotSortAsc=!_lotSortAsc) : (_lotSortCol=col, _lotSortAsc=col!=='start_date');
+  rLotFull();
+}
+function applyLotSort(lots) {
+  const col=_lotSortCol, asc=_lotSortAsc;
+  return [...lots].sort((a,b)=>{
+    let va,vb;
+    switch(col){
+      case 'id':           va=a.id||'';             vb=b.id||'';             break;
+      case 'start_date':   va=a.start_date||'';     vb=b.start_date||'';     break;
+      case 'head':         va=calcCurrentHead(a);   vb=calcCurrentHead(b);   break;
+      case 'days':         va=dElLot(a)||0;          vb=dElLot(b)||0;         break;
+      case 'start_weight': va=a.start_weight||0;    vb=b.start_weight||0;    break;
+      case 'source':       va=a.source||'';          vb=b.source||'';         break;
+      case 'adg':          va=calcLotAdg(a,true)||0; vb=calcLotAdg(b,true)||0; break;
+      case 'accident':{
+        const da=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===a.id&&d.confirmed!==false));
+        const db=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===b.id&&d.confirmed!==false));
+        va=a.count>0?da/a.count:0; vb=b.count>0?db/b.count:0; break;
+      }
+      default: va=0; vb=0;
+    }
+    return va<vb ? (asc?-1:1) : va>vb ? (asc?1:-1) : 0;
+  });
+}
+function updateLotSortIndicators(){
+  ['id','start_date','head','days','start_weight','source','adg','accident'].forEach(col=>{
+    const el=document.getElementById('lot-sort-'+col);
+    if(el) el.textContent = col===_lotSortCol ? (_lotSortAsc?'↑':'↓') : '';
+  });
+}
 function rLotFull() {
   const ff = CF==='both' ? 'all' : CF;
   const fs2 = document.getElementById('l-fs')?.value||'all';
   let lots = DATA.lots;
   if(ff!=='all') lots=lots.filter(l=>l.farm===ff);
   if(fs2!=='all') lots=lots.filter(l=>calcLotStatus(l)===fs2);
+  lots = applyLotSort(lots);
+  updateLotSortIndicators();
   document.getElementById('lot-tb').innerHTML = lots.length
     ? lots.map(l=>`<tr onclick="showLD('${l.id}')">
         <td>${fb(l.farm)}</td><td class="mn" style="color:var(--accent2)">${l.id}</td>
@@ -4811,6 +4862,7 @@ function rLotFull() {
         <td class="mn">${calcCurrentHead(l)}頭<span style="font-size:10px;color:var(--muted)">/${l.count}</span></td>
         <td class="mn">${dElLot(l)}日</td>
         <td class="mn">${l.start_weight||'-'} kg</td>
+        <td style="font-size:11px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--accent)">${l.source||'-'}</td>
         <td class="mn">${(()=>{const w=calcCurrentWeight(l);return w.value?w.value.toFixed(1)+' kg':'-';})()}</td>
         <td class="mn ${(()=>{const a=calcLotAdg(l,true);return a?ac(a):'';})()}">${(()=>{const a=calcLotAdg(l,true);if(!a) return '-';const partial=calcCurrentHead(l)>0;return a+' g'+(partial?'<span style="font-size:9px;color:var(--muted)"> 暫定</span>':'');})()}</td>
         <td class="mn ${fc(l.fcr)}">${l.fcr||0}</td>
@@ -4819,7 +4871,7 @@ function rLotFull() {
         <td>${sb2(calcLotStatus(l))}</td>
         <td><button class="btn bs sm" onclick="event.stopPropagation();showLD('${l.id}')">詳細</button></td>
       </tr>`).join('')
-    : '<tr><td colspan="15" style="text-align:center;color:var(--muted);padding:20px">ロットがありません</td></tr>';
+    : '<tr><td colspan="16" style="text-align:center;color:var(--muted);padding:20px">ロットがありません</td></tr>';
 }
 
 // ══════════════════════════════════════════════

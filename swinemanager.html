@@ -999,7 +999,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <!-- 農場 -->
         <div class="fg" style="min-width:100px">
           <label class="fl">農場</label>
-          <select class="fs" id="pf-f-farm" onchange="rPerfFull();syncMonthlyFarm()">
+          <select class="fs" id="pf-f-farm" onchange="rPerfFull()">
             <option value="">両方</option>
             <option value="farm1">中田農場</option>
             <option value="farm2">米山農場</option>
@@ -1172,13 +1172,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="cb">
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
           <div class="fg">
-            <label class="fl">対象農場</label>
-            <select class="fs" id="sp-farm" onchange="rShipPlan()" style="width:130px">
-              <option value="farm1">中田農場</option>
-              <option value="farm2">米山農場</option>
-            </select>
-          </div>
-          <div class="fg">
             <label class="fl">目標生体重(kg)</label>
             <input class="fi" type="number" id="sp-target-lw" value="122" step="1" style="width:80px" onchange="rShipPlan()">
           </div>
@@ -1203,10 +1196,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="ch" style="flex-wrap:wrap;gap:8px">
         <span class="ct">📆 月間出荷予定</span>
         <div style="display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap">
-          <select class="fs" id="sp-monthly-farm" onchange="rShipMonthly()" style="width:110px;font-size:12px">
-            <option value="farm1">中田農場</option>
-            <option value="farm2">米山農場</option>
-          </select>
           <select class="fs" id="sp-month-sel" onchange="rShipMonthly()" style="width:130px;font-size:12px"></select>
         </div>
       </div>
@@ -5121,14 +5110,7 @@ function refreshShipPlanIfActive() {
   }
 }
 
-// pf-f-farm 変更時にカレンダーも同期
-function syncMonthlyFarm() {
-  const pfFarm = document.getElementById('pf-f-farm')?.value;
-  const monthlyFarmEl = document.getElementById('sp-monthly-farm');
-  if(!pfFarm || !monthlyFarmEl) return;
-  monthlyFarmEl.value = (pfFarm === 'both') ? 'all' : pfFarm;
-  refreshShipPlanIfActive();
-}
+
 
 function setPfGraph(type, el) {
   PF_GRAPH_TYPE = type;
@@ -5172,7 +5154,7 @@ function setPfAxis(axis, el) {
 let _spChart = null;
 
 function rShipPlan() {
-  const farm = document.getElementById('sp-farm')?.value || 'farm1';
+  const farm = document.getElementById('pf-f-farm')?.value || 'farm1';
   const farmObj = FARMS[farm];
   const yieldRate = getYieldRate(farm) / 100; // 歩留まり率（小数）
   const cwMin = farmObj.targetCwMin || 76;
@@ -5726,13 +5708,7 @@ function rShipMonthly() {
   const [yr, mo] = selVal.split('-').map(Number);
   const DAY_NAMES = ['日','月','火','水','木','金','土'];
 
-  // pf-f-farm（左サイドの農場選択）と sp-monthly-farm を同期
-  const pfFarm = document.getElementById('pf-f-farm')?.value;
-  const monthlyFarmEl = document.getElementById('sp-monthly-farm');
-  if(pfFarm && monthlyFarmEl && pfFarm !== 'both' && monthlyFarmEl.value !== pfFarm) {
-    monthlyFarmEl.value = pfFarm;
-  }
-  const farmFilter = monthlyFarmEl?.value || 'farm1';
+  const farmFilter = document.getElementById('pf-f-farm')?.value || 'farm1';
 
   const activeLots = DATA.lots.filter(l => {
     if(farmFilter !== 'all' && l.farm !== farmFilter) return false;

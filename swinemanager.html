@@ -743,21 +743,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         </div>
       </div>
       <div class="tw"><table>
-        <thead><tr id="lot-thead">
-          <th>農場</th>
-          <th style="cursor:pointer;user-select:none" onclick="sortLots('id')">ロット <span id="lot-sort-id"></span></th>
-          <th>豚舎</th><th>品種</th>
-          <th style="cursor:pointer;user-select:none" onclick="sortLots('start_date')">導入日 <span id="lot-sort-start_date">↓</span></th>
-          <th style="cursor:pointer;user-select:none" onclick="sortLots('head')">頭数 <span id="lot-sort-head"></span></th>
-          <th style="cursor:pointer;user-select:none" onclick="sortLots('days')">肥育日数 <span id="lot-sort-days"></span></th>
-          <th style="cursor:pointer;user-select:none" onclick="sortLots('start_weight')">導入体重 <span id="lot-sort-start_weight"></span></th>
-          <th style="cursor:pointer;user-select:none" onclick="sortLots('source')">導入元 <span id="lot-sort-source"></span></th>
-          <th>現体重</th>
-          <th style="cursor:pointer;user-select:none" onclick="sortLots('adg')">ADG <span id="lot-sort-adg"></span></th>
-          <th>FCR</th><th>死廃</th>
-          <th style="cursor:pointer;user-select:none" onclick="sortLots('accident')">事故率 <span id="lot-sort-accident"></span></th>
-          <th>状態</th><th></th>
-        </tr></thead>
+        <thead><tr><th>農場</th><th>ロット</th><th>豚舎</th><th>品種</th><th>導入日</th><th>頭数</th><th>肥育日数</th><th>導入体重</th><th>現体重</th><th>ADG</th><th>FCR</th><th>死廃</th><th>事故率</th><th>状態</th><th></th></tr></thead>
         <tbody id="lot-tb"><tr><td colspan="13" style="text-align:center;color:var(--muted);padding:20px">読み込み中...</td></tr></tbody>
       </table></div>
     </div>
@@ -4811,52 +4797,12 @@ function rDashFcr() {
 }
 
 
-// ══════════════════════════════════════════════
-// ロット一覧ソート
-// ══════════════════════════════════════════════
-let _lotSortCol = 'start_date';
-let _lotSortAsc = false;
-function sortLots(col) {
-  if(_lotSortCol===col){_lotSortAsc=!_lotSortAsc;}else{_lotSortCol=col;_lotSortAsc=col!=='start_date';}
-  rLotFull();
-}
-function applyLotSort(lots) {
-  const col=_lotSortCol,asc=_lotSortAsc;
-  return [...lots].sort((a,b)=>{
-    let va,vb;
-    switch(col){
-      case 'id':va=a.id||'';vb=b.id||'';break;
-      case 'start_date':va=a.start_date||'';vb=b.start_date||'';break;
-      case 'head':va=calcCurrentHead(a);vb=calcCurrentHead(b);break;
-      case 'days':va=dElLot(a)||0;vb=dElLot(b)||0;break;
-      case 'start_weight':va=a.start_weight||0;vb=b.start_weight||0;break;
-      case 'source':va=a.source||'';vb=b.source||'';break;
-      case 'adg':va=calcLotAdg(a,true)||0;vb=calcLotAdg(b,true)||0;break;
-      case 'accident':{
-        const da=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===a.id&&d.confirmed!==false));
-        const db=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===b.id&&d.confirmed!==false));
-        va=a.count>0?da/a.count:0;vb=b.count>0?db/b.count:0;break;
-      }
-      default:va=0;vb=0;
-    }
-    if(va<vb)return asc?-1:1;if(va>vb)return asc?1:-1;return 0;
-  });
-}
-function updateLotSortIndicators(){
-  ['id','start_date','head','days','start_weight','source','adg','accident'].forEach(col=>{
-    const el=document.getElementById(`lot-sort-${col}`);
-    if(el)el.textContent=col===_lotSortCol?(_lotSortAsc?'↑':'↓'):'';
-  });
-}
-
 function rLotFull() {
   const ff = CF==='both' ? 'all' : CF;
   const fs2 = document.getElementById('l-fs')?.value||'all';
   let lots = DATA.lots;
   if(ff!=='all') lots=lots.filter(l=>l.farm===ff);
   if(fs2!=='all') lots=lots.filter(l=>calcLotStatus(l)===fs2);
-  lots = applyLotSort(lots);
-  updateLotSortIndicators();
   document.getElementById('lot-tb').innerHTML = lots.length
     ? lots.map(l=>`<tr onclick="showLD('${l.id}')">
         <td>${fb(l.farm)}</td><td class="mn" style="color:var(--accent2)">${l.id}</td>
@@ -6170,11 +6116,30 @@ function rPerfFull() {
     return (fcrVals.reduce((a,v)=>a+v,0)/fcrVals.length).toFixed(2);
   })();
 
+  // 平均枝肉重量・平均単価（filteredDetails + filteredShipsから）
+  const avgCwKpi = (() => {
+    const vals = filteredDetails.map(d=>d.carcass_weight).filter(v=>v>0);
+    return vals.length ? (vals.reduce((a,v)=>a+v,0)/vals.length).toFixed(1) : null;
+  })();
+  const avgUnitPrice = (() => {
+    // unit_price が slaughter_detail にある場合はそこから、なければ sheet から
+    let totalAmt = 0, totalHead = 0;
+    filteredShips.forEach(s => {
+      const sheet = DATA.slaughter.find(sh=>sh.id===s.sheet_id);
+      if(!sheet) return;
+      const up = sheet.market_price || (sheet.carcass_amount && sheet.head_count ? Math.round(sheet.carcass_amount / (sheet.total_carcass_kg||1)) : null);
+      if(up && s.count) { totalAmt += up * s.count; totalHead += s.count; }
+    });
+    return totalHead > 0 ? Math.round(totalAmt / totalHead) : null;
+  })();
+
   document.getElementById('pf-kpi').innerHTML = `
     <div class="kcard g"><div class="kl">平均ADG</div><div class="kv ${avgAdg?ac(avgAdg):''}">${avgAdg||'-'}<span class="ku">g/日</span></div></div>
     <div class="kcard c"><div class="kl">平均FCR</div><div class="kv ${avgFcr?fc(parseFloat(avgFcr)):''}">${avgFcr||'-'}</div></div>
     <div class="kcard r"><div class="kl">事故率</div><div class="kv">${deathRate!==null?deathRate+' %':'-'}</div></div>
     <div class="kcard c"><div class="kl">上物率</div><div class="kv">${upperRate!==null?upperRate+' %':'-'}</div></div>
+    <div class="kcard y"><div class="kl">平均出荷枝重</div><div class="kv">${avgCwKpi||'-'}<span class="ku">kg</span></div></div>
+    <div class="kcard g"><div class="kl">平均単価</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard o"><div class="kl">枝肉達成率</div><div class="kv">${cwAch!==null?cwAch+' %':'-'}</div></div>
     <div class="kcard y"><div class="kl">平均肥育日数</div><div class="kv">${avgDays||'-'}<span class="ku">日</span></div></div>
     <div class="kcard p"><div class="kl">対象ロット</div><div class="kv">${lots.length}<span class="ku">ロット</span></div></div>`;

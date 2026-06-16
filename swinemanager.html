@@ -6155,8 +6155,6 @@ function rPerfFull() {
   // 豚舎別事故率テーブル
   renderBarnAccident(lots);
 
-  // 旧KPI・ADG比較も更新
-  rPerf();
 }
 
 function renderBarnAccident(lots) {
@@ -6437,54 +6435,19 @@ function renderPfChart(lots) {
 }
 
 function rPerf() {
-  const lots = fLots();
-  const h = lots.reduce((a,l)=>a+l.count,0);
-  const deaths = lots.reduce((a,l)=>a+(l.deaths||0),0);
-  // 頭数加重平均ADG（shipping_records.live_weightベース、出荷実績あるロットのみ）
-  let adgWsum = 0, adgHsum = 0;
-  lots.forEach(l => {
-    const adg = calcLotAdg(l, true);
-    if(!adg) return;
-    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.live_weight>0);
-    const head = ships.reduce((a,s)=>a+s.count, 0);
-    if(head > 0) { adgWsum += adg * head; adgHsum += head; }
-  });
-  const avgAdg = adgHsum > 0 ? Math.round(adgWsum / adgHsum) : 0;
-  const fcrLots = lots.filter(l=>calcCurrentHead(l)===0).map(l=>calcLotFcr(l)).filter(v=>v!==null);
-  const avgFcr = fcrLots.length ? (fcrLots.reduce((a,v)=>a+v,0)/fcrLots.length).toFixed(2) : '-';
-  document.getElementById('pf-kpi').innerHTML = `
-    <div class="kcard g"><div class="kl">平均ADG</div><div class="kv">${avgAdg}<span class="ku">g/日</span></div></div>
-    <div class="kcard c"><div class="kl">平均FCR</div><div class="kv">${avgFcr}</div></div>
-    <div class="kcard r"><div class="kl">死廃率</div><div class="kv">${h>0?(deaths/h*100).toFixed(1):0}<span class="ku">%</span></div></div>
-    <div class="kcard o"><div class="kl">在場ロット数</div><div class="kv">${lots.length}<span class="ku">ロット</span></div></div>`;
-  document.getElementById('pf-adg').innerHTML = lots.map(l=>{
-    const adg = calcLotAdg(l, true) || 0;
-    const partial = calcCurrentHead(l)>0 && adg>0;
-    const hasData = DATA.ships.some(s=>s.lot_id===l.id && s.live_weight>0);
-    const p=Math.round(adg/750*100);
-    const ev=p>=100?'g':p>=96?'y':'r';
-    const adgCell = adg
-      ? `${adg} g${partial?'<span style="font-size:9px;color:var(--muted)"> 暫定</span>':''}`
-      : '<span style="color:var(--muted)">-</span>';
-    const barCell = adg
-      ? `<div class="pb" style="display:inline-block;width:100px"><div class="pf" style="width:${Math.min(100,p)}%;background:${p>=100?'var(--accent)':p>=96?'var(--warn)':'var(--danger)'}"></div></div><span style="font-size:11px;color:var(--muted);margin-left:4px">${p}%</span>`
-      : '<span style="color:var(--muted);font-size:11px">出荷実績なし</span>';
-    const evalCell = adg
-      ? `<span class="bdg ${ev}">${p>=100?'優良':p>=96?'普通':'要注意'}</span>`
-      : '<span style="color:var(--muted)">-</span>';
-    return `<tr><td>${fb(l.farm)}</td><td class="mn" style="color:var(--accent2)">${l.id}</td>
-      <td class="mn ${adg?ac(adg):''}">${adgCell}</td>
-      <td>${barCell}</td>
-      <td>${evalCell}</td></tr>`;
-  }).join('');
-  const f1l=DATA.lots.filter(l=>l.farm==='farm1');
-  const f2l=DATA.lots.filter(l=>l.farm==='farm2');
-  const fcr1=f1l.length?(f1l.reduce((a,l)=>a+(l.fcr||0),0)/f1l.length).toFixed(2):'-';
-  const fcr2=f2l.length?(f2l.reduce((a,l)=>a+(l.fcr||0),0)/f2l.length).toFixed(2):'-';
-  document.getElementById('pf-fcr').innerHTML = `
+  // rPerfFull に統合済み。FCR比較のみ更新
+  const f1l = DATA.lots.filter(l=>l.farm==='farm1');
+  const f2l = DATA.lots.filter(l=>l.farm==='farm2');
+  const getFcr = ls => {
+    const vals = ls.filter(l=>calcCurrentHead(l)===0).map(l=>calcLotFcr(l)).filter(v=>v>0);
+    return vals.length ? (vals.reduce((a,v)=>a+v,0)/vals.length).toFixed(2) : '-';
+  };
+  const fcr1 = getFcr(f1l);
+  const fcr2 = getFcr(f2l);
+  const fcrEl = document.getElementById('pf-fcr');
+  if(fcrEl) fcrEl.innerHTML = `
     <div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--f1)">中田農場</span><span class="mn ${fc(parseFloat(fcr1))}">${fcr1}</span></div><div class="pb"><div class="pf" style="width:${((3.5-parseFloat(fcr1))/1.5*100).toFixed(0)}%;background:var(--f1)"></div></div><div style="font-size:11px;color:var(--muted);margin-top:2px">目標: 2.70以下</div></div>
     <div style="margin-bottom:14px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--f2)">米山農場</span><span class="mn ${fc(parseFloat(fcr2))}">${fcr2}</span></div><div class="pb"><div class="pf" style="width:${((3.5-parseFloat(fcr2))/1.5*100).toFixed(0)}%;background:var(--f2)"></div></div><div style="font-size:11px;color:var(--muted);margin-top:2px">目標: 2.75以下</div></div>`;
-  // 条件別比較も更新
   rPfCmp();
 }
 

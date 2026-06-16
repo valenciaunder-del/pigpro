@@ -1217,7 +1217,10 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <span class="ct">🐷 肥育中ロット出荷予測</span>
         <span style="font-size:11px;color:var(--muted);margin-left:8px">過去実績のADG分布から推奨出荷スケジュールを生成</span>
       </div>
-      <div class="cb"><div id="sp-forecast"></div></div>
+      <div class="cb">
+        <div id="sp-source-tabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:8px"></div>
+        <div id="sp-forecast"></div>
+      </div>
     </div>
   </div>
 
@@ -5500,20 +5503,50 @@ function rShipTimingTable(optDaysArr, farm, shipDays, mean, std) {
   el.innerHTML = html;
 }
 
+let _sfSourceTab = 'all';
+function rShipForecastBySource(src) {
+  _sfSourceTab = src;
+  document.querySelectorAll('#sp-source-tabs button').forEach(b => {
+    const active = b.dataset.src === src;
+    b.style.background = active ? 'var(--accent2)' : 'var(--panel2)';
+    b.style.color = active ? '#000' : 'var(--text)';
+    b.style.fontWeight = active ? '700' : '400';
+  });
+  if(window._sfLastArgs) rShipForecast(...window._sfLastArgs);
+}
 function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yieldRate, shipDays) {
+  window._sfLastArgs = [farm, mean, std, p10, p25, p50, p75, p90, targetLw, yieldRate, shipDays];
   const el = document.getElementById('sp-forecast');
   const DAY_NAMES = ['日','月','火','水','木','金','土'];
   const farmObj = FARMS[farm];
 
-  // 肥育中ロット（出荷済みでないもの）
-  const activeLots = DATA.lots.filter(l => {
+  const allActiveLots = DATA.lots.filter(l => {
     if(l.farm !== farm) return false;
-    const hasShip = DATA.ships.some(s=>s.lot_id===l.id);
-    return !hasShip; // 出荷記録なし＝肥育中
+    return !DATA.ships.some(s=>s.lot_id===l.id);
   });
 
-  if(!activeLots.length) {
+  if(!allActiveLots.length) {
+    document.getElementById('sp-source-tabs').innerHTML = '';
     el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px">肥育中のロットがありません</div>';
+    return;
+  }
+
+  // 導入元タブ生成
+  const tabEl = document.getElementById('sp-source-tabs');
+  const sources = ['all', ...new Set(allActiveLots.map(l => l.source||'不明'))];
+  if(tabEl.dataset.farm !== farm || tabEl.children.length !== sources.length) {
+    tabEl.dataset.farm = farm;
+    _sfSourceTab = 'all';
+    tabEl.innerHTML = sources.map(s => {
+      const cnt = s==='all' ? allActiveLots.length : allActiveLots.filter(l=>(l.source||'不明')===s).length;
+      const active = s === _sfSourceTab;
+      return `<button data-src="${s}" onclick="rShipForecastBySource('${s}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:20px;cursor:pointer;font-size:12px;transition:all .15s;background:${active?'var(--accent2)':'var(--panel2)'};color:${active?'#000':'var(--text)'};font-weight:${active?'700':'400'}">${s==='all'?'全ロット':s}（${cnt}ロット）</button>`;
+    }).join('');
+  }
+
+  const activeLots = _sfSourceTab==='all' ? allActiveLots : allActiveLots.filter(l=>(l.source||'不明')===_sfSourceTab);
+  if(!activeLots.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px">該当するロットがありません</div>';
     return;
   }
 

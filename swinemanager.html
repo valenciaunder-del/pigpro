@@ -5788,118 +5788,27 @@ function rShipMonthly() {
     const pdfTotal = allDayPdfs.reduce((a,v) => a + v.pdf, 0);
     if(pdfTotal <= 0) return;
 
-    // 過去日に割り当てられる頭数を集計して繰越
-    let carryoverHead = 0;
-
+    // 過去日はスキップ（繰越なし）
     allDayPdfs.forEach(({ dateStr, pdf }) => {
+      if(dateStr < todayStr) return; // 過去日は無視
       const headForDay = currentHead * (pdf / pdfTotal);
-      if(dateStr < todayStr) {
-        // 過去日 → 繰越へ積算
-        carryoverHead += headForDay;
-      } else if(dailyTotals[dateStr]) {
-        // 対象月の未来日 → 通常加算
+      if(dailyTotals[dateStr]) {
         dailyTotals[dateStr].head += headForDay;
         dailyTotals[dateStr].lotBreakdown.push({ id: lot.id, farm, head: headForDay, carryover: false });
       }
     });
-
-    // 繰越分を今日以降の最初の出荷可能日に加算
-    if(carryoverHead > 0.5) {
-      const carryDateStr = nextShipDate(today, shipDays);
-      if(dailyTotals[carryDateStr]) {
-        dailyTotals[carryDateStr].head += carryoverHead;
-        dailyTotals[carryDateStr].carryover += carryoverHead;
-        dailyTotals[carryDateStr].lotBreakdown.push({ id: lot.id, farm, head: carryoverHead, carryover: true });
-      }
-    }
   });
 
-  // カレンダー生成（週またぎ対応：前月末・翌月初を含む完全週で表示）
+  // カレンダー生成
   const weeks = [];
   let week = [];
-
-  // 月の最初の日曜日より前の日（前月末）を追加
   const firstDow = monthDays[0].getDay();
-  for(let i=0;i<firstDow;i++) {
-    const d = new Date(monthDays[0]);
-    d.setDate(d.getDate() - (firstDow - i));
-    week.push(d); // 前月の日付（dailyTotalsにはないが日付オブジェクトとして保持）
-  }
+  for(let i=0;i<firstDow;i++) week.push(null);
   monthDays.forEach(d => {
     week.push(d);
     if(d.getDay()===6) { weeks.push(week); week=[]; }
   });
-  // 月末の未完週：翌月初の日付を追加して土曜まで埋める
-  if(week.length) {
-    const lastDay = monthDays[monthDays.length-1];
-    let extraDay = new Date(lastDay);
-    while(week.length<7) {
-      extraDay = new Date(extraDay);
-      extraDay.setDate(extraDay.getDate()+1);
-      week.push(new Date(extraDay));
-    }
-    weeks.push(week);
-  }
-
-  // 前月末・翌月初の日付のdailyTotalsを計算（当月外のロット分布を拡張）
-  // 当月外の日付に対しても頭数を計算するため、全日付範囲のtotalsを作成
-  const allDailyTotals = {...dailyTotals};
-  // 前月・翌月の日付を収集
-  const extraDates = new Set();
-  weeks.forEach(w => w.forEach(d => {
-    if(!d) return;
-    const ds = toLocalDateStr(d);
-    if(!allDailyTotals[ds]) extraDates.add(ds);
-  }));
-  // 当月外の日付を初期化
-  extraDates.forEach(ds => { allDailyTotals[ds] = { head:0, lotBreakdown:[], carryover:0 }; });
-  // ロット分布を当月外の日付にも適用（既存ループ外の日付分）
-  activeLots.forEach(lot => {
-    const farm2 = lot.farm;
-    const farmObj2 = FARMS[farm2];
-    const yieldRate2 = getYieldRate(farm2) / 100;
-    const shipDays2 = farmObj2.shipDays || [];
-    const currentHead2 = calcCurrentHead(lot);
-    if(currentHead2 <= 0) return;
-    const fcTargetLw2 = (typeof FORECAST_TARGET_LW !== 'undefined') ? FORECAST_TARGET_LW
-      : (((farmObj2.targetCwMin||76)+(farmObj2.targetCwMax||82.5))/2)/yieldRate2;
-    let useAdg2 = farmObj2.adgT||750;
-    if(typeof calcSourceAdgMap === 'function') {
-      const srcMap2 = calcSourceAdgMap(lot.farm);
-      const srcD2 = srcMap2[lot.source||'不明'];
-      const fAdg2 = (() => { let ws=0,hs=0; Object.values(srcMap2).forEach(r=>{if(r.adg){ws+=r.adg*r.headSum;hs+=r.headSum;}}); return hs>0?Math.round(ws/hs):(farmObj2.adgT||750); })();
-      useAdg2 = (srcD2?.adg && srcD2.headSum >= 10) ? srcD2.adg : fAdg2;
-    }
-    const p50v2 = (typeof daysToTargetLw === 'function')
-      ? daysToTargetLw(lot.start_weight||30, useAdg2, fcTargetLw2)
-      : Math.round((fcTargetLw2-(lot.start_weight||30))/(useAdg2/1000));
-    const sigma2 = 18;
-    const startDate2 = new Date(lot.start_date);
-    const rangeMin2 = Math.max(0, Math.floor(p50v2 - sigma2*3));
-    const rangeMax2 = Math.ceil(p50v2 + sigma2*3);
-    const allDayPdfs2 = [];
-    for(let dfi=rangeMin2; dfi<=rangeMax2; dfi++) {
-      const date2 = new Date(startDate2);
-      date2.setDate(startDate2.getDate()+dfi);
-      const ds2 = toLocalDateStr(date2);
-      if(!extraDates.has(ds2)) continue; // 当月外の新規日付のみ
-      const dow2 = date2.getDay();
-      if(shipDays2.length && !shipDays2.includes(dow2)) continue;
-      const z2 = (dfi - p50v2) / sigma2;
-      const pdf2 = Math.exp(-0.5*z2*z2)/(sigma2*Math.sqrt(2*Math.PI));
-      allDayPdfs2.push({ dateStr: ds2, pdf: pdf2 });
-    }
-    if(!allDayPdfs2.length) return;
-    const pdfTotal2 = allDayPdfs2.reduce((a,v)=>a+v.pdf,0);
-    if(pdfTotal2 <= 0) return;
-    allDayPdfs2.forEach(({dateStr, pdf}) => {
-      const headForDay2 = currentHead2*(pdf/pdfTotal2);
-      if(allDailyTotals[dateStr]) {
-        allDailyTotals[dateStr].head += headForDay2;
-        allDailyTotals[dateStr].lotBreakdown.push({id:lot.id, farm:farm2, head:headForDay2, carryover:false});
-      }
-    });
-  });
+  if(week.length) { while(week.length<7) week.push(null); weeks.push(week); }
 
   const farmColor = {'farm1':'var(--f1)','farm2':'var(--f2)'};
   const monthTotal = Object.values(dailyTotals).reduce((a,v) => a + v.head, 0);
@@ -5916,14 +5825,12 @@ function rShipMonthly() {
       </thead>
       <tbody>
         ${weeks.map(week => {
-          const weekTotal = week.reduce((a,day)=>a+(day?allDailyTotals[toLocalDateStr(day)]?.head||0:0),0);
-          const isThisMonth = week.some(d=>d&&d.getMonth()===(mo-1));
+          const weekTotal = week.reduce((a,day)=>a+(day?dailyTotals[toLocalDateStr(day)]?.head||0:0),0);
           return `<tr>
             ${week.map(day => {
               if(!day) return `<td style="padding:6px 4px;border:1px solid var(--border);background:var(--panel2);opacity:0.3"></td>`;
               const dateStr = toLocalDateStr(day);
-              const isOtherMonth = day.getMonth() !== (mo-1);
-              const data = allDailyTotals[dateStr] || {head:0,lotBreakdown:[],carryover:0};
+              const data = dailyTotals[dateStr];
               const headFloat = data.head;
               const headRound = Math.round(headFloat);
               const isToday = dateStr===todayStr;
@@ -5933,9 +5840,8 @@ function rShipMonthly() {
                 if(!farmHeadMap[lb.farm]) farmHeadMap[lb.farm]=0;
                 farmHeadMap[lb.farm]+=lb.head;
               });
-              const bgColor=isOtherMonth?'var(--panel2)':isToday?'rgba(74,222,128,0.15)':isSun?'rgba(248,113,113,0.05)':isSat?'rgba(96,165,250,0.05)':'var(--panel)';
-              const dayColor=isOtherMonth?'var(--muted)':isSun?'var(--danger)':isSat?'#60a5fa':'var(--text)';
-              const cellOpacity=isOtherMonth?'opacity:0.65;':'';
+              const bgColor=isToday?'rgba(74,222,128,0.15)':isSun?'rgba(248,113,113,0.05)':isSat?'rgba(96,165,250,0.05)':'var(--panel)';
+              const dayColor=isSun?'var(--danger)':isSat?'#60a5fa':'var(--text)';
               const isPeak = headFloat > totalCurrentHead / (daysInMonth * 0.4);
 
               // ロット別集計（頭数降順）
@@ -5950,7 +5856,7 @@ function rShipMonthly() {
                 .sort((a,b)=>b[1].head-a[1].head);
               const carryoverTotal = Math.round(data.carryover||0);
 
-              return `<td style="padding:5px 4px;border:1px solid var(--border);background:${bgColor};vertical-align:top;min-width:80px;height:auto;${cellOpacity}">
+              return `<td style="padding:5px 4px;border:1px solid var(--border);background:${bgColor};vertical-align:top;min-width:80px;height:auto">
                 <div style="font-size:11px;font-weight:${isToday?'700':'400'};color:${dayColor};margin-bottom:3px">${day.getDate()}</div>
                 ${headRound>0?`
                   <div style="font-size:${headRound>=30?'15':'13'}px;font-weight:700;color:${isPeak?'var(--warn)':'var(--accent2)'};margin-bottom:4px">

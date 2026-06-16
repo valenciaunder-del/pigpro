@@ -751,6 +751,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <th style="cursor:pointer;user-select:none" onclick="sortLots('head')">頭数 <span id="lot-sort-head"></span></th>
           <th style="cursor:pointer;user-select:none" onclick="sortLots('days')">肥育日数 <span id="lot-sort-days"></span></th>
           <th style="cursor:pointer;user-select:none" onclick="sortLots('start_weight')">導入体重 <span id="lot-sort-start_weight"></span></th>
+          <th>導入元</th>
           <th>現体重</th>
           <th style="cursor:pointer;user-select:none" onclick="sortLots('adg')">ADG <span id="lot-sort-adg"></span></th>
           <th>FCR</th><th>死廃</th>
@@ -4815,41 +4816,36 @@ function rDashFcr() {
 // ══════════════════════════════════════════════
 let _lotSortCol = 'start_date';
 let _lotSortAsc = false;
-
 function sortLots(col) {
-  if(_lotSortCol === col) { _lotSortAsc = !_lotSortAsc; }
-  else { _lotSortCol = col; _lotSortAsc = col !== 'start_date'; }
+  if(_lotSortCol===col){_lotSortAsc=!_lotSortAsc;}else{_lotSortCol=col;_lotSortAsc=col!=='start_date';}
   rLotFull();
 }
-
 function applyLotSort(lots) {
-  const col = _lotSortCol, asc = _lotSortAsc;
-  return [...lots].sort((a, b) => {
-    let va, vb;
-    switch(col) {
-      case 'id':           va=a.id||'';              vb=b.id||'';             break;
-      case 'start_date':   va=a.start_date||'';      vb=b.start_date||'';     break;
-      case 'head':         va=calcCurrentHead(a);    vb=calcCurrentHead(b);   break;
-      case 'days':         va=dElLot(a)||0;          vb=dElLot(b)||0;         break;
-      case 'start_weight': va=a.start_weight||0;     vb=b.start_weight||0;    break;
-      case 'adg':          va=calcLotAdg(a,true)||0; vb=calcLotAdg(b,true)||0; break;
-      case 'accident': {
+  const col=_lotSortCol,asc=_lotSortAsc;
+  return [...lots].sort((a,b)=>{
+    let va,vb;
+    switch(col){
+      case 'id':           va=a.id||'';vb=b.id||'';break;
+      case 'start_date':   va=a.start_date||'';vb=b.start_date||'';break;
+      case 'head':         va=calcCurrentHead(a);vb=calcCurrentHead(b);break;
+      case 'days':         va=dElLot(a)||0;vb=dElLot(b)||0;break;
+      case 'start_weight': va=a.start_weight||0;vb=b.start_weight||0;break;
+      case 'source':       va=a.source||'';vb=b.source||'';break;
+      case 'adg':          va=calcLotAdg(a,true)||0;vb=calcLotAdg(b,true)||0;break;
+      case 'accident':{
         const da=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===a.id&&d.confirmed!==false));
         const db=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===b.id&&d.confirmed!==false));
-        va=a.count>0?da/a.count:0; vb=b.count>0?db/b.count:0; break;
+        va=a.count>0?da/a.count:0;vb=b.count>0?db/b.count:0;break;
       }
-      default: va=0; vb=0;
+      default:va=0;vb=0;
     }
-    if(va<vb) return asc?-1:1;
-    if(va>vb) return asc?1:-1;
-    return 0;
+    if(va<vb)return asc?-1:1;if(va>vb)return asc?1:-1;return 0;
   });
 }
-
-function updateLotSortIndicators() {
-  ['id','start_date','head','days','start_weight','adg','accident'].forEach(col=>{
+function updateLotSortIndicators(){
+  ['id','start_date','head','days','start_weight','source','adg','accident'].forEach(col=>{
     const el=document.getElementById(`lot-sort-${col}`);
-    if(el) el.textContent=col===_lotSortCol?(_lotSortAsc?'↑':'↓'):'';
+    if(el)el.textContent=col===_lotSortCol?(_lotSortAsc?'↑':'↓'):'';
   });
 }
 
@@ -4859,8 +4855,6 @@ function rLotFull() {
   let lots = DATA.lots;
   if(ff!=='all') lots=lots.filter(l=>l.farm===ff);
   if(fs2!=='all') lots=lots.filter(l=>calcLotStatus(l)===fs2);
-  lots = applyLotSort(lots);
-  updateLotSortIndicators();
   document.getElementById('lot-tb').innerHTML = lots.length
     ? lots.map(l=>`<tr onclick="showLD('${l.id}')">
         <td>${fb(l.farm)}</td><td class="mn" style="color:var(--accent2)">${l.id}</td>
@@ -4869,6 +4863,7 @@ function rLotFull() {
         <td class="mn">${calcCurrentHead(l)}頭<span style="font-size:10px;color:var(--muted)">/${l.count}</span></td>
         <td class="mn">${dElLot(l)}日</td>
         <td class="mn">${l.start_weight||'-'} kg</td>
+        <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.source?`<span style="color:var(--accent);font-size:11px">${l.source}</span>`:'-'}</td>
         <td class="mn">${(()=>{const w=calcCurrentWeight(l);return w.value?w.value.toFixed(1)+' kg':'-';})()}</td>
         <td class="mn ${(()=>{const a=calcLotAdg(l,true);return a?ac(a):'';})()}">${(()=>{const a=calcLotAdg(l,true);if(!a) return '-';const partial=calcCurrentHead(l)>0;return a+' g'+(partial?'<span style="font-size:9px;color:var(--muted)"> 暫定</span>':'');})()}</td>
         <td class="mn ${fc(l.fcr)}">${l.fcr||0}</td>
@@ -4877,7 +4872,7 @@ function rLotFull() {
         <td>${sb2(calcLotStatus(l))}</td>
         <td><button class="btn bs sm" onclick="event.stopPropagation();showLD('${l.id}')">詳細</button></td>
       </tr>`).join('')
-    : '<tr><td colspan="15" style="text-align:center;color:var(--muted);padding:20px">ロットがありません</td></tr>';
+    : '<tr><td colspan="16" style="text-align:center;color:var(--muted);padding:20px">ロットがありません</td></tr>';
 }
 
 // ══════════════════════════════════════════════
@@ -6108,11 +6103,9 @@ function rPerfFull() {
   const lots = getPfLots();
 
   // フィルタセレクトの選択肢を更新
-  // 出荷実績のある（完全出荷済みまたは一部出荷済み）ロットの導入元のみ表示
-  const shippedLotIds = new Set(DATA.ships.filter(s=>s.lot_id).map(s=>s.lot_id));
-  const sources = [...new Set(
-    DATA.lots.filter(l => shippedLotIds.has(l.id)).map(l=>l.source).filter(Boolean)
-  )].sort();
+  // 出荷実績（shipping_records）があるロットの導入元のみ表示
+  const lotsWithShips = new Set(DATA.ships.map(s=>s.lot_id).filter(Boolean));
+  const sources = [...new Set(DATA.lots.filter(l=>lotsWithShips.has(l.id)).map(l=>l.source).filter(Boolean))];
   const buyers  = [...new Set(DATA.slaughter.map(s=>s.buyer).filter(Boolean))];
   const srcEl = document.getElementById('pf-f-source');
   const curSrc = srcEl?.value;

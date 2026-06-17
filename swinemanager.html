@@ -1072,14 +1072,18 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 
   <!-- 豚舎別事故率 -->
   <div class="card mb18" id="pf-barn-accident-card">
-    <div class="ch">
-      <span class="ct">🏠 豚舎別 事故率</span>
-      <span id="pf-barn-accident-note" style="font-size:11px;color:var(--muted)"></span>
+    <div class="ch" style="flex-wrap:wrap;gap:8px">
+      <span class="ct" id="pf-acc-title">🏠 豚舎別 事故率</span>
+      <div style="display:flex;gap:6px;margin-left:8px">
+        <button class="btn bs sm pf-acc-axis-btn active" data-axis="barn" onclick="setPfAccAxis('barn',this)">豚舎別</button>
+        <button class="btn bs sm pf-acc-axis-btn" data-axis="source" onclick="setPfAccAxis('source',this)">導入元別</button>
+      </div>
+      <span id="pf-barn-accident-note" style="font-size:11px;color:var(--muted);margin-left:auto"></span>
     </div>
     <div class="tw">
       <table>
         <thead><tr>
-          <th>農場</th><th>豚舎</th><th>ロット数</th><th>導入頭数</th><th>死廃頭数</th><th>事故率</th><th>平均ADG</th><th>平均肥育日数</th>
+          <th>農場</th><th id="pf-acc-col2">豚舎</th><th>ロット数</th><th>導入頭数</th><th>死廃頭数</th><th>事故率</th><th>平均ADG</th><th>平均肥育日数</th>
         </tr></thead>
         <tbody id="pf-barn-accident-tb"></tbody>
       </table>
@@ -6316,9 +6320,20 @@ function rPerfFull() {
   // グラフ描画
   renderPfChart(lots);
 
-  // 豚舎別事故率テーブル
+  // 豚舎別/導入元別 事故率テーブル
+  window._pfAccLots = lots;
   renderBarnAccident(lots);
 
+}
+
+let _pfAccAxis = 'barn';
+function setPfAccAxis(axis, el) {
+  _pfAccAxis = axis;
+  document.querySelectorAll('.pf-acc-axis-btn').forEach(b=>b.classList.remove('active'));
+  if(el) el.classList.add('active');
+  document.getElementById('pf-acc-title').textContent = axis==='barn' ? '🏠 豚舎別 事故率' : '📦 導入元別 事故率';
+  document.getElementById('pf-acc-col2').textContent = axis==='barn' ? '豚舎' : '導入元';
+  if(window._pfAccLots) renderBarnAccident(window._pfAccLots);
 }
 
 function renderBarnAccident(lots) {
@@ -6326,13 +6341,13 @@ function renderBarnAccident(lots) {
   const note = document.getElementById('pf-barn-accident-note');
   if(!tb) return;
 
-  // 農場×豚舎でグループ化
+  // 農場×（豚舎 or 導入元）でグループ化
   const groups = {};
   lots.forEach(l => {
     const farmName = FARMS[l.farm]?.name || l.farm;
-    const barn = l.barn || '未設定';
-    const key = `${l.farm}__${barn}`;
-    if(!groups[key]) groups[key] = { farm: l.farm, farmName, barn, lots: [], deaths: 0, intros: 0, adgWs: 0, adgHs: 0, daysSum: 0, daysCnt: 0 };
+    const groupVal = _pfAccAxis === 'barn' ? (l.barn || '未設定') : (l.source || '不明');
+    const key = `${l.farm}__${groupVal}`;
+    if(!groups[key]) groups[key] = { farm: l.farm, farmName, barn: groupVal, lots: [], deaths: 0, intros: 0, adgWs: 0, adgHs: 0, daysSum: 0, daysCnt: 0 };
     const g = groups[key];
     g.lots.push(l);
     g.intros += l.count || 0;
@@ -6352,9 +6367,10 @@ function renderBarnAccident(lots) {
     return a.barn.localeCompare(b.barn);
   });
 
-  // 豚舎設定なしロットが多い場合は注記
-  const noBar = lots.filter(l => !l.barn).length;
-  if(note) note.textContent = noBar > 0 ? `※豚舎未設定ロット ${noBar}件含む` : '';
+  // 豚舎・導入元設定なしロットが多い場合は注記
+  const noBar = _pfAccAxis === 'barn' ? lots.filter(l => !l.barn).length : lots.filter(l => !l.source).length;
+  const labelName = _pfAccAxis === 'barn' ? '豚舎' : '導入元';
+  if(note) note.textContent = noBar > 0 ? `※${labelName}未設定ロット ${noBar}件含む` : '';
 
   if(!rows.length) {
     tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">データがありません</td></tr>';

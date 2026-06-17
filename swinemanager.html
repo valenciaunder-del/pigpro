@@ -1010,12 +1010,15 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     </div>
     <div class="cb">
       <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
-        <!-- 農場：左サイドバーの農場切替と連動（非表示の隠し要素で値だけ保持） -->
-        <select class="fs" id="pf-f-farm" onchange="rPerfFull()" style="display:none">
-          <option value="">両方</option>
-          <option value="farm1">中田農場</option>
-          <option value="farm2">米山農場</option>
-        </select>
+        <!-- 農場 -->
+        <div class="fg" style="min-width:100px">
+          <label class="fl">農場</label>
+          <select class="fs" id="pf-f-farm" onchange="rPerfFull()">
+            <option value="">両方</option>
+            <option value="farm1">中田農場</option>
+            <option value="farm2">米山農場</option>
+          </select>
+        </div>
         <!-- 豚舎 -->
         <div class="fg" style="min-width:100px">
           <label class="fl">豚舎</label>
@@ -6165,9 +6168,10 @@ function rPerfFull() {
   const lots = getPfLots();
 
   // フィルタセレクトの選択肢を更新
-  // 出荷実績（shipping_records）があるロットの導入元のみ表示
+  // 出荷実績（shipping_records）があるロットの導入元のみ表示（現在選択中の農場でのみ絞り込み）
   const lotsWithShips = new Set(DATA.ships.map(s=>s.lot_id).filter(Boolean));
-  const sources = [...new Set(DATA.lots.filter(l=>lotsWithShips.has(l.id)).map(l=>l.source).filter(Boolean))];
+  const farmForSource = CF==='both' ? DATA.lots : DATA.lots.filter(l=>l.farm===CF);
+  const sources = [...new Set(farmForSource.filter(l=>lotsWithShips.has(l.id)).map(l=>l.source).filter(Boolean))];
   const buyers  = [...new Set(DATA.slaughter.map(s=>s.buyer).filter(Boolean))];
   const srcEl = document.getElementById('pf-f-source');
   const curSrc = srcEl?.value;

@@ -8699,9 +8699,11 @@ function rDthTb() {
   if(countEl) countEl.textContent = `${sorted.length}件・${totalHead}頭`;
   tb.innerHTML = sorted.map(d=>{
     const iv = DATA.ival.find(v=>v.lot_id===d.lot_id && v.occurred_at===d.occurred_at && d.category==='廃用（事故）');
+    const dLot = d.lot_id ? DATA.lots.find(l=>l.id===d.lot_id) : null;
+    const barnTag = dLot?.barn ? `<span style="font-size:10px;background:var(--panel);color:var(--accent2);padding:1px 6px;border-radius:8px;margin-left:6px">${dLot.barn}</span>` : '';
     return `<tr>
       <td>${fb(d.farm)}</td>
-      <td class="mn" style="color:var(--accent2)">${d.lot_id||'-'}</td>
+      <td class="mn" style="color:var(--accent2)">${d.lot_id||'-'}${barnTag}</td>
       <td class="mn">${d.occurred_at||'-'}</td>
       <td><span class="bdg ${d.category==='死亡'?'r':d.category==='廃棄（出荷後）'?'nb':d.category==='廃用（事故）'?'o':'y'}">${d.category}</span></td>
       <td class="mn nb">${d.count}頭</td>

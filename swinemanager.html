@@ -862,7 +862,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="ch"><span class="ct">死亡・廃用記録</span></div>
       <div class="cb">
         <div class="fg3 mb16">
-          <div class="fg"><label class="fl">ロット</label><select class="fs" id="dth-lot" onchange="onDthLotChange()"></select></div>
+          <div class="fg"><label class="fl">ロット</label><select class="fs" id="dth-lot" onchange="onDthLotChange()"></select><div id="dth-lot-barn" style="font-size:11px;color:var(--accent2);margin-top:4px;min-height:14px"></div></div>
           <div class="fg">
             <label class="fl">発生日 *</label>
             <div style="display:flex;gap:6px;align-items:center">
@@ -8014,6 +8014,9 @@ function onDthLotChange() {
   const lot_id = document.getElementById('dth-lot').value;
   const l = DATA.lots.find(x=>x.id===lot_id);
   if(l && l.price) document.getElementById('acc-price').value = l.price;
+  // 豚舎表示
+  const barnEl = document.getElementById('dth-lot-barn');
+  if(barnEl) barnEl.textContent = l?.barn ? `🏠 ${l.barn}` : '';
 }
 
 function calcAccidentVal() {
@@ -14906,6 +14909,10 @@ function fillSelects() {
     dthLotEl.innerHTML = active.map(l=>
       `<option value="${l.id}" ${l.id===curVal?'selected':''}>${l.id} (${FARMS[l.farm]?.short||l.farm}) 在場${calcCurrentHead(l)}頭</option>`
     ).join('');
+    // 選択中ロットの豚舎を表示
+    const selLot = DATA.lots.find(l=>l.id===dthLotEl.value);
+    const barnEl = document.getElementById('dth-lot-barn');
+    if(barnEl) barnEl.textContent = selLot?.barn ? `🏠 ${selLot.barn}` : '';
   }
   const today = new Date().toISOString().slice(0,10);
   ['w-date','fd-date','dth-date','fp-date'].forEach(id=>{ const el=document.getElementById(id); if(el&&!el.value) el.value=today; });

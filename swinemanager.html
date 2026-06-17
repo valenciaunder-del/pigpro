@@ -7979,7 +7979,8 @@ async function addFeed() {
 function toggleAccidentFields() {
   const type = document.getElementById('dth-type').value;
   const area = document.getElementById('accident-val-area');
-  if(area) area.style.display = type==='廃用（事故）' ? '' : 'none';
+  // UI非表示（自動計算は裏側で継続、値はacc-finalに自動セットされ保存時に使用される）
+  if(area) area.style.display = 'none';
   if(type==='廃用（事故）') calcAccidentVal();
 }
 

@@ -5594,8 +5594,10 @@ function calcSourceAdgMap(farm) {
 }
 
 let _sfSourceTab = 'all';
+let _sfSourceFilter = 'all'; // カレンダー連動用
 function rShipForecastBySource(src) {
   _sfSourceTab = src;
+  _sfSourceFilter = src;
   document.querySelectorAll('#sp-source-tabs button').forEach(b => {
     const active = b.dataset.src === src;
     b.style.background = active ? 'var(--accent2)' : 'var(--panel2)';
@@ -5603,6 +5605,8 @@ function rShipForecastBySource(src) {
     b.style.fontWeight = active ? '700' : '400';
   });
   if(window._sfLastArgs) rShipForecast(...window._sfLastArgs);
+  // カレンダーも同じ導入元で再描画
+  rShipMonthly();
 }
 function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yieldRate, shipDays) {
   window._sfLastArgs = [farm, mean, std, p10, p25, p50, p75, p90, targetLw, yieldRate, shipDays];
@@ -5694,18 +5698,26 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
     // p10=早出し境界, p30=準早出し境界, p70=準遅出し境界, p90=オールアウト境界
     const peakDay = daysToTargetLw(initWeight, useAdg, FORECAST_TARGET_LW);
     const p10d = Math.max(peakDay - Math.round(sigma * 1.28), elapsedDays + 1);
-    const p30d = Math.max(peakDay - Math.round(sigma * 0.52), elapsedDays + 1);
-    const p70d = peakDay + Math.round(sigma * 0.52);
-    const p90d = peakDay + Math.round(sigma * 1.28);
+    const p30d = Math.max(Math.round((p10d + peakDay) / 2), elapsedDays + 1);
+    const p70d = Math.max(Math.round((peakDay + peakDay + Math.round(sigma * 1.28)) / 2), elapsedDays + 1);
+    const p90d = Math.max(peakDay + Math.round(sigma * 1.28), elapsedDays + 1);
+    // 各グループの代表日齢（過去にならないよう補正）
+    const gDays = [
+      p10d,
+      Math.max(Math.round((p10d + p30d) / 2), elapsedDays + 1),
+      Math.max(peakDay, elapsedDays + 1),
+      Math.max(Math.round((p70d + p90d) / 2), elapsedDays + 1),
+      p90d
+    ];
 
     const calcDate = d => { const dt = new Date(startDate); dt.setDate(startDate.getDate() + d); return dt; };
 
     // 各グループの出荷週
-    const g1 = shipWeekLabel(calcDate(p10d));  // 早出し 10%
-    const g2 = shipWeekLabel(calcDate(Math.round((p10d+p30d)/2)));  // 準早出し 20%
-    const g3 = shipWeekLabel(calcDate(peakDay)); // 中央値 40%
-    const g4 = shipWeekLabel(calcDate(Math.round((p70d+p90d)/2)));  // 準遅出し 20%
-    const g5 = shipWeekLabel(calcDate(p90d));   // オールアウト 10%
+    const g1 = shipWeekLabel(calcDate(gDays[0]));
+    const g2 = shipWeekLabel(calcDate(gDays[1]));
+    const g3 = shipWeekLabel(calcDate(gDays[2]));
+    const g4 = shipWeekLabel(calcDate(gDays[3]));
+    const g5 = shipWeekLabel(calcDate(gDays[4]));
 
     const h1 = Math.round(headCount * 0.10);
     const h2 = Math.round(headCount * 0.20);
@@ -5722,11 +5734,11 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
 
     // グループ行レンダリング
     const groups = [
-      { label:'早出し',    ratio:'10%', head:h1, week:g1.weekKey, color:'#f59e0b', days:p10d },
-      { label:'準早出し',  ratio:'20%', head:h2, week:g2.weekKey, color:'#84cc16', days:Math.round((p10d+p30d)/2) },
+      { label:'早出し',    ratio:'10%', head:h1, week:g1.weekKey, color:'#f59e0b', days:gDays[0] },
+      { label:'準早出し',  ratio:'20%', head:h2, week:g2.weekKey, color:'#84cc16', days:gDays[1] },
       { label:'主力',      ratio:'40%', head:h3, week:g3.weekKey, color:'var(--f1)', days:peakDay },
-      { label:'準遅出し',  ratio:'20%', head:h4, week:g4.weekKey, color:'#84cc16', days:Math.round((p70d+p90d)/2) },
-      { label:'オールアウト', ratio:'10%', head:h5, week:g5.weekKey, color:'#94a3b8', days:p90d },
+      { label:'準遅出し',  ratio:'20%', head:h4, week:g4.weekKey, color:'#84cc16', days:gDays[3] },
+      { label:'オールアウト', ratio:'10%', head:h5, week:g5.weekKey, color:'#94a3b8', days:gDays[4] },
     ];
 
     const groupRows = groups.map(g => `
@@ -5817,6 +5829,9 @@ function rShipMonthly() {
 
   const activeLots = DATA.lots.filter(l => {
     if(farmFilter !== 'all' && l.farm !== farmFilter) return false;
+    if(typeof _sfSourceFilter !== 'undefined' && _sfSourceFilter !== 'all') {
+      if((l.source||'不明') !== _sfSourceFilter) return false;
+    }
     return calcCurrentHead(l) > 0;
   });
   if(!activeLots.length) {

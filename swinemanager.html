@@ -5658,43 +5658,97 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
     return baseDate;
   };
 
+  // ── 週別出荷グループ計算ヘルパー ──────────────────────
+  // 出荷可能日（shipDays）に丸めた最寄りの出荷週の月曜日を返す
+  const shipWeekLabel = (baseDate) => {
+    const d = nextShipDay(baseDate);
+    // その週の月曜日を求める
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1));
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return {
+      weekKey: `${mon.getMonth()+1}/${mon.getDate()}〜${sun.getMonth()+1}/${sun.getDate()}`,
+      firstShipDate: d,
+      weekStart: mon
+    };
+  };
+
   const cards = activeLots.map(lot => {
     const startDate = new Date(lot.start_date);
     const elapsedDays = Math.floor((today - startDate) / 86400000);
     const initWeight = lot.start_weight || 30;
     const src = lot.source || '不明';
+    const headCount = lot.count;
 
     const srcData = sourceAdgMap[src];
     const useAdg  = (srcData?.adg && srcData.headSum >= 10) ? srcData.adg : farmAdgAll;
     const adgSrcLabel = (srcData?.adg && srcData.headSum >= 10)
-      ? `導入元「${src}」${srcData.headSum}頭実績`
-      : `農場全体実績（導入元データ不足）`;
+      ? `導入元「${src}」${srcData.headSum}頭実績 ADG${useAdg}g/日`
+      : `農場全体実績 ADG${useAdg}g/日`;
 
     const currentLw = growthLw(initWeight, useAdg, elapsedDays);
     const currentCw = currentLw * FORECAST_YIELD;
-    const peakDay   = daysToTargetLw(initWeight, useAdg, FORECAST_TARGET_LW);
-    const sigma     = std || 18;
-    const earlyDay  = Math.max(peakDay - Math.round(sigma * 1.28), elapsedDays + 1);
-    const lateDay   = peakDay + Math.round(sigma * 1.28);
+    const sigma = std || 18;
+
+    // 5グループの日齢を計算（正規分布のパーセンタイル）
+    // p10=早出し境界, p30=準早出し境界, p70=準遅出し境界, p90=オールアウト境界
+    const peakDay = daysToTargetLw(initWeight, useAdg, FORECAST_TARGET_LW);
+    const p10d = Math.max(peakDay - Math.round(sigma * 1.28), elapsedDays + 1);
+    const p30d = Math.max(peakDay - Math.round(sigma * 0.52), elapsedDays + 1);
+    const p70d = peakDay + Math.round(sigma * 0.52);
+    const p90d = peakDay + Math.round(sigma * 1.28);
 
     const calcDate = d => { const dt = new Date(startDate); dt.setDate(startDate.getDate() + d); return dt; };
-    const d10 = nextShipDay(calcDate(earlyDay));
-    const d50 = nextShipDay(calcDate(peakDay));
-    const d90 = nextShipDay(calcDate(lateDay));
 
-    const daysToStart = Math.floor((d10 - today) / 86400000);
+    // 各グループの出荷週
+    const g1 = shipWeekLabel(calcDate(p10d));  // 早出し 10%
+    const g2 = shipWeekLabel(calcDate(Math.round((p10d+p30d)/2)));  // 準早出し 20%
+    const g3 = shipWeekLabel(calcDate(peakDay)); // 中央値 40%
+    const g4 = shipWeekLabel(calcDate(Math.round((p70d+p90d)/2)));  // 準遅出し 20%
+    const g5 = shipWeekLabel(calcDate(p90d));   // オールアウト 10%
+
+    const h1 = Math.round(headCount * 0.10);
+    const h2 = Math.round(headCount * 0.20);
+    const h3 = Math.round(headCount * 0.40);
+    const h4 = Math.round(headCount * 0.20);
+    const h5 = headCount - h1 - h2 - h3 - h4; // 端数調整
+
+    const daysToStart = Math.floor((g1.firstShipDate - today) / 86400000);
     const urgColor = daysToStart <= 0 ? 'var(--danger)' : daysToStart <= 14 ? 'var(--warn)' : 'var(--f1)';
     const urgLabel = daysToStart <= 0 ? '🔴 出荷開始時期' : daysToStart <= 14 ? `🟡 ${daysToStart}日後に開始` : `🟢 ${daysToStart}日後〜`;
 
     const pct = Math.min(100, Math.round((currentLw - initWeight) / (FORECAST_TARGET_LW - initWeight) * 100));
     const barColor = pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warn)' : 'var(--f1)';
 
+    // グループ行レンダリング
+    const groups = [
+      { label:'早出し',    ratio:'10%', head:h1, week:g1.weekKey, color:'#f59e0b', days:p10d },
+      { label:'準早出し',  ratio:'20%', head:h2, week:g2.weekKey, color:'#84cc16', days:Math.round((p10d+p30d)/2) },
+      { label:'主力',      ratio:'40%', head:h3, week:g3.weekKey, color:'var(--f1)', days:peakDay },
+      { label:'準遅出し',  ratio:'20%', head:h4, week:g4.weekKey, color:'#84cc16', days:Math.round((p70d+p90d)/2) },
+      { label:'オールアウト', ratio:'10%', head:h5, week:g5.weekKey, color:'#94a3b8', days:p90d },
+    ];
+
+    const groupRows = groups.map(g => `
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+        <div style="width:72px;font-size:11px;color:${g.color};font-weight:600">${g.label}</div>
+        <div style="width:30px;font-size:10px;color:var(--muted);text-align:right">${g.ratio}</div>
+        <div style="width:44px;font-size:13px;font-weight:700;color:${g.color};text-align:right">${g.head}頭</div>
+        <div style="flex:1">
+          <div style="background:var(--panel);border-radius:3px;height:8px;overflow:hidden">
+            <div style="background:${g.color};opacity:0.7;height:100%;width:${Math.round(g.head/headCount*100)}%;"></div>
+          </div>
+        </div>
+        <div style="width:100px;font-size:11px;color:var(--text);text-align:right">${g.week}</div>
+        <div style="width:40px;font-size:10px;color:var(--muted);text-align:right">${g.days}日目</div>
+      </div>`).join('');
+
     return `
       <div style="background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           <span style="font-weight:700;color:var(--accent2);font-size:14px">${lot.id}</span>
           ${lot.source ? `<span style="font-size:11px;background:var(--panel);color:var(--accent);padding:2px 8px;border-radius:10px">${lot.source}</span>` : ''}
-          <span style="font-size:12px;color:var(--muted)">導入${lot.start_date} / ${lot.count}頭 / 経過${elapsedDays}日</span>
+          <span style="font-size:12px;color:var(--muted)">導入${lot.start_date} / ${headCount}頭 / 経過${elapsedDays}日</span>
           <span style="margin-left:auto;font-size:12px;font-weight:700;color:${urgColor}">${urgLabel}</span>
         </div>
         <div style="margin-bottom:12px">
@@ -5707,25 +5761,19 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
             <div style="background:${barColor};height:100%;width:${pct}%;transition:width .3s"></div>
           </div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <div style="background:var(--panel);border-radius:6px;padding:8px 12px;text-align:center;flex:1;min-width:80px">
-            <div style="font-size:10px;color:var(--muted);margin-bottom:2px">出荷開始（早め）</div>
-            <div style="font-size:13px;font-weight:700;color:var(--warn)">${fmt(d10)}</div>
-            <div style="font-size:10px;color:var(--muted)">${earlyDay}日目</div>
+        <div style="margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 0;margin-bottom:4px">
+            <div style="width:72px;font-size:10px;color:var(--muted)">グループ</div>
+            <div style="width:30px;font-size:10px;color:var(--muted);text-align:right">割合</div>
+            <div style="width:44px;font-size:10px;color:var(--muted);text-align:right">頭数</div>
+            <div style="flex:1;font-size:10px;color:var(--muted);padding-left:4px">比率</div>
+            <div style="width:100px;font-size:10px;color:var(--muted);text-align:right">出荷週</div>
+            <div style="width:40px;font-size:10px;color:var(--muted);text-align:right">日齢</div>
           </div>
-          <div style="background:var(--panel);border-radius:6px;padding:8px 12px;text-align:center;flex:1;min-width:80px;border:1px solid var(--f1)">
-            <div style="font-size:10px;color:var(--muted);margin-bottom:2px">出荷ピーク</div>
-            <div style="font-size:15px;font-weight:700;color:var(--f1)">${fmt(d50)}</div>
-            <div style="font-size:10px;color:var(--muted)">${peakDay}日目</div>
-          </div>
-          <div style="background:var(--panel);border-radius:6px;padding:8px 12px;text-align:center;flex:1;min-width:80px">
-            <div style="font-size:10px;color:var(--muted);margin-bottom:2px">出荷終了（遅め）</div>
-            <div style="font-size:13px;font-weight:700;color:var(--muted)">${fmt(d90)}</div>
-            <div style="font-size:10px;color:var(--muted)">${lateDay}日目</div>
-          </div>
+          ${groupRows}
         </div>
         <div style="font-size:11px;color:var(--muted)">
-          ※ ${adgSrcLabel} ADG${useAdg}g/日 → 2段階成長（〜${ADG_BREAK_DAY}日: ${Math.round(useAdg*ADG_EARLY_COEF)}g/日 / ${ADG_BREAK_DAY}日〜: ${Math.round(useAdg*ADG_LATE_COEF)}g/日）| 目標 枝重${FORECAST_TARGET_CW}kg（生体${FORECAST_TARGET_LW.toFixed(1)}kg・歩留${FORECAST_YIELD*100}%）
+          ※ ${adgSrcLabel} → 2段階成長（〜${ADG_BREAK_DAY}日: ${Math.round(useAdg*ADG_EARLY_COEF)}g/日 / ${ADG_BREAK_DAY}日〜: ${Math.round(useAdg*ADG_LATE_COEF)}g/日）σ=${Math.round(sigma)}日
         </div>
       </div>`;
   }).join('');

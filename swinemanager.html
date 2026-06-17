@@ -942,7 +942,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <button class="btn bs sm" onclick="clearDthFilter()" style="height:32px">✕ クリア</button>
           <span id="dth-f-count" style="font-size:12px;color:var(--muted);align-self:center"></span>
         </div>
-        <div class="tw"><table><thead><tr><th>農場</th><th>ロット</th><th>発生日</th><th>区分</th><th>頭数</th><th>原因</th><th>評価損</th><th></th></tr></thead><tbody id="dth-tb"></tbody></table></div>
+        <div class="tw"><table><thead><tr><th>農場</th><th>ロット</th><th>豚舎</th><th>発生日</th><th>区分</th><th>頭数</th><th>原因</th><th>評価損</th><th></th></tr></thead><tbody id="dth-tb"></tbody></table></div>
       </div>
     </div>
   </div>
@@ -8700,10 +8700,10 @@ function rDthTb() {
   tb.innerHTML = sorted.map(d=>{
     const iv = DATA.ival.find(v=>v.lot_id===d.lot_id && v.occurred_at===d.occurred_at && d.category==='廃用（事故）');
     const dLot = d.lot_id ? DATA.lots.find(l=>l.id===d.lot_id) : null;
-    const barnTag = dLot?.barn ? `<span style="font-size:10px;background:var(--panel);color:var(--accent2);padding:1px 6px;border-radius:8px;margin-left:6px">${dLot.barn}</span>` : '';
     return `<tr>
       <td>${fb(d.farm)}</td>
-      <td class="mn" style="color:var(--accent2)">${d.lot_id||'-'}${barnTag}</td>
+      <td class="mn" style="color:var(--accent2)">${d.lot_id||'-'}</td>
+      <td>${dLot?.barn?`<span class="bdg gr" style="font-size:11px">${dLot.barn}</span>`:'-'}</td>
       <td class="mn">${d.occurred_at||'-'}</td>
       <td><span class="bdg ${d.category==='死亡'?'r':d.category==='廃棄（出荷後）'?'nb':d.category==='廃用（事故）'?'o':'y'}">${d.category}</span></td>
       <td class="mn nb">${d.count}頭</td>
@@ -8715,7 +8715,7 @@ function rDthTb() {
         <button class="btn bd sm" onclick="delDeath('${d.id}')">削除</button>
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">記録がありません</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">記録がありません</td></tr>';
 }
 
 async function delDeath(id) {

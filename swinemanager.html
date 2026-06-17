@@ -11199,8 +11199,14 @@ function slDedToggleMenu(e) {
   if(!menu) return;
   if(menu.style.display !== 'none') { menu.style.display = 'none'; return; }
 
-  const isSendai = SL_DATA?.sheet?.slaughterhouse?.includes('仙台');
-  const presets = isSendai ? [
+  const isItochuMenu = SL_DATA?.sheet?.buyer?.includes('伊藤忠');
+  const isSendai = !isItochuMenu && SL_DATA?.sheet?.slaughterhouse?.includes('仙台');
+  const presets = isItochuMenu ? [
+    { name:'屠畜経費',     tax:'tax10_inc' },
+    { name:'格付け料経費', tax:'tax10_inc' },
+    { name:'その他経費',   tax:'tax10_inc' },
+    { name:'カスタム',     tax:'tax10_inc', custom:true },
+  ] : isSendai ? [
     { name:'委託手数料',   tax:'tax10_inc' },
     { name:'と畜解体料',   tax:'tax10_inc' },
     { name:'冷蔵保管料',   tax:'tax10_inc' },
@@ -11246,19 +11252,20 @@ function updateSlSummary() {
   s.internal_organ_sales = getVal('sl-r-org');
 
   const isItochu = s.buyer?.includes('伊藤忠');
-  // 伊藤忠は税込絶対値のtax10_incとして扱うため、消費税の二重計算をしない（仙台中央と同じ計算式を使う）
-  const isSendai = isItochu || s.slaughterhouse?.includes('仙台');
+  const isSendai = !isItochu && s.slaughterhouse?.includes('仙台');
   const carcass  = s.carcass_amount || 0;
   const organ    = s.internal_organ_sales || 0;
   const hide     = s.hide_amount || 0;
 
   let tax8, taxHide10, salesSub, salesTotal;
   if(isSendai) {
+    // 仙台中央：枝肉金額等は税込で記載されているため消費税を逆算で控除
     tax8       = Math.round((carcass + organ) / 1.08 * 0.08);
     taxHide10  = Math.round(hide / 1.1 * 0.1);
     salesTotal = carcass + organ + hide;
     salesSub   = salesTotal - tax8 - taxHide10;
   } else {
+    // 伊藤忠・その他：枝肉金額等は税抜で記載されているため消費税を加算
     tax8       = Math.round((carcass + organ) * 0.08);
     taxHide10  = Math.round(hide * 0.1);
     salesSub   = carcass + organ + hide;
@@ -11279,7 +11286,15 @@ function updateSlSummary() {
     }
   });
   const dedSub   = dedSubEx + dedSubInc + nonTax;
-  const dedTotal = dedSub + (isSendai ? 0 : tax8ded + tax10ded);
+  // tax10_inc/tax8_inc項目は既に税込金額がdedSubIncに含まれているため、その消費税分(tax8ded/tax10ded)を二重加算しない。
+  // tax10_ex/tax8_ex項目（税抜入力）のみ消費税を加算する必要があるため、incタイプ分の税額を除いた額だけ加算する。
+  let tax8dedExOnly = 0, tax10dedExOnly = 0;
+  items.forEach(item => {
+    const amt = item.amount || 0;
+    if(item.tax === 'tax8_ex')  tax8dedExOnly  += Math.round(amt * 0.08);
+    if(item.tax === 'tax10_ex') tax10dedExOnly += Math.round(amt * 0.1);
+  });
+  const dedTotal = dedSub + tax8dedExOnly + tax10dedExOnly;
 
   s.deduction_items    = items;
   s.deduction_subtotal = dedSub;

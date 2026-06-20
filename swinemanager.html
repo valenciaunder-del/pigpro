@@ -11072,7 +11072,17 @@ function renderSlPreview(data) {
   if(document.getElementById('sl-r-avg-fat'))   document.getElementById('sl-r-avg-fat').textContent   = s.avg_backfat ? s.avg_backfat+'cm' : '-';
 
   document.getElementById('sl-detail-cnt').textContent = details.length+'頭';
-  document.getElementById('sl-detail-tb').innerHTML = details.map((d,i)=>slDetailRow(d,i)).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">頭別データなし</td></tr>';
+  // 表示は枝肉番号(carcass_no)昇順にソートするが、編集系関数は元配列のインデックス(i)を参照するため
+  // 元のdetails配列に対するインデックスを保持したまま並び替える
+  const sortedDetailIdx = details.map((d,i)=>i).sort((ia,ib)=>{
+    const na = parseFloat(details[ia]?.carcass_no), nb = parseFloat(details[ib]?.carcass_no);
+    const naValid = !isNaN(na), nbValid = !isNaN(nb);
+    if(!naValid && !nbValid) return ia-ib;
+    if(!naValid) return 1;
+    if(!nbValid) return -1;
+    return na - nb;
+  });
+  document.getElementById('sl-detail-tb').innerHTML = sortedDetailIdx.map(i=>slDetailRow(details[i],i)).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">頭別データなし</td></tr>';
   updateSlSummary();
   try { checkSlConsistency(data); } catch(e) { console.warn('checkSlConsistency error:', e); }
 }

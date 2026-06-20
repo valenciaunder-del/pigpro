@@ -6655,9 +6655,17 @@ function rShip() {
   // 各仕切書のロット内訳をshipping_recordsから取得
   const rows = [];
   sheets.forEach(ss => {
-    const ssShips = DATA.ships.filter(s=>s.farm===ss.farm && s.shipped_at===ss.shipped_at);
-    // slaughter_detailから平均単価・格付を集計
-    const details = DATA.slaughterDetail.filter(d=>d.farm===ss.farm && d.shipped_at===ss.shipped_at);
+    // sheet_idで紐付け（同日に複数仕切書がある場合の重複表示を防ぐ）
+    let ssShips = DATA.ships.filter(s=>s.sheet_id===ss.id);
+    if(!ssShips.length) {
+      // sheet_id未設定の古いデータ互換: farm+shipped_atでフォールバック
+      ssShips = DATA.ships.filter(s=>!s.sheet_id && s.farm===ss.farm && s.shipped_at===ss.shipped_at);
+    }
+    // slaughter_detailも同様にsheet_idで紐付け
+    let details = DATA.slaughterDetail.filter(d=>d.sheet_id===ss.id);
+    if(!details.length) {
+      details = DATA.slaughterDetail.filter(d=>!d.sheet_id && d.farm===ss.farm && d.shipped_at===ss.shipped_at);
+    }
     const avgUnitPrice = details.length ? Math.round(details.reduce((a,d)=>a+(d.unit_price||0),0)/details.length) : ss.price_per_kg||null;
     const avgCw = details.length ? (details.reduce((a,d)=>a+(d.carcass_weight||0),0)/details.length) : null;
     // 主格付（最多等級）

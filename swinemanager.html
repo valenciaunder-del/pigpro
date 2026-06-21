@@ -1429,7 +1429,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <div class="sr"><span class="sl">枝肉重量合計</span><input class="fi" type="number" id="sl-r-wt" step="0.1" style="width:120px" onchange="updateSlSummary()"></div>
             <div class="sr"><span class="sl">平均枝肉重</span><span class="sv mn" id="sl-r-avg-wt">-</span></div>
             <div class="sr"><span class="sl">枝重中央値</span><span class="sv mn" id="sl-r-med-wt">-</span></div>
-            <div class="sr"><span class="sl">相場（税抜）</span><span class="sv mn" id="sl-r-mkt">-</span></div>
+            <div class="sr"><span class="sl">建値（税抜）</span><span class="sv mn" id="sl-r-mkt">-</span></div>
             <div class="sr"><span class="sl">上物率</span><span class="sv ng" id="sl-r-upper">-</span></div>
             <div class="sr"><span class="sl">上中率</span><span class="sv ng" id="sl-r-upper-mid">-</span></div>
             <div class="sr"><span class="sl">平均背脂肪</span><span class="sv mn" id="sl-r-avg-fat">-</span></div>
@@ -1517,7 +1517,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     </div>
     <div class="kgrid mb16" style="grid-template-columns:repeat(4,1fr);margin:16px 16px 0" id="sl-saved-kpi"></div>
     <div class="tw"><table>
-      <thead><tr><th>農場</th><th>出荷日<br><span style="font-size:10px;color:var(--muted)">農場出発</span></th><th>屠畜日</th><th>頭数</th><th>枝肉重量</th><th>相場</th><th>上物率</th><th>枝肉金額</th><th>総合計</th><th>支払日</th><th>取込日時</th><th>ファイル名</th><th></th></tr></thead>
+      <thead><tr><th>農場</th><th>出荷日<br><span style="font-size:10px;color:var(--muted)">農場出発</span></th><th>屠畜日</th><th>頭数</th><th>枝肉重量</th><th>建値</th><th>上物率</th><th>枝肉金額</th><th>総合計</th><th>支払日</th><th>取込日時</th><th>ファイル名</th><th></th></tr></thead>
       <tbody id="sl-saved-tb"></tbody>
     </table></div>
   </div>
@@ -1580,7 +1580,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <th class="tr3" style="width:60px;cursor:pointer" onclick="slhSort('head_count')">頭数 <span id="slh-sort-head_count"></span></th>
             <th class="tr3" style="width:80px">枝肉重量</th>
             <th class="tr3" style="width:70px;cursor:pointer" onclick="slhSort('upper_rate')">上物率 <span id="slh-sort-upper_rate"></span></th>
-            <th class="tr3" style="width:90px;cursor:pointer" onclick="slhSort('market_price')">相場 <span id="slh-sort-market_price"></span></th>
+            <th class="tr3" style="width:90px;cursor:pointer" onclick="slhSort('market_price')">建値 <span id="slh-sort-market_price"></span></th>
             <th class="tr3" style="width:100px;cursor:pointer" onclick="slhSort('total_amount')">総合計 <span id="slh-sort-total_amount"></span></th>
             <th style="width:90px">支払日</th>
             <th style="width:110px">と畜場</th>
@@ -1626,7 +1626,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div><div class="fl">上</div><input type="number" id="se-market_price_jo" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">中</div><input type="number" id="se-market_price_chu" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">並</div><input type="number" id="se-market_price_nami" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">相場(代表値)</div><input type="number" id="se-market_price" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">建値(代表値)</div><input type="number" id="se-market_price" class="fi" style="font-size:12px;padding:4px 8px"></div>
       </div>
       <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">売上</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px">
@@ -6262,15 +6262,16 @@ function rPerfFull() {
     });
     return kgSum > 0 ? Math.round(wSum / kgSum) : null;
   })();
-  // 手取単価（税抜）：売上小計（税抜）－控除小計（税抜）÷枝肉重量の加重平均
+  // 枝肉単価（税抜）：枝肉金額（税抜換算）÷枝肉重量の加重平均
+  // フォーマットにより枝肉金額の税区分が異なるため calcCarcassAmountEx で統一して税抜化する
   const avgUnitPrice = (() => {
     let amtSum = 0, kgSum = 0;
     filteredShips.forEach(s => {
       const sh = DATA.slaughter.find(x=>x.id===s.sheet_id);
       if(!sh?.total_carcass_kg) return;
-      const netEx = (sh.sales_subtotal||0) - (sh.deduction_subtotal||0);
-      if(!netEx) return;
-      amtSum += netEx;       // 手取額（税抜）
+      const carcassEx = calcCarcassAmountEx(sh);
+      if(!carcassEx) return;
+      amtSum += carcassEx;
       kgSum  += sh.total_carcass_kg;
     });
     return kgSum > 0 ? Math.round(amtSum / kgSum) : null;
@@ -6283,8 +6284,8 @@ function rPerfFull() {
     <div class="kcard c"><div class="kl">上物率</div><div class="kv">${upperRate!==null?upperRate+' %':'-'}</div></div>
     <div class="kcard o"><div class="kl">平均導入体重</div><div class="kv">${avgStartWeight||'−'}<span class="ku">kg</span></div></div>
     <div class="kcard y"><div class="kl">平均出荷枝重</div><div class="kv">${avgCwKpi||'-'}<span class="ku">kg</span></div></div>
-    <div class="kcard g"><div class="kl">相場単価（税抜）</div><div class="kv">${avgMarketPrice?'¥'+avgMarketPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
-    <div class="kcard c"><div class="kl">手取単価（税抜）</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
+    <div class="kcard g"><div class="kl">建値（税抜）</div><div class="kv">${avgMarketPrice?'¥'+avgMarketPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
+    <div class="kcard c"><div class="kl">枝肉単価（税抜）</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard o"><div class="kl">枝肉達成率</div><div class="kv">${cwAch!==null?cwAch+' %':'-'}</div></div>
     <div class="kcard y"><div class="kl">平均肥育日数</div><div class="kv">${avgDays||'-'}<span class="ku">日</span></div></div>
     <div class="kcard p"><div class="kl">対象ロット</div><div class="kv">${lots.length}<span class="ku">ロット</span></div></div>`;
@@ -7564,7 +7565,7 @@ function showLD(id) {
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">枝肉成績</div>
       <div class="sr"><span class="sl">平均枝肉重量</span><span class="sv mn">${avgCwAll} kg</span></div>
       ${slSheets.length < slSheetsAll.length ? `<div class="sr"><span class="sl" style="font-size:10px;color:var(--muted)">　うち通常出荷平均</span><span class="sv mn" style="font-size:11px;color:var(--muted)">${totalHead2>0?(totalCarcass/totalHead2).toFixed(1):'-'} kg</span></div>` : ''}
-      <div class="sr"><span class="sl">平均相場</span><span class="sv mn">&#xa5;${avgPrice}/kg</span></div>
+      <div class="sr"><span class="sl">平均建値</span><span class="sv mn">&#xa5;${avgPrice}/kg</span></div>
       <div class="sr"><span class="sl">上物率</span><span class="sv ng">${avgUpper}%</span></div>
       <div class="sr"><span class="sl">売上合計</span><span class="sv ng" style="font-weight:600">${totalSales?fM(totalSales):'-'}</span></div>
       <div class="sr"><span class="sl">売上/頭</span><span class="sv ng">${totalShipped&&totalSales?fM(Math.round(totalSales/totalShipped)):'-'}</span></div>`;
@@ -11495,6 +11496,15 @@ function checkGradeMismatch(d) {
 
   // 上記以外はすべて許容（中が上範囲に入るのは正常な格付け）
   return null;
+}
+
+// 仕切書(sh)の枝肉金額(税抜)を算出する。フォーマットにより税込/税抜が異なるため統一する
+// 仙台中央：carcass_amountは税込のため÷1.08で税抜化。伊藤忠・その他：carcass_amountは元から税抜
+function calcCarcassAmountEx(sh) {
+  if(!sh?.carcass_amount) return null;
+  const isItochu = sh.buyer?.includes('伊藤忠');
+  const isSendai = !isItochu && sh.slaughterhouse?.includes('仙台');
+  return isSendai ? Math.round(sh.carcass_amount / 1.08) : sh.carcass_amount;
 }
 
 // 枝肉重量×単価から金額を計算。伊藤忠フォーマットは切り捨て、他は四捨五入

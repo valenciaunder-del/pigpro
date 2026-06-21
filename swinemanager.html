@@ -11092,7 +11092,10 @@ function renderSlPreview(data) {
     if(!nbValid) return -1;
     return na - nb;
   });
-  document.getElementById('sl-detail-tb').innerHTML = sortedDetailIdx.map(i=>slDetailRow(details[i],i)).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">頭別データなし</td></tr>';
+  // 枝肉番号の重複検出（保存前の視覚的な警告用）
+  const dupNoCounts = {};
+  details.forEach(d=>{ if(d.carcass_no) dupNoCounts[d.carcass_no]=(dupNoCounts[d.carcass_no]||0)+1; });
+  document.getElementById('sl-detail-tb').innerHTML = sortedDetailIdx.map(i=>slDetailRow(details[i],i,dupNoCounts[details[i]?.carcass_no]>1)).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">頭別データなし</td></tr>';
   updateSlSummary();
   try { checkSlConsistency(data); } catch(e) { console.warn('checkSlConsistency error:', e); }
 }
@@ -11517,17 +11520,19 @@ function calcCarcassAmount(weight, price, buyer) {
   return isItochuSheet ? Math.floor(raw) : Math.round(raw);
 }
 
-function slDetailRow(d, i) {
+function slDetailRow(d, i, isDup=false) {
   const calc = calcCarcassAmount(d.carcass_weight, d.unit_price);
   const mismatch = checkGradeMismatch(d);
   const borderTop = (i > 0 && i % 5 === 0) ? 'border-top:2px solid var(--muted2)' : '';
-  const rowStyle = mismatch ? `background:rgba(251,146,60,.08);outline:1px solid rgba(251,146,60,.4);${borderTop}` : borderTop;
+  const rowStyle = isDup
+    ? `background:rgba(239,68,68,.12);outline:2px solid var(--danger);${borderTop}`
+    : mismatch ? `background:rgba(251,146,60,.08);outline:1px solid rgba(251,146,60,.4);${borderTop}` : borderTop;
   const gradeCols = ['上','中','並','等外'].map(g=>`<option value="${g}" ${d.grade===g?'selected':''}>${g}</option>`).join('');
   const gradeWarn = mismatch
     ? `<div style="margin-top:3px;font-size:10px;color:var(--warn);line-height:1.3">⚠️ 基準: <b style="cursor:pointer;text-decoration:underline" onclick="updateSlDetail(${i},'grade','${mismatch.expected}');this.closest('td').querySelector('select').value='${mismatch.expected}';updateSlDetailRender(${i})">${mismatch.expected}</b><br><span style="color:var(--muted);font-size:9px">${mismatch.reason}</span></div>`
     : '';
   return `<tr data-idx="${i}" style="${rowStyle}">
-    <td class="mn" style="color:var(--muted2);font-family:var(--mono)">${d.carcass_no||'-'}</td>
+    <td class="mn" style="color:${isDup?'var(--danger)':'var(--muted2)'};font-family:var(--mono)">${d.carcass_no||'-'}${isDup?' ⚠️重複':''}</td>
     <td class="mn"><input type="number" step="0.5" value="${d.carcass_weight||''}" style="width:60px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'carcass_weight',parseFloat(this.value))"> kg</td>
     <td class="mn ng"><input type="number" value="${d.unit_price||''}" style="width:50px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--accent);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'unit_price',parseInt(this.value))"></td>
     <td class="mn ng">${calc !== null ? fM(calc) : '-'}</td>
@@ -11723,6 +11728,17 @@ async function confirmLotBreakdown() {
 async function saveSlaughter() {
   if(!SL_DATA?.sheet) { notif('解析データがありません','r'); return; }
   const s = SL_DATA.sheet;
+
+  // 保存前に枝肉番号(carcass_no)の重複チェック（DBのON CONFLICTエラーを未然に防ぐ）
+  if(SL_DATA.details?.length) {
+    const noCounts = {};
+    SL_DATA.details.forEach(d => { if(d.carcass_no) noCounts[d.carcass_no] = (noCounts[d.carcass_no]||0)+1; });
+    const dupNos = Object.entries(noCounts).filter(([,c])=>c>1).map(([n])=>n);
+    if(dupNos.length) {
+      notif(`枝肉番号「${dupNos.join('、')}」が頭別明細内で重複しています。重複行を削除または番号を修正してから保存してください。`, 'r');
+      return;
+    }
+  }
 
   // 出荷日（農場出発日）を取得 - 入力がなければ屠畜日を使用
   const shippedAtFarm = document.getElementById('sl-r-shipped-at')?.value || s.shipped_at;

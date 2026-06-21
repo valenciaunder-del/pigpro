@@ -3285,8 +3285,13 @@ const api = {
   deleteFeedTankBothByMonth: (mon) => sbFetch(`feed_tank?date=like.${mon}%`, { method:'DELETE' }),
   // タンク名を指定して削除（棚卸自動生成分のみ消し、Milfee実測タンクデータは残す用途）
   deleteFeedTankByMonthAndTank: (farm, mon, tankName) => sbFetch(`feed_tank?farm=eq.${farm}&date=like.${mon}%&tank_name=eq.${encodeURIComponent(tankName)}`, { method:'DELETE' }),
-  deleteDeathByInvMonth: (farm, mon) => sbFetch(`death_records?farm=eq.${farm}&occurred_at=like.${mon}%&cause=eq.${encodeURIComponent('棚卸データより自動登録')}`, { method:'DELETE' }),
-  deleteDeathByInvBothMonth: (mon) => sbFetch(`death_records?occurred_at=like.${mon}%&cause=eq.${encodeURIComponent('棚卸データより自動登録')}`, { method:'DELETE' }),
+  // 未確定（lot_id未紐付け）の棚卸自動登録分のみ削除。ロット紐付け済み（確定済み）は誤って消さないようにする
+  // ※判定基準はlot_idの有無（rInvDeathListの「未確定」判定 !d.confirmed && !d.lot_id と整合させるため、より安全にlot_id is null を条件にする）
+  deleteDeathByInvMonth: (farm, mon) => sbFetch(`death_records?farm=eq.${farm}&occurred_at=like.${mon}%&cause=eq.${encodeURIComponent('棚卸データより自動登録')}&lot_id=is.null`, { method:'DELETE' }),
+  deleteDeathByInvBothMonth: (mon) => sbFetch(`death_records?occurred_at=like.${mon}%&cause=eq.${encodeURIComponent('棚卸データより自動登録')}&lot_id=is.null`, { method:'DELETE' }),
+  // 確定済み（lot_id紐付け済み）分も含めて完全に削除する場合用（「全て削除」選択時に使用）
+  deleteDeathByInvMonthAll: (farm, mon) => sbFetch(`death_records?farm=eq.${farm}&occurred_at=like.${mon}%&cause=eq.${encodeURIComponent('棚卸データより自動登録')}`, { method:'DELETE' }),
+  deleteDeathByInvBothMonthAll: (mon) => sbFetch(`death_records?occurred_at=like.${mon}%&cause=eq.${encodeURIComponent('棚卸データより自動登録')}`, { method:'DELETE' }),
 };
 
 // ══════════════════════════════════════════════
@@ -14901,7 +14906,7 @@ async function deleteInvMonth() {
       if(deleteConfirmed) {
         const targets = DATA.deaths.filter(d=>
           (d.occurred_at||'').startsWith(mon) &&
-          d.cause==='棚卸データより自動登録' && d.confirmed && d.lot_id
+          d.cause==='棚卸データより自動登録' && d.lot_id
         );
         for(const d of targets) await api.deleteDeath(d.id);
       }
@@ -14914,7 +14919,7 @@ async function deleteInvMonth() {
       if(deleteConfirmed) {
         const targets = DATA.deaths.filter(d=>
           d.farm===ff && (d.occurred_at||'').startsWith(mon) &&
-          d.cause==='棚卸データより自動登録' && d.confirmed && d.lot_id
+          d.cause==='棚卸データより自動登録' && d.lot_id
         );
         for(const d of targets) await api.deleteDeath(d.id);
       }

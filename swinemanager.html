@@ -2846,6 +2846,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div class="fg"><label class="fl">品種</label><input class="fi" id="s1-breed" placeholder="例：LWD"></div>
           <div class="fg"><label class="fl">ADG目標(g/日)</label><input class="fi" type="number" id="s1-adg" value="750"></div>
           <div class="fg"><label class="fl">FCR目標</label><input class="fi" type="number" id="s1-fcr" value="2.70" step="0.01"></div>
+          <div class="fg" style="grid-column:span 2"><label class="fl" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="s1-skip-inv-tank"> 棚卸データからタンク残量を自動生成しない（API等で直接タンクデータを入れる場合）</label></div>
         </div>
         <div style="margin-top:12px">
           <div class="fl" style="margin-bottom:4px">目標枝肉重量（格付けデータで1頭単位集計）</div>
@@ -2889,6 +2890,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div class="fg"><label class="fl">品種</label><input class="fi" id="s2-breed" placeholder="例：LWD"></div>
           <div class="fg"><label class="fl">ADG目標(g/日)</label><input class="fi" type="number" id="s2-adg" value="740"></div>
           <div class="fg"><label class="fl">FCR目標</label><input class="fi" type="number" id="s2-fcr" value="2.75" step="0.01"></div>
+          <div class="fg" style="grid-column:span 2"><label class="fl" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="s2-skip-inv-tank"> 棚卸データからタンク残量を自動生成しない（API等で直接タンクデータを入れる場合）</label></div>
         </div>
         <div style="margin-top:12px">
           <div class="fl" style="margin-bottom:4px">目標枝肉重量（格付けデータで1頭単位集計）</div>
@@ -4010,6 +4012,10 @@ function initFarmSettingsModal() {
   } catch(e) {}
   document.getElementById('s1-breed').value = FARMS.farm1.breed||'';
   document.getElementById('s2-breed').value = FARMS.farm2.breed||'';
+  const s1SkipBox = document.getElementById('s1-skip-inv-tank');
+  const s2SkipBox = document.getElementById('s2-skip-inv-tank');
+  if(s1SkipBox) s1SkipBox.checked = !!FARMS.farm1.skipInvTankSync;
+  if(s2SkipBox) s2SkipBox.checked = !!FARMS.farm2.skipInvTankSync;
   document.getElementById('s1-wt-min').value = FARMS.farm1.targetCwMin||'';
   document.getElementById('s1-wt-max').value = FARMS.farm1.targetCwMax||'';
   document.getElementById('s2-wt-min').value = FARMS.farm2.targetCwMin||'';
@@ -4791,7 +4797,7 @@ function rDashFcr() {
     const info = tankBarnMap[tn];
     const sameType = tankNames.filter(x=>x.farm===f&&tankBarnMap[x.tank]?.type===info?.type);
     const ratio = sameType.length > 0 ? 1/sameType.length : 0.5;
-    const gainT = hd * ratio * (farmAdg[f]||750) / 1e9;
+    const gainT = hd * ratio * (farmAdg[f]||750) / 1e6; // g→t変換は÷1,000,000が正しい
     const fcrV = feedT>0&&gainT>0 ? feedT/gainT : null;
     const ft = FARMS[f]?.fcrT||2.7;
     const ac = fcrV ? (fcrV<=ft?'var(--accent)':fcrV<=ft+0.3?'var(--warn)':'var(--danger)') : 'var(--muted)';
@@ -14164,8 +14170,11 @@ async function saveInvData() {
 function buildFeedTankRows(invRows) {
   // inv_dailyのfeed2/feed3（合算値）を農場設定のタンクラベルに分配
   // 棚卸Excelは農場単位の合算値のため、feed_typeごとに1行生成しtank_nameはラベルで識別
+  // 農場設定で「棚卸データからタンク残量を自動生成しない」が有効な場合はその農場をスキップする
+  // （API等で直接タンク別の実測データを入れる運用に切り替えた場合の重複防止）
   const rows = [];
   for(const r of invRows) {
+    if(FARMS[r.farm]?.skipInvTankSync) continue;
     const farmBarns = FARMS[r.farm]?.barns || [];
     // 子豚用（feed2）- farmのA豚舎の子豚タンクラベルを使用（棚卸は農場合算）
     if(r.feed2_tank !== null && r.feed2_tank !== undefined && r.feed2_tank !== '') {
@@ -14457,7 +14466,7 @@ function rFeedTank() {
     if(h>0){wAdg+=adg*h;tHead+=h;}
   });
   const avgAdg = tHead>0 ? wAdg/tHead : FARMS[farm]?.adgT||750;
-  const gainTon = headDays * avgAdg / 1e9; // t単位
+  const gainTon = headDays * avgAdg / 1e6; // t単位（g→t変換は÷1,000,000が正しい）
 
   // 在庫変動テーブル描画（KPI・タンクカードに使用）
   const allTankRowsForInv = DATA.feedTank.filter(r=>r.farm===farm && r.date);
@@ -14733,8 +14742,9 @@ function rFeedTank() {
       const sameType = tankNamesList.filter(t=>tankBarnMap[t]?.type===barnInfo?.type);
       const allocRatio = sameType.length > 0 ? 1/sameType.length : 0.5;
       const tankHeadDays = totalHeadDays * allocRatio;
-      const gainT = tankHeadDays * farmAdg / 1e9;
-      const fcrV = (feedT>0 && gainT>0) ? feedT/gainT : null;
+      const gainT = tankHeadDays * farmAdg / 1e6; // g→kg→t変換は÷1,000,000が正しい（以前は誤って÷1e9になっていた）
+      let fcrV = (feedT>0 && gainT>0) ? feedT/gainT : null;
+      if(fcrV !== null && (fcrV < 1.0 || fcrV > 10.0)) fcrV = null; // 異常値除外
       const ac = fcrV ? (fcrV<=fcrT?'ng':fcrV<=fcrT*1.1?'nw':'nb') : '';
       const vs = fcrV&&fcrT ? (fcrV<=fcrT?`▼ -${(fcrT-fcrV).toFixed(2)}`:`▲ +${(fcrV-fcrT).toFixed(2)}`) : '-';
       const vsC = fcrV&&fcrT ? (fcrV<=fcrT?'ng':'nb') : '';
@@ -15138,6 +15148,8 @@ async function saveFarm() {
   FARMS.farm2.adgT = parseInt(document.getElementById('s2-adg').value)||740;
   FARMS.farm1.fcrT = parseFloat(document.getElementById('s1-fcr').value)||2.70;
   FARMS.farm2.fcrT = parseFloat(document.getElementById('s2-fcr').value)||2.75;
+  FARMS.farm1.skipInvTankSync = document.getElementById('s1-skip-inv-tank')?.checked || false;
+  FARMS.farm2.skipInvTankSync = document.getElementById('s2-skip-inv-tank')?.checked || false;
   FARMS.farm1.breed = document.getElementById('s1-breed').value||'';
   FARMS.farm2.breed = document.getElementById('s2-breed').value||'';
   FARMS.farm1.targetCwMin = parseFloat(document.getElementById('s1-wt-min').value)||null;
@@ -15178,8 +15190,8 @@ async function saveFarm() {
   Object.assign(TANK_NAME_MAP, buildTankNameMap());
   // Supabaseに保存（localStorageにも念のため）
   const settingsToSave = {
-    farm1: { name:FARMS.farm1.name, adgT:FARMS.farm1.adgT, fcrT:FARMS.farm1.fcrT, breed:FARMS.farm1.breed, defaultYield:FARMS.farm1.defaultYield, yields:FARMS.farm1.yields, sources:FARMS.farm1.sources, targetCwMin:FARMS.farm1.targetCwMin, targetCwMax:FARMS.farm1.targetCwMax, shipDays:FARMS.farm1.shipDays, barns:FARMS.farm1.barns },
-    farm2: { name:FARMS.farm2.name, adgT:FARMS.farm2.adgT, fcrT:FARMS.farm2.fcrT, breed:FARMS.farm2.breed, defaultYield:FARMS.farm2.defaultYield, yields:FARMS.farm2.yields, sources:FARMS.farm2.sources, targetCwMin:FARMS.farm2.targetCwMin, targetCwMax:FARMS.farm2.targetCwMax, shipDays:FARMS.farm2.shipDays, barns:FARMS.farm2.barns },
+    farm1: { name:FARMS.farm1.name, adgT:FARMS.farm1.adgT, fcrT:FARMS.farm1.fcrT, breed:FARMS.farm1.breed, defaultYield:FARMS.farm1.defaultYield, yields:FARMS.farm1.yields, sources:FARMS.farm1.sources, targetCwMin:FARMS.farm1.targetCwMin, targetCwMax:FARMS.farm1.targetCwMax, shipDays:FARMS.farm1.shipDays, barns:FARMS.farm1.barns, skipInvTankSync:FARMS.farm1.skipInvTankSync },
+    farm2: { name:FARMS.farm2.name, adgT:FARMS.farm2.adgT, fcrT:FARMS.farm2.fcrT, breed:FARMS.farm2.breed, defaultYield:FARMS.farm2.defaultYield, yields:FARMS.farm2.yields, sources:FARMS.farm2.sources, targetCwMin:FARMS.farm2.targetCwMin, targetCwMax:FARMS.farm2.targetCwMax, shipDays:FARMS.farm2.shipDays, barns:FARMS.farm2.barns, skipInvTankSync:FARMS.farm2.skipInvTankSync },
     common: { yields: COMMON_YIELDS },
   };
   try {

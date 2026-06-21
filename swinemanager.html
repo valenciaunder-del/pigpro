@@ -3284,7 +3284,7 @@ const api = {
   deleteFeedTankByMonth: (farm, mon) => sbFetch(`feed_tank?farm=eq.${farm}&date=like.${mon}%`, { method:'DELETE' }),
   deleteFeedTankBothByMonth: (mon) => sbFetch(`feed_tank?date=like.${mon}%`, { method:'DELETE' }),
   // タンク名を指定して削除（棚卸自動生成分のみ消し、Milfee実測タンクデータは残す用途）
-  deleteFeedTankByMonthAndTank: (farm, mon, tankName) => sbFetch(`feed_tank?farm=eq.${farm}&date=like.${mon}%&tank_name=eq.${encodeURIComponent(tankName)}`, { method:'DELETE' }),
+  deleteFeedTankByMonthAndTank: (farm, mon, tankName) => sbFetch(`feed_tank?farm=eq.${farm}&date=like.${mon}%&tank_name=eq.${encodeURIComponent(String(tankName))}`, { method:'DELETE' }),
   // 未確定（lot_id未紐付け）の棚卸自動登録分のみ削除。ロット紐付け済み（確定済み）は誤って消さないようにする
   // ※判定基準はlot_idの有無（rInvDeathListの「未確定」判定 !d.confirmed && !d.lot_id と整合させるため、より安全にlot_id is null を条件にする）
   deleteDeathByInvMonth: (farm, mon) => sbFetch(`death_records?farm=eq.${farm}&occurred_at=like.${mon}%&cause=eq.${encodeURIComponent('棚卸データより自動登録')}&lot_id=is.null`, { method:'DELETE' }),
@@ -14896,33 +14896,30 @@ async function deleteInvMonth() {
       if(barnA?.tank_hog_label)    autoTankDeletes.push(api.deleteFeedTankByMonthAndTank(f, mon, barnA.tank_hog_label));
     });
 
-    if(ff==='all') {
-      await Promise.all([
-        api.deleteInvDailyBothByMonth(mon),
-        ...autoTankDeletes,
-        api.deleteDeathByInvBothMonth(mon),
-      ]);
-      // 確定済み事故記録も削除する場合
-      if(deleteConfirmed) {
-        const targets = DATA.deaths.filter(d=>
-          (d.occurred_at||'').startsWith(mon) &&
-          d.cause==='棚卸データより自動登録' && d.lot_id
-        );
-        for(const d of targets) await api.deleteDeath(d.id);
-      }
-    } else {
-      await Promise.all([
-        api.deleteInvDailyByMonth(ff, mon),
-        ...autoTankDeletes,
-        api.deleteDeathByInvMonth(ff, mon),
-      ]);
-      if(deleteConfirmed) {
-        const targets = DATA.deaths.filter(d=>
-          d.farm===ff && (d.occurred_at||'').startsWith(mon) &&
-          d.cause==='棚卸データより自動登録' && d.lot_id
-        );
-        for(const d of targets) await api.deleteDeath(d.id);
-      }
+    const coreTasks = ff==='all'
+      ? [api.deleteInvDailyBothByMonth(mon), api.deleteDeathByInvBothMonth(mon)]
+      : [api.deleteInvDailyByMonth(ff, mon), api.deleteDeathByInvMonth(ff, mon)];
+
+    // メイン処理（在庫・事故）とタンク削除を分けて実行し、タンク側が失敗しても在庫削除は完了させる
+    const coreResults = await Promise.allSettled(coreTasks);
+    const tankResults = await Promise.allSettled(autoTankDeletes);
+
+    const coreFailed = coreResults.filter(r=>r.status==='rejected');
+    const tankFailed = tankResults.filter(r=>r.status==='rejected');
+    if(coreFailed.length) {
+      throw new Error('在庫・事故データの削除に失敗しました: ' + coreFailed.map(r=>r.reason?.message||r.reason).join(' / '));
+    }
+    if(tankFailed.length) {
+      notif('⚠️ 飼料タンク（棚卸由来分）の削除に一部失敗しましたが、在庫データの削除は完了しました: ' + tankFailed.map(r=>r.reason?.message||r.reason).join(' / '), 'r');
+    }
+
+    // 確定済み事故記録も削除する場合
+    if(deleteConfirmed) {
+      const targets = DATA.deaths.filter(d=>
+        (ff==='all' || d.farm===ff) && (d.occurred_at||'').startsWith(mon) &&
+        d.cause==='棚卸データより自動登録' && d.lot_id
+      );
+      for(const d of targets) await api.deleteDeath(d.id);
     }
     const [invDaily, feedTank, deaths] = await Promise.all([
       api.getInvDaily(),

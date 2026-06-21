@@ -3283,6 +3283,8 @@ const api = {
   }),
   deleteFeedTankByMonth: (farm, mon) => sbFetch(`feed_tank?farm=eq.${farm}&date=like.${mon}%`, { method:'DELETE' }),
   deleteFeedTankBothByMonth: (mon) => sbFetch(`feed_tank?date=like.${mon}%`, { method:'DELETE' }),
+  // タンク名を指定して削除（棚卸自動生成分のみ消し、Milfee実測タンクデータは残す用途）
+  deleteFeedTankByMonthAndTank: (farm, mon, tankName) => sbFetch(`feed_tank?farm=eq.${farm}&date=like.${mon}%&tank_name=eq.${encodeURIComponent(tankName)}`, { method:'DELETE' }),
   deleteDeathByInvMonth: (farm, mon) => sbFetch(`death_records?farm=eq.${farm}&occurred_at=like.${mon}%&cause=eq.${encodeURIComponent('棚卸データより自動登録')}`, { method:'DELETE' }),
   deleteDeathByInvBothMonth: (mon) => sbFetch(`death_records?occurred_at=like.${mon}%&cause=eq.${encodeURIComponent('棚卸データより自動登録')}`, { method:'DELETE' }),
 };
@@ -14809,7 +14811,7 @@ function showDeleteChoiceModal(farmLabel, mon, invCount, confirmedDeathCount) {
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
           <button id="del-inv-only" style="background:var(--panel2);border:2px solid var(--border);border-radius:10px;padding:16px;text-align:left;cursor:pointer;transition:border-color .15s">
             <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px">棚卸データのみ削除</div>
-            <div style="font-size:12px;color:var(--muted)">日次棚卸・飼料タンク・未確定事故を削除<br>
+            <div style="font-size:12px;color:var(--muted)">日次棚卸・飼料タンク（棚卸由来分のみ）・未確定事故を削除<br>
             <span style="color:var(--accent)">✓ 確定済み事故記録（${confirmedDeathCount}件）は残る → 再登録不要</span></div>
           </button>
           <button id="del-inv-all" style="background:var(--panel2);border:2px solid var(--border);border-radius:10px;padding:16px;text-align:left;cursor:pointer;transition:border-color .15s">
@@ -14874,15 +14876,25 @@ async function deleteInvMonth() {
     if(choice === null) return; // キャンセル
     deleteConfirmed = choice; // true=全て削除, false=棚卸のみ
   } else {
-    if(!confirm(`${farmLabel} ${mon} の棚卸データ ${items.length}日分を削除しますか？\n\n・日次棚卸（inv_daily）\n・飼料タンク（feed_tank）\n・事故記録（未確定の自動登録分）\n\nこの操作は取り消せません。`)) return;
+    if(!confirm(`${farmLabel} ${mon} の棚卸データ ${items.length}日分を削除しますか？\n\n・日次棚卸（inv_daily）\n・飼料タンク（棚卸由来の自動生成分のみ。Milfee等の実測タンクデータは削除されません）\n・事故記録（未確定の自動登録分）\n\nこの操作は取り消せません。`)) return;
   }
 
   showLoading('削除中...');
   try {
+    // feed_tankは棚卸データから自動生成されたA豚舎ラベル分のみ削除し、
+    // Milfee等から実測で取込んだタンクデータ（B豚舎含む）は誤って消さないようにする
+    const targetFarms = ff==='all' ? ['farm1','farm2'] : [ff];
+    const autoTankDeletes = [];
+    targetFarms.forEach(f => {
+      const barnA = FARMS[f]?.barns?.[0];
+      if(barnA?.tank_piglet_label) autoTankDeletes.push(api.deleteFeedTankByMonthAndTank(f, mon, barnA.tank_piglet_label));
+      if(barnA?.tank_hog_label)    autoTankDeletes.push(api.deleteFeedTankByMonthAndTank(f, mon, barnA.tank_hog_label));
+    });
+
     if(ff==='all') {
       await Promise.all([
         api.deleteInvDailyBothByMonth(mon),
-        api.deleteFeedTankBothByMonth(mon),
+        ...autoTankDeletes,
         api.deleteDeathByInvBothMonth(mon),
       ]);
       // 確定済み事故記録も削除する場合
@@ -14896,7 +14908,7 @@ async function deleteInvMonth() {
     } else {
       await Promise.all([
         api.deleteInvDailyByMonth(ff, mon),
-        api.deleteFeedTankByMonth(ff, mon),
+        ...autoTankDeletes,
         api.deleteDeathByInvMonth(ff, mon),
       ]);
       if(deleteConfirmed) {

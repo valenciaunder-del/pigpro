@@ -6310,6 +6310,7 @@ function rPerfFull() {
     <div class="kcard g"><div class="kl">平均ADG</div><div class="kv ${avgAdg?ac(avgAdg):''}">${avgAdg||'-'}<span class="ku">g/日</span></div></div>
     <div class="kcard c"><div class="kl">平均FCR</div><div class="kv ${avgFcr?fc(parseFloat(avgFcr)):''}">${avgFcr||'-'}</div></div>
     <div class="kcard r"><div class="kl">事故率</div><div class="kv">${deathRate!==null?deathRate+' %':'-'}</div></div>
+    <div class="kcard r"><div class="kl">事故頭数</div><div class="kv">${deathSum||'-'}<span class="ku">頭</span></div></div>
     <div class="kcard c"><div class="kl">上物率</div><div class="kv">${upperRate!==null?upperRate+' %':'-'}</div></div>
     <div class="kcard o"><div class="kl">平均導入体重</div><div class="kv">${avgStartWeight||'−'}<span class="ku">kg</span></div></div>
     <div class="kcard y"><div class="kl">平均出荷枝重</div><div class="kv">${avgCwKpi||'-'}<span class="ku">kg</span></div></div>
@@ -6317,8 +6318,7 @@ function rPerfFull() {
     <div class="kcard c"><div class="kl">枝肉単価（税抜）</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard o"><div class="kl">枝肉達成率</div><div class="kv">${cwAch!==null?cwAch+' %':'-'}</div></div>
     <div class="kcard y"><div class="kl">平均肥育日数</div><div class="kv">${avgDays||'-'}<span class="ku">日</span></div></div>
-    <div class="kcard g"><div class="kl">出荷頭数</div><div class="kv">${totalShipped||'-'}<span class="ku">頭</span></div></div>
-    <div class="kcard p"><div class="kl">対象ロット</div><div class="kv">${lots.length}<span class="ku">ロット</span></div></div>`;
+    <div class="kcard g"><div class="kl">出荷頭数</div><div class="kv">${totalShipped||'-'}<span class="ku">頭</span></div></div>`;
 
   // ロット一覧テーブル
   const tcEl = document.getElementById('pf-table-count');

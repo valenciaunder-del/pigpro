@@ -6214,8 +6214,16 @@ function rPerfFull() {
     d.sheet_id ? filteredSheetIds.has(d.sheet_id) : filteredShipFarmDates.has(`${d.farm}|${d.shipped_at}`)
   );
 
-  // 合計出荷頭数
-  const totalShipped = filteredShips.reduce((a,s)=>a+(s.count||0),0);
+  // 合計出荷頭数：仕切書（slaughter_sheets）の出荷日が期間内のhead_count合計（仕切書履歴と同じ集計）
+  const pfFarm    = document.getElementById('pf-f-farm')?.value || '';
+  const pfOutFrom = document.getElementById('pf-f-out-from')?.value || '';
+  const pfOutTo   = document.getElementById('pf-f-out-to')?.value   || '';
+  const totalShipped = DATA.slaughter.filter(s => {
+    if(pfFarm && s.farm !== pfFarm) return false;
+    if(pfOutFrom && (s.shipped_at||'') < pfOutFrom) return false;
+    if(pfOutTo   && (s.shipped_at||'') > pfOutTo)   return false;
+    return true;
+  }).reduce((a,s)=>a+(s.head_count||0),0);
 
   let adgWsum=0, adgHsum=0;
   lots.forEach(l=>{

@@ -3117,14 +3117,14 @@ const api = {
 
   // Deaths
   getDeaths: (farm) => {
-    const q = farm && farm !== 'both' ? `?farm=eq.${farm}&order=occurred_at.desc&limit=2000` : '?order=occurred_at.desc&limit=2000';
+    const q = farm && farm !== 'both' ? `?farm=eq.${farm}&order=occurred_at.desc&limit=50000` : '?order=occurred_at.desc&limit=50000';
     return sbFetch('death_records' + q);
   },
   insertDeath: (data) => sbFetch('death_records', { method:'POST', body: JSON.stringify(data) }),
 
   // Shipping
   getShips: (farm) => {
-    const q = farm && farm !== 'both' ? `?farm=eq.${farm}&order=created_at.desc&limit=10000` : '?order=created_at.desc&limit=10000';
+    const q = farm && farm !== 'both' ? `?farm=eq.${farm}&order=created_at.desc&limit=50000` : '?order=created_at.desc&limit=50000';
     return sbFetch('shipping_records' + q);
   },
   insertShip: (data) => sbFetch('shipping_records', { method:'POST', body: JSON.stringify(data) }),
@@ -3231,7 +3231,7 @@ const api = {
   deleteSlaughter: (id) => sbFetch(`slaughter_sheets?id=eq.${id}`, { method:'DELETE' }),
   deleteSlaughterDetail: (sheetId) => sbFetch(`slaughter_detail?sheet_id=eq.${sheetId}`, { method:'DELETE' }),
   getSlaughterDetail: (farm) => {
-    const q = farm && farm !== 'both' ? `?farm=eq.${farm}&order=shipped_at.desc&limit=10000` : '?order=shipped_at.desc&limit=10000';
+    const q = farm && farm !== 'both' ? `?farm=eq.${farm}&order=shipped_at.desc&limit=50000` : '?order=shipped_at.desc&limit=50000';
     return sbFetch('slaughter_detail' + q);
   },
   getSlaughterDetailById: (sheetId) => sbFetch(`slaughter_detail?sheet_id=eq.${sheetId}&order=carcass_no.asc`),

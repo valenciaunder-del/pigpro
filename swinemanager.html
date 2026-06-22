@@ -6204,27 +6204,65 @@ function rPerfFull() {
   const hcEl = document.getElementById('pf-head-count'); if(hcEl) hcEl.textContent = totalHead.toLocaleString();
 
   // KPIカード
-  const kpiMonths = window._dashKpiMonths ?? 0;
-  const lotIds = new Set(lots.map(l=>l.id));
-  const filteredShips = DATA.ships.filter(s=>lotIds.has(s.lot_id));
-  // sheet_id経由でロットに紐づく明細を取得。sheet_idがnullの旧データはfarm+shipped_atで照合
-  const filteredSheetIds = new Set(filteredShips.map(s=>s.sheet_id).filter(Boolean));
-  const filteredShipFarmDates = new Set(filteredShips.map(s=>`${s.farm}|${s.shipped_at}`));
-  const filteredDetails = DATA.slaughterDetail.filter(d =>
-    d.sheet_id ? filteredSheetIds.has(d.sheet_id) : filteredShipFarmDates.has(`${d.farm}|${d.shipped_at}`)
-  );
-
-  // 合計出荷頭数：仕切書（slaughter_sheets）の出荷日が期間内のhead_count合計（仕切書履歴と同じ集計）
-  const pfFarm    = document.getElementById('pf-f-farm')?.value || '';
+  // 期間フィルター値（全KPIを仕切書・事故・導入の発生日ベースで集計 = FileMaker月次サマリーと同じ方式）
+  const pfFarm    = document.getElementById('pf-f-farm')?.value    || '';
   const pfOutFrom = document.getElementById('pf-f-out-from')?.value || '';
   const pfOutTo   = document.getElementById('pf-f-out-to')?.value   || '';
-  const totalShipped = DATA.slaughter.filter(s => {
+
+  // 期間内の仕切書
+  const periodSheets = DATA.slaughter.filter(s => {
     if(pfFarm && s.farm !== pfFarm) return false;
     if(pfOutFrom && (s.shipped_at||'') < pfOutFrom) return false;
     if(pfOutTo   && (s.shipped_at||'') > pfOutTo)   return false;
     return true;
-  }).reduce((a,s)=>a+(s.head_count||0),0);
+  });
+  const periodSheetIds = new Set(periodSheets.map(s=>s.id));
 
+  // 期間内の頭別明細（sheet_idがnullの旧データはfarm+shipped_atで照合）
+  const periodShipFarmDates = new Set(periodSheets.map(s=>`${s.farm}|${s.shipped_at}`));
+  const periodDetails = DATA.slaughterDetail.filter(d => {
+    if(d.sheet_id) return periodSheetIds.has(d.sheet_id);
+    if(pfFarm && d.farm !== pfFarm) return false;
+    if(pfOutFrom && (d.shipped_at||'') < pfOutFrom) return false;
+    if(pfOutTo   && (d.shipped_at||'') > pfOutTo)   return false;
+    return true;
+  });
+
+  // 月間出荷頭数（仕切書ベース）
+  const totalShipped = periodSheets.reduce((a,s)=>a+(s.head_count||0),0);
+
+  // 月間事故頭数（事故発生日が期間内）
+  const periodDeaths = DATA.deaths.filter(d => {
+    if(pfFarm && d.farm !== pfFarm) return false;
+    const dt = (d.occurred_at||'').substring(0,10);
+    if(pfOutFrom && dt < pfOutFrom) return false;
+    if(pfOutTo   && dt > pfOutTo)   return false;
+    return true;
+  });
+  const deathSum = calcAccidentOnly(periodDeaths);
+
+  // 月始在庫・月末在庫（inv_daily の stock_head）
+  const invRecs = DATA.invDaily.filter(r => {
+    if(pfFarm && r.farm !== pfFarm) return false;
+    if(pfOutFrom && (r.date||'') < pfOutFrom) return false;
+    if(pfOutTo   && (r.date||'') > pfOutTo)   return false;
+    return true;
+  }).sort((a,b)=>(a.date>b.date?1:-1));
+  const invStartHead = invRecs.length ? (invRecs[0].stock_head||0) : null;
+  const invEndHead   = invRecs.length ? (invRecs[invRecs.length-1].stock_head||0) : null;
+
+  // 月間導入頭数（start_dateが期間内のロット合計）
+  const periodIntroHead = DATA.lots.filter(l => {
+    if(pfFarm && l.farm !== pfFarm) return false;
+    if(pfOutFrom && (l.start_date||'') < pfOutFrom) return false;
+    if(pfOutTo   && (l.start_date||'') > pfOutTo)   return false;
+    return true;
+  }).reduce((a,l)=>a+(l.count||0),0);
+
+  // 事故率（月始在庫ベース）
+  const deathRate = invStartHead ? (deathSum/invStartHead*100).toFixed(1) : null;
+
+  // ロットベースKPI（ADG・FCR・肥育日数・導入体重はロット単位で計算）
   let adgWsum=0, adgHsum=0;
   lots.forEach(l=>{
     const adg = calcLotAdg(l,true);
@@ -6234,21 +6272,6 @@ function rPerfFull() {
     if(h>0){adgWsum+=adg*h;adgHsum+=h;}
   });
   const avgAdg = adgHsum>0 ? Math.round(adgWsum/adgHsum) : null;
-
-  const upperRate = filteredDetails.length ? Math.round(filteredDetails.filter(d=>d.grade==='上').length/filteredDetails.length*100) : null;
-  // 枝肉達成率：対象農場の目標値を使用（複数農場の場合は最初のロットの農場設定を参照）
-  const cwTargetFarm = CF !== 'both' ? CF : (lots.length > 0 ? lots[0].farm : 'farm1');
-  const fCw = FARMS[cwTargetFarm];
-  const cwAch = filteredDetails.length && fCw?.targetCwMin
-    ? Math.round(filteredDetails.filter(d=>(d.carcass_weight||0)>=fCw.targetCwMin&&(d.carcass_weight||0)<=(fCw.targetCwMax||999)).length/filteredDetails.length*100)
-    : null;
-
-  let deathSum=0, introSum=0;
-  lots.forEach(l=>{
-    introSum+=l.count||0;
-    deathSum+=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id&&d.confirmed!==false));
-  });
-  const deathRate = introSum>0 ? (deathSum/introSum*100).toFixed(1) : null;
 
   const avgDays = (() => {
     const vals = lots.map(l=>calcLotAvgDays(l)).filter(v=>v>0);
@@ -6265,11 +6288,6 @@ function rPerfFull() {
     return (fcrVals.reduce((a,v)=>a+v,0)/fcrVals.length).toFixed(2);
   })();
 
-  // 平均枝肉重量・平均単価（filteredDetails + filteredShipsから）
-  const avgCwKpi = (() => {
-    const vals = filteredDetails.map(d=>d.carcass_weight).filter(v=>v>0);
-    return vals.length ? (vals.reduce((a,v)=>a+v,0)/vals.length).toFixed(1) : null;
-  })();
   // 平均導入体重（対象ロットの頭数加重平均）
   const avgStartWeight = (() => {
     let wsum = 0, hsum = 0;
@@ -6280,46 +6298,57 @@ function rPerfFull() {
     });
     return hsum > 0 ? (wsum / hsum).toFixed(1) : null;
   })();
-  // 相場単価（market_price の枝肉重量加重平均）
+
+  // 枝肉系KPI（期間内の頭別明細から）
+  const upperRate = periodDetails.length ? Math.round(periodDetails.filter(d=>d.grade==='上').length/periodDetails.length*100) : null;
+  const cwTargetFarm = CF !== 'both' ? CF : (lots.length > 0 ? lots[0].farm : 'farm1');
+  const fCw = FARMS[cwTargetFarm];
+  const cwAch = periodDetails.length && fCw?.targetCwMin
+    ? Math.round(periodDetails.filter(d=>(d.carcass_weight||0)>=fCw.targetCwMin&&(d.carcass_weight||0)<=(fCw.targetCwMax||999)).length/periodDetails.length*100)
+    : null;
+  const avgCwKpi = (() => {
+    const vals = periodDetails.map(d=>d.carcass_weight).filter(v=>v>0);
+    return vals.length ? (vals.reduce((a,v)=>a+v,0)/vals.length).toFixed(1) : null;
+  })();
+
+  // 建値・枝肉単価（期間内の仕切書から）
   const avgMarketPrice = (() => {
     let wSum = 0, kgSum = 0;
-    filteredShips.forEach(s => {
-      const sh = DATA.slaughter.find(x=>x.id===s.sheet_id);
-      if(!sh?.market_price || !sh.total_carcass_kg) return;
-      wSum += sh.market_price * sh.total_carcass_kg;
-      kgSum += sh.total_carcass_kg;
+    periodSheets.forEach(s => {
+      if(!s.market_price || !s.total_carcass_kg) return;
+      wSum += s.market_price * s.total_carcass_kg;
+      kgSum += s.total_carcass_kg;
     });
     return kgSum > 0 ? Math.round(wSum / kgSum) : null;
   })();
-  // 枝肉単価（税抜）：枝肉金額（税抜換算）÷枝肉重量の加重平均
-  // フォーマットにより枝肉金額の税区分が異なるため calcCarcassAmountEx で統一して税抜化する
   const avgUnitPrice = (() => {
     let amtSum = 0, kgSum = 0;
-    filteredShips.forEach(s => {
-      const sh = DATA.slaughter.find(x=>x.id===s.sheet_id);
-      if(!sh?.total_carcass_kg) return;
-      const carcassEx = calcCarcassAmountEx(sh);
+    periodSheets.forEach(s => {
+      if(!s.total_carcass_kg) return;
+      const carcassEx = calcCarcassAmountEx(s);
       if(!carcassEx) return;
       amtSum += carcassEx;
-      kgSum  += sh.total_carcass_kg;
+      kgSum  += s.total_carcass_kg;
     });
     return kgSum > 0 ? Math.round(amtSum / kgSum) : null;
   })();
 
   document.getElementById('pf-kpi').innerHTML = `
-    <div class="kcard g"><div class="kl">平均ADG</div><div class="kv ${avgAdg?ac(avgAdg):''}">${avgAdg||'-'}<span class="ku">g/日</span></div></div>
-    <div class="kcard c"><div class="kl">平均FCR</div><div class="kv ${avgFcr?fc(parseFloat(avgFcr)):''}">${avgFcr||'-'}</div></div>
+    <div class="kcard p" style="grid-column:span 2"><div class="kl" style="font-size:10px">月始在庫</div><div class="kv">${invStartHead!==null?invStartHead:'-'}<span class="ku">頭</span></div></div>
+    <div class="kcard g" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間導入頭数</div><div class="kv">${periodIntroHead||'-'}<span class="ku">頭</span></div></div>
+    <div class="kcard r" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間事故頭数</div><div class="kv">${deathSum||'-'}<span class="ku">頭</span></div></div>
+    <div class="kcard c" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間出荷頭数</div><div class="kv">${totalShipped||'-'}<span class="ku">頭</span></div></div>
+    <div class="kcard p" style="grid-column:span 2"><div class="kl" style="font-size:10px">月末在庫</div><div class="kv">${invEndHead!==null?invEndHead:'-'}<span class="ku">頭</span></div></div>
     <div class="kcard r"><div class="kl">事故率</div><div class="kv">${deathRate!==null?deathRate+' %':'-'}</div></div>
-    <div class="kcard r"><div class="kl">事故頭数</div><div class="kv">${deathSum||'-'}<span class="ku">頭</span></div></div>
     <div class="kcard c"><div class="kl">上物率</div><div class="kv">${upperRate!==null?upperRate+' %':'-'}</div></div>
-    <div class="kcard o"><div class="kl">平均導入体重</div><div class="kv">${avgStartWeight||'−'}<span class="ku">kg</span></div></div>
     <div class="kcard y"><div class="kl">平均出荷枝重</div><div class="kv">${avgCwKpi||'-'}<span class="ku">kg</span></div></div>
+    <div class="kcard o"><div class="kl">枝肉達成率</div><div class="kv">${cwAch!==null?cwAch+' %':'-'}</div></div>
     <div class="kcard g"><div class="kl">建値（税抜）</div><div class="kv">${avgMarketPrice?'¥'+avgMarketPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard c"><div class="kl">枝肉単価（税抜）</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
-    <div class="kcard o"><div class="kl">枝肉達成率</div><div class="kv">${cwAch!==null?cwAch+' %':'-'}</div></div>
-    <div class="kcard y"><div class="kl">平均肥育日数</div><div class="kv">${avgDays||'-'}<span class="ku">日</span></div></div>
-    <div class="kcard g"><div class="kl">出荷頭数</div><div class="kv">${totalShipped||'-'}<span class="ku">頭</span></div></div>`;
-
+    <div class="kcard g"><div class="kl">平均ADG</div><div class="kv ${avgAdg?ac(avgAdg):''}">${avgAdg||'-'}<span class="ku">g/日</span></div></div>
+    <div class="kcard c"><div class="kl">平均FCR</div><div class="kv ${avgFcr?fc(parseFloat(avgFcr)):''}">${avgFcr||'-'}</div></div>
+    <div class="kcard o"><div class="kl">平均肥育日数</div><div class="kv">${avgDays||'-'}<span class="ku">日</span></div></div>
+    <div class="kcard o"><div class="kl">平均導入体重</div><div class="kv">${avgStartWeight||'−'}<span class="ku">kg</span></div></div>`;
   // ロット一覧テーブル
   const tcEl = document.getElementById('pf-table-count');
   if(tcEl) tcEl.textContent = `${lots.length}ロット`;

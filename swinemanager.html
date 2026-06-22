@@ -11783,20 +11783,44 @@ async function saveSlaughter() {
     return;
   }
 
-  // 同一仕切書チェック：first_carcass_no が一致するものを上書き対象とする
-  // （同日同バイヤーでも枝番が違えば保留分などの別シートとして追加）
+  // 同一仕切書チェック
   const newFirst = SL_DATA.details?.length
     ? Math.min(...SL_DATA.details.map(d=>d.carcass_no).filter(n=>n>0))
     : null;
-  const sameSheet = DATA.slaughter.find(x =>
-    x.farm === s.farm &&
-    x.shipped_at === s.shipped_at &&
-    x.buyer === s.buyer &&
-    newFirst !== null && Number(x.first_carcass_no) === Number(newFirst)
-  );
+
+  // ①枝番ベース（頭別明細あり）
+  let sameSheet = newFirst !== null
+    ? DATA.slaughter.find(x =>
+        x.farm === s.farm &&
+        x.shipped_at === s.shipped_at &&
+        x.buyer === s.buyer &&
+        Number(x.first_carcass_no) === Number(newFirst)
+      )
+    : null;
+
+  // ②フォールバック（頭別明細なし）：農場+出荷日+販売先+頭数+枝肉重量が一致したら重複とみなす
+  if(!sameSheet && newFirst === null) {
+    sameSheet = DATA.slaughter.find(x =>
+      x.farm === s.farm &&
+      x.shipped_at === s.shipped_at &&
+      x.buyer === s.buyer &&
+      x.head_count === s.head_count &&
+      Math.abs((x.total_carcass_kg||0) - (s.total_carcass_kg||0)) < 1
+    );
+    if(sameSheet) {
+      const proceed = confirm(
+        `${s.shipped_at} ${s.buyer||''} ${s.head_count}頭 の仕切書が既に登録されています。
+上書きしますか？
+
+（キャンセルで保存を中止します）`
+      );
+      if(!proceed) { hideLoading(); return; }
+    }
+  }
+
   if(sameSheet) {
     // 同一仕切書の再取込 → 自動上書き
-    notif(`${s.shipped_at} ${s.buyer} 枝番${newFirst}〜 の仕切書が既に登録されています（${sameSheet.head_count}頭）。自動上書きします。`,'y');
+    if(newFirst !== null) notif(`${s.shipped_at} ${s.buyer} 枝番${newFirst}〜 の仕切書が既に登録されています（${sameSheet.head_count}頭）。自動上書きします。`,'y');
     showLoading('既存データを削除中...');
     const oldShips = DATA.ships.filter(os => os.sheet_id===sameSheet.id);
     for(const os of oldShips) await api.deleteShip(os.id);

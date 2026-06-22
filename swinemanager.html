@@ -6207,9 +6207,15 @@ function rPerfFull() {
   const kpiMonths = window._dashKpiMonths ?? 0;
   const lotIds = new Set(lots.map(l=>l.id));
   const filteredShips = DATA.ships.filter(s=>lotIds.has(s.lot_id));
-  // sheet_id経由でロットに紐づく明細のみ取得（精度向上）
+  // sheet_id経由でロットに紐づく明細を取得。sheet_idがnullの旧データはfarm+shipped_atで照合
   const filteredSheetIds = new Set(filteredShips.map(s=>s.sheet_id).filter(Boolean));
-  const filteredDetails = DATA.slaughterDetail.filter(d=>filteredSheetIds.has(d.sheet_id));
+  const filteredShipFarmDates = new Set(filteredShips.map(s=>`${s.farm}|${s.shipped_at}`));
+  const filteredDetails = DATA.slaughterDetail.filter(d =>
+    d.sheet_id ? filteredSheetIds.has(d.sheet_id) : filteredShipFarmDates.has(`${d.farm}|${d.shipped_at}`)
+  );
+
+  // 合計出荷頭数
+  const totalShipped = filteredShips.reduce((a,s)=>a+(s.count||0),0);
 
   let adgWsum=0, adgHsum=0;
   lots.forEach(l=>{
@@ -6222,9 +6228,11 @@ function rPerfFull() {
   const avgAdg = adgHsum>0 ? Math.round(adgWsum/adgHsum) : null;
 
   const upperRate = filteredDetails.length ? Math.round(filteredDetails.filter(d=>d.grade==='上').length/filteredDetails.length*100) : null;
-  const f = FARMS['farm1'];
-  const cwAch = filteredDetails.length && f?.targetCwMin
-    ? Math.round(filteredDetails.filter(d=>(d.carcass_weight||0)>=f.targetCwMin&&(d.carcass_weight||0)<=(f.targetCwMax||999)).length/filteredDetails.length*100)
+  // 枝肉達成率：対象農場の目標値を使用（複数農場の場合は最初のロットの農場設定を参照）
+  const cwTargetFarm = CF !== 'both' ? CF : (lots.length > 0 ? lots[0].farm : 'farm1');
+  const fCw = FARMS[cwTargetFarm];
+  const cwAch = filteredDetails.length && fCw?.targetCwMin
+    ? Math.round(filteredDetails.filter(d=>(d.carcass_weight||0)>=fCw.targetCwMin&&(d.carcass_weight||0)<=(fCw.targetCwMax||999)).length/filteredDetails.length*100)
     : null;
 
   let deathSum=0, introSum=0;
@@ -6301,6 +6309,7 @@ function rPerfFull() {
     <div class="kcard c"><div class="kl">枝肉単価（税抜）</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard o"><div class="kl">枝肉達成率</div><div class="kv">${cwAch!==null?cwAch+' %':'-'}</div></div>
     <div class="kcard y"><div class="kl">平均肥育日数</div><div class="kv">${avgDays||'-'}<span class="ku">日</span></div></div>
+    <div class="kcard g"><div class="kl">出荷頭数</div><div class="kv">${totalShipped||'-'}<span class="ku">頭</span></div></div>
     <div class="kcard p"><div class="kl">対象ロット</div><div class="kv">${lots.length}<span class="ku">ロット</span></div></div>`;
 
   // ロット一覧テーブル

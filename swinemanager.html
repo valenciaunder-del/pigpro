@@ -11707,6 +11707,12 @@ async function saveSlaughter() {
   if(!SL_DATA?.sheet) { notif('解析データがありません','r'); return; }
   const s = SL_DATA.sheet;
 
+  // 頭別明細が必須（明細なしでの保存を禁止）
+  if(!SL_DATA.details?.length) {
+    notif('頭別明細が入力されていません。仕切書の頭別データを確認してから保存してください。', 'r');
+    return;
+  }
+
   // 保存前に枝肉番号(carcass_no)の重複チェック（DBのON CONFLICTエラーを未然に防ぐ）
   if(SL_DATA.details?.length) {
     const noCounts = {};

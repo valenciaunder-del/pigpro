@@ -11933,12 +11933,8 @@ async function saveSlaughter() {
           sheet_id: sheetId || null,
         });
       }
-    } else {
-      // ロット内訳なし → 保存中止
-      hideLoading();
-      notif('ロット内訳が入力されていません。出荷記録を登録するにはロット内訳を入力してください。', 'r');
-      return;
     }
+    // ロット内訳なし → 出荷記録は作成しない（出荷管理ページでロット紐付けを行う）
 
     // 売上はslaughter_sheetsから動的集計するため個別登録不要
     // const mon = s.shipped_at?.slice(0,7);

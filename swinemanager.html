@@ -11496,6 +11496,9 @@ function checkSlConsistency(data) {
   if(!data) return;
   const s = data.sheet || {};
   const details = data.details || [];
+  // バナーは毎回クリアしてから再描画（追記による重複を防ぐ）
+  const bannerEl = document.getElementById('sl-consistency-banner');
+  if(bannerEl) { bannerEl.innerHTML = ''; bannerEl.style.display = 'none'; }
   let detailErrors = 0;
 
   // 1) 明細行ごとの整合チェック
@@ -11537,15 +11540,13 @@ function checkSlConsistency(data) {
     let summaryErrors = 0;
     if(gradeErrors.length > 0) {
       summaryErrors++;
-      const banner = document.getElementById('sl-consistency-banner');
-      if(banner) {
-        const existing = banner.innerHTML;
-        banner.innerHTML = existing +
-          `<div style="margin-top:6px;padding:6px 10px;background:rgba(251,146,60,.12);border:1px solid rgba(251,146,60,.4);border-radius:6px;font-size:12px;color:#fb923c">
+      if(bannerEl) {
+        bannerEl.innerHTML =
+          `<div style="padding:6px 10px;background:rgba(251,146,60,.12);border:1px solid rgba(251,146,60,.4);border-radius:6px;font-size:12px;color:#fb923c">
             ⚠️ <strong>格付け頭数不一致</strong>（集計表との差異）：${gradeErrors.join(' / ')}
             <span style="color:var(--muted2);margin-left:8px">→ 等級の手動確認をお勧めします</span>
           </div>`;
-        banner.style.display = '';
+        bannerEl.style.display = '';
       }
     }
   }

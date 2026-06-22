@@ -273,6 +273,26 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 
 <!-- ロット内訳・生体重入力モーダル -->
 
+<!-- 出荷内訳モーダル -->
+<div id="lot-breakdown-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;width:420px;max-width:95vw;max-height:90vh;overflow-y:auto">
+    <div style="font-size:16px;font-weight:700;margin-bottom:4px">出荷内訳の入力</div>
+    <div id="lb-subtitle" style="font-size:12px;color:var(--muted);margin-bottom:14px"></div>
+    <div id="lb-yield-info" style="background:var(--panel2);border-radius:8px;padding:10px;margin-bottom:14px;font-size:12px;color:var(--muted2)"></div>
+    <div style="font-size:12px;font-weight:600;color:var(--muted2);margin-bottom:8px">ロット別出荷頭数</div>
+    <div id="lb-lot-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--muted)">合計</span>
+      <span id="lb-total-display" style="font-size:14px;font-weight:700">0 / 0 頭</span>
+    </div>
+    <div id="lb-error" style="font-size:12px;color:var(--danger);margin-top:4px;display:none"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn bp" style="flex:1" onclick="confirmLotBreakdown()">✓ 保存</button>
+      <button class="btn bs" onclick="closeLotBreakdown()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <!-- ロット編集モーダル -->
 <div id="lot-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
   <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;width:420px;max-width:95vw;max-height:90vh;overflow-y:auto">
@@ -1465,7 +1485,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           </div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn bp" id="sl-save-btn" onclick="saveSlaughter()">✓ 全データを保存</button>
+          <button class="btn bp" id="sl-save-btn" onclick="openLotBreakdown()">✓ 全データを保存</button>
           <button class="btn bs" onclick="clearSlaughter()">✕ クリア</button>
         </div>
       </div>
@@ -11703,6 +11723,94 @@ function updateSlDetail(idx, field, value) {
 }
 
 // ロット内訳モーダル
+function openLotBreakdown() {
+  if(!SL_DATA?.sheet) return;
+  const s = SL_DATA.sheet;
+  const farm = s.farm;
+  const shippedAt = document.getElementById('sl-r-shipped-at')?.value || s.shipped_at || '';
+  const totalCount = s.head_count || 0;
+
+  document.getElementById('lb-subtitle').textContent =
+    `${shippedAt} ${FARMS[farm]?.name||farm}  合計 ${totalCount}頭`;
+
+  // 歩留まり逆算情報
+  const yieldRate = getYieldRate(farm, s.slaughterhouse);
+  const avgCw = s.total_carcass_kg && s.head_count ? (s.total_carcass_kg / s.head_count) : 0;
+  const estLiveWt = avgCw > 0 ? (avgCw / (yieldRate / 100)).toFixed(0) : '-';
+  document.getElementById('lb-yield-info').textContent =
+    `歩留まり設定値: ${yieldRate}%　逆算生体重: 約${estLiveWt}kg/頭（出荷先: ${s.slaughterhouse||'-'}）`;
+
+  // 農場の在場ロット一覧
+  const activeLots = DATA.lots.filter(l => {
+    if(l.farm !== farm) return false;
+    if((l.start_date||'') > shippedAt) return false;
+    return calcCurrentHead(l) > 0;
+  }).sort((a,b) => (a.start_date||'') > (b.start_date||'') ? 1 : -1);
+
+  const listEl = document.getElementById('lb-lot-list');
+  listEl.innerHTML = '';
+  if(!activeLots.length) {
+    listEl.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px">在場ロットが見つかりません。ロット管理で登録してください。</div>';
+  }
+  activeLots.forEach(l => {
+    const inStock = calcCurrentHead(l);
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--panel2);border-radius:8px;gap:8px';
+    div.innerHTML = `
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--accent2)">${l.id}</div>
+        <div style="font-size:11px;color:var(--muted)">導入: ${l.start_date||'-'} ／ 在場 ${inStock}頭 ／ 導入 ${l.count||0}頭</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+        <input type="number" min="0" max="${inStock}" value="0"
+          style="width:64px;padding:4px 8px;background:var(--input);border:1px solid var(--border);border-radius:6px;color:var(--text);text-align:right"
+          data-lot-id="${l.id}" oninput="updateLbTotal()">
+        <span style="font-size:12px;color:var(--muted)">頭</span>
+      </div>`;
+    listEl.appendChild(div);
+  });
+
+  document.getElementById('lb-total-display').textContent = `0 / ${totalCount} 頭`;
+  document.getElementById('lb-total-display').style.color = '';
+  document.getElementById('lb-error').style.display = 'none';
+  const modal = document.getElementById('lot-breakdown-modal');
+  modal.style.display = 'flex';
+}
+
+function updateLbTotal() {
+  const inputs = document.querySelectorAll('#lb-lot-list input[data-lot-id]');
+  const total = Array.from(inputs).reduce((a,i)=>a+(parseInt(i.value)||0),0);
+  const target = SL_DATA?.sheet?.head_count || 0;
+  const el = document.getElementById('lb-total-display');
+  el.textContent = `${total} / ${target} 頭`;
+  el.style.color = total === target ? 'var(--success)' : total > target ? 'var(--danger)' : '';
+}
+
+function closeLotBreakdown() {
+  document.getElementById('lot-breakdown-modal').style.display = 'none';
+}
+
+function confirmLotBreakdown() {
+  const inputs = document.querySelectorAll('#lb-lot-list input[data-lot-id]');
+  const breakdown = [];
+  inputs.forEach(i => {
+    const cnt = parseInt(i.value)||0;
+    if(cnt > 0) breakdown.push({ lot_id: i.dataset.lotId, count: cnt });
+  });
+  const total = breakdown.reduce((a,b)=>a+b.count, 0);
+  const target = SL_DATA?.sheet?.head_count || 0;
+  const errEl = document.getElementById('lb-error');
+  if(total !== target) {
+    errEl.textContent = `合計頭数（${total}頭）が仕切書頭数（${target}頭）と一致しません`;
+    errEl.style.display = '';
+    return;
+  }
+  errEl.style.display = 'none';
+  SL_DATA.lotBreakdown = breakdown;
+  closeLotBreakdown();
+  saveSlaughter();
+}
+
 async function saveSlaughter() {
   if(!SL_DATA?.sheet) { notif('解析データがありません','r'); return; }
   const s = SL_DATA.sheet;
@@ -12044,6 +12152,7 @@ function clearSlaughter() {
   const saveBtn = document.getElementById('sl-save-btn');
   if(saveBtn && saveBtn.dataset.editMode) {
     saveBtn.textContent = '✓ 全データを保存';
+    saveBtn.setAttribute('onclick', 'openLotBreakdown()');
     delete saveBtn.dataset.editMode;
   }
 }
@@ -12719,6 +12828,7 @@ async function editSlaughter(id) {
       const saveBtn = document.getElementById('sl-save-btn');
       if(saveBtn) {
         saveBtn.textContent = '✓ データを更新';
+        saveBtn.setAttribute('onclick', 'saveSlaughter()');
         saveBtn.dataset.editMode = 'true';
       }
       notif('登録済みデータを読み込みました。出荷日を確認・修正して「データを更新」を押してください。');

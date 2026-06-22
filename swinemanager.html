@@ -6275,16 +6275,6 @@ function rPerfFull() {
   });
   const deathSum = calcAccidentOnly(periodDeaths);
 
-  // 月始在庫・月末在庫（inv_daily の stock_head）
-  const invRecs = DATA.invDaily.filter(r => {
-    if(pfFarm && r.farm !== pfFarm) return false;
-    if(pfOutFrom && (r.date||'') < pfOutFrom) return false;
-    if(pfOutTo   && (r.date||'') > pfOutTo)   return false;
-    return true;
-  }).sort((a,b)=>(a.date>b.date?1:-1));
-  const invStartHead = invRecs.length ? (invRecs[0].stock_head||0) : null;
-  const invEndHead   = invRecs.length ? (invRecs[invRecs.length-1].stock_head||0) : null;
-
   // 月間導入頭数（start_dateが期間内のロット合計）
   const periodIntroHead = DATA.lots.filter(l => {
     if(pfFarm && l.farm !== pfFarm) return false;
@@ -6293,8 +6283,24 @@ function rPerfFull() {
     return true;
   }).reduce((a,l)=>a+(l.count||0),0);
 
-  // 事故率（月始在庫ベース）
-  const deathRate = invStartHead ? (deathSum/invStartHead*100).toFixed(1) : null;
+  // 期間開始時点の在場頭数をロット登録から推計（棚卸なし）
+  // 期間開始前に導入済み・かつ完全出荷前のロットの残頭数を合算
+  const estStartHead = (() => {
+    const periodStart = pfOutFrom || null;
+    if(!periodStart) return null;
+    return DATA.lots.filter(l => {
+      if(pfFarm && l.farm !== pfFarm) return false;
+      return (l.start_date||'') <= periodStart;
+    }).reduce((a, l) => {
+      const shipped = DATA.ships.filter(s => s.lot_id===l.id && (s.shipped_at||'') < periodStart)
+        .reduce((x,s)=>x+(s.count||0), 0);
+      const dead = calcAccidentOnly(DATA.deaths.filter(d => d.lot_id===l.id && (d.occurred_at||'').substring(0,10) < periodStart));
+      return a + Math.max(0, (l.count||0) - shipped - dead);
+    }, 0);
+  })();
+
+  // 事故率（期間開始時点の推計在場頭数ベース）
+  const deathRate = estStartHead ? (deathSum/estStartHead*100).toFixed(1) : null;
 
   // ロットベースKPI（ADG・FCR・肥育日数・導入体重はロット単位で計算）
   let adgWsum=0, adgHsum=0;
@@ -6368,11 +6374,9 @@ function rPerfFull() {
   })();
 
   document.getElementById('pf-kpi').innerHTML = `
-    <div class="kcard p" style="grid-column:span 2"><div class="kl" style="font-size:10px">月始在庫</div><div class="kv">${invStartHead!==null?invStartHead:'-'}<span class="ku">頭</span></div></div>
     <div class="kcard g" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間導入頭数</div><div class="kv">${periodIntroHead||'-'}<span class="ku">頭</span></div></div>
     <div class="kcard r" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間事故頭数</div><div class="kv">${deathSum||'-'}<span class="ku">頭</span></div></div>
     <div class="kcard c" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間出荷頭数</div><div class="kv">${totalShipped||'-'}<span class="ku">頭</span></div></div>
-    <div class="kcard p" style="grid-column:span 2"><div class="kl" style="font-size:10px">月末在庫</div><div class="kv">${invEndHead!==null?invEndHead:'-'}<span class="ku">頭</span></div></div>
     <div class="kcard r"><div class="kl">事故率</div><div class="kv">${deathRate!==null?deathRate+' %':'-'}</div></div>
     <div class="kcard c"><div class="kl">上物率</div><div class="kv">${upperRate!==null?upperRate+' %':'-'}</div></div>
     <div class="kcard y"><div class="kl">平均出荷枝重</div><div class="kv">${avgCwKpi||'-'}<span class="ku">kg</span></div></div>

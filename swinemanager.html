@@ -12143,10 +12143,12 @@ async function saveSlaughter() {
         });
       }
       SL_DATA = next;
+      SL_DATA.lotBreakdown = []; // 保存完了後は必ずリセット
       renderSlPreview(next);
       notif('仕切書データを保存しました。出荷記録・売上にも反映しました。');
       setTimeout(()=>notif(`📋 次の農場（${FARMS[nextFarm]?.name||next.sheet?.farm_name||'不明'}）のデータを表示しました。内容を確認して保存してください。`,'g'),1000);
     } else {
+      if(SL_DATA) SL_DATA.lotBreakdown = []; // 保存完了後は必ずリセット
       notif('仕切書データを保存しました。出荷記録・売上にも反映しました。');
     }
   } catch(e) { notif('保存エラー: '+e.message,'r'); }

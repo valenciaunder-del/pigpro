@@ -9655,6 +9655,7 @@ async function processSlFile(file) {
     updateProgress(3);
 
     SL_DATA = result;
+    if(SL_DATA) SL_DATA.lotBreakdown = []; // ロット内訳は毎回リセット
     renderSlPreview(result);
     updateProgress(4);
 
@@ -10357,6 +10358,7 @@ function mergeOtasanSlPdf() {
   const fees = parsed.fees || {};
 
   SL_DATA = {
+    lotBreakdown: [],
     sheet: {
       farm, farm_name: FARMS[farm]?.name||farm,
       shipped_at: shippedAt, slaughtered_at: slaughteredAt,
@@ -10887,6 +10889,7 @@ function mergeOtasanData() {
   const finalTotal = fees.netAmount || totalAmount;
 
   SL_DATA = {
+    lotBreakdown: [],
     sheet: {
       farm, farm_name: FARMS[farm]?.name || farm,
       shipped_at: shippedAt, slaughtered_at: slaughteredAt,
@@ -11818,6 +11821,14 @@ async function saveSlaughter() {
   // 頭別明細が必須（明細なしでの保存を禁止）
   if(!SL_DATA.details?.length) {
     notif('頭別明細が入力されていません。仕切書の頭別データを確認してから保存してください。', 'r');
+    return;
+  }
+
+  // ロット内訳必須ガード（editMode以外はconfirmLotBreakdown経由でのみ保存可）
+  const _isEditMode = document.getElementById('sl-save-btn')?.dataset.editMode === 'true';
+  if(!_isEditMode && (!SL_DATA.lotBreakdown?.length)) {
+    notif('ロット内訳が入力されていません。「全データを保存」ボタンからロット内訳を入力してください。', 'r');
+    openLotBreakdown();
     return;
   }
 
@@ -12814,6 +12825,7 @@ async function editSlaughter(id) {
     sheetData.shipped_at_farm = sheet.shipped_at; // 出荷日
     if(!sheetData.slaughtered_at) sheetData.slaughtered_at = sheet.shipped_at; // 旧データ互換
     SL_DATA = {
+      lotBreakdown: null, // editMode: ロット内訳チェック不要
       sheet: sheetData,
       details: details || []
     };

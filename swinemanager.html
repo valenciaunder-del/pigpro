@@ -11708,8 +11708,8 @@ function updateSlDetail(idx, field, value) {
   const stats = calcSlStats(SL_DATA.details);
   if(stats.head_count) {
     Object.assign(SL_DATA.sheet, stats);
-    document.getElementById('sl-r-cnt').textContent = stats.head_count+'頭';
-    document.getElementById('sl-r-wt').textContent  = stats.total_carcass_kg+'kg';
+    const wtEl = document.getElementById('sl-r-wt');
+    if(wtEl) { if(wtEl.tagName==='INPUT') wtEl.value=stats.total_carcass_kg; else wtEl.textContent=stats.total_carcass_kg+'kg'; }
     document.getElementById('sl-r-upper').textContent = `${stats.upper_rate}% (${stats.upper_count}頭)`;
     if(document.getElementById('sl-r-upper-mid')) document.getElementById('sl-r-upper-mid').textContent = `${stats.upper_mid_rate}% (${stats.upper_mid_count}頭)`;
     if(document.getElementById('sl-r-avg-wt'))   document.getElementById('sl-r-avg-wt').textContent   = stats.avg_carcass_wt+'kg';
@@ -11718,6 +11718,16 @@ function updateSlDetail(idx, field, value) {
   }
   // OCR整合性を再チェック
   checkSlConsistency(SL_DATA);
+  // 明細合計 vs サマリ枝肉重量 警告をリアルタイム更新
+  const warn = document.getElementById('sl-weight-warn');
+  if(warn) {
+    const detailTotal = Math.round(SL_DATA.details.reduce((a,d)=>a+(d.carcass_weight||0),0)*10)/10;
+    const summaryWt = SL_DATA.sheet.total_carcass_kg || 0;
+    if(detailTotal > 0 && summaryWt > 0 && Math.abs(detailTotal - summaryWt) >= 1) {
+      warn.textContent = `⚠️ 明細合計(${detailTotal}kg) とサマリ枝肉重量(${summaryWt}kg) が一致しません`;
+      warn.style.display = '';
+    } else { warn.style.display = 'none'; }
+  }
 }
 
 // ロット内訳モーダル

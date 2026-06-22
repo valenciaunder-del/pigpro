@@ -1579,7 +1579,8 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     <div class="ch">
       <span class="ct">仕切書一覧</span>
       <span class="bdg gr" id="slh-count">-</span>
-      <button class="btn bs sm" onclick="exportSlaughterCsv()" style="margin-left:auto">📥 CSV出力（仕切書単位）</button>
+      <button class="btn bs sm" onclick="rebuildSlaughterDetails()" style="margin-left:auto;background:rgba(251,146,60,.1);border-color:var(--accent3);color:var(--accent3)" title="raw_textから頭別明細を再構築">🔧 明細再構築</button>
+      <button class="btn bs sm" onclick="exportSlaughterCsv()">📥 CSV出力（仕切書単位）</button>
       <button class="btn bs sm" onclick="exportSlaughterDetailCsv()" style="background:rgba(34,211,238,.1);border-color:var(--accent2);color:var(--accent2)">📥 FM用CSV（1頭1行）</button>
     </div>
     <div class="tw">
@@ -12488,6 +12489,49 @@ function rSlHistory() {
       </td>
     </tr>`;
   }).join('');
+}
+
+// ══════════════════════════════════════════════
+// 頭別明細再構築（raw_textからslaughter_detailを復元）
+// ══════════════════════════════════════════════
+async function rebuildSlaughterDetails() {
+  if(!confirm('raw_textに保存されたOCRデータから、頭別明細（slaughter_detail）を再構築します。\n既に存在する明細は上書きされます。実行しますか？')) return;
+  showLoading('仕切書一覧を取得中...');
+  try {
+    const sheets = await sbFetch('slaughter_sheets?order=shipped_at.desc&limit=500&select=id,farm,shipped_at,head_count,raw_text');
+    let rebuilt=0, skipped=0, failed=0;
+    for(const sheet of sheets) {
+      showLoading(`処理中... ${rebuilt+skipped+failed+1}/${sheets.length}件`);
+      if(!sheet.raw_text) { skipped++; continue; }
+      let slData;
+      try { slData = typeof sheet.raw_text==='string' ? JSON.parse(sheet.raw_text) : sheet.raw_text; }
+      catch { skipped++; continue; }
+      const details = slData?.details || [];
+      if(!details.length) { skipped++; continue; }
+      try {
+        await api.deleteSlaughterDetail(sheet.id);
+        const rows = details.map(d=>({
+          sheet_id: sheet.id,
+          farm: sheet.farm,
+          shipped_at: sheet.shipped_at,
+          carcass_no: d.carcass_no,
+          carcass_weight: d.carcass_weight,
+          unit_price: d.unit_price,
+          grade: d.grade,
+          backfat: d.backfat,
+          sex: d.sex,
+          defects: d.defects,
+          amount: calcCarcassAmount(d.carcass_weight, d.unit_price),
+        }));
+        await api.insertSlaughterDetail(rows);
+        rebuilt++;
+      } catch(e) { failed++; console.error(sheet.shipped_at, e); }
+    }
+    DATA.slaughterDetail = await api.getSlaughterDetail();
+    notif(`再構築完了: ${rebuilt}件成功 / ${skipped}件スキップ / ${failed}件失敗`, rebuilt>0?'g':'y');
+  } catch(e) {
+    notif('再構築エラー: '+e.message,'r');
+  } finally { hideLoading(); }
 }
 
 function exportSlaughterCsv() {

@@ -12519,7 +12519,7 @@ async function rebuildSlaughterDetails() {
   showLoading('仕切書一覧を取得中...');
   try {
     const sheets = await sbFetch('slaughter_sheets?order=shipped_at.desc&limit=500&select=id,farm,shipped_at,head_count,raw_text');
-    let rebuilt=0, skipped=0, failed=0;
+    let rebuilt=0, skipped=0, failed=0; const failedSheets=[];
     for(const sheet of sheets) {
       showLoading(`処理中... ${rebuilt+skipped+failed+1}/${sheets.length}件`);
       if(!sheet.raw_text) { skipped++; continue; }
@@ -12528,24 +12528,19 @@ async function rebuildSlaughterDetails() {
       catch { skipped++; continue; }
       const details = slData?.details || [];
       if(!details.length) { skipped++; continue; }
-      try {
-        await api.deleteSlaughterDetail(sheet.id);
-        const rows = details.map(d=>({
-          sheet_id: sheet.id,
-          farm: sheet.farm,
-          shipped_at: sheet.shipped_at,
-          carcass_no: d.carcass_no,
-          carcass_weight: d.carcass_weight,
-          unit_price: d.unit_price,
-          grade: d.grade,
-          backfat: d.backfat,
-          sex: d.sex,
-          defects: d.defects,
+      const rows = details.map(d=>({
+          sheet_id: sheet.id, farm: sheet.farm, shipped_at: sheet.shipped_at,
+          carcass_no: d.carcass_no, carcass_weight: d.carcass_weight,
+          unit_price: d.unit_price, grade: d.grade, backfat: d.backfat,
+          sex: d.sex, defects: d.defects,
           amount: d.amount || (d.carcass_weight && d.unit_price ? Math.floor(d.carcass_weight * d.unit_price) : null),
-        }));
-        await api.insertSlaughterDetail(rows);
-        rebuilt++;
-      } catch(e) { failed++; console.error(sheet.shipped_at, e); }
+      }));
+      try {
+        await api.insertSlaughterDetail(rows); rebuilt++;
+      } catch(e) {
+        try { await api.deleteSlaughterDetail(sheet.id); await api.insertSlaughterDetail(rows); rebuilt++; }
+        catch(e2) { failed++; failedSheets.push(sheet.shipped_at+' '+sheet.head_count+'頭'); }
+      }
     }
     // 再構築後にDATA更新 → 各ページを再描画
     DATA.slaughterDetail = await api.getSlaughterDetail();
@@ -12554,7 +12549,8 @@ async function rebuildSlaughterDetails() {
     if(CP==='carcass-analysis') rCarcass();
     if(CP==='price-analysis') rPriceAnalysis();
     if(CP==='sl-history') rSlHistory();
-    notif(`再構築完了: ${rebuilt}件成功 / ${skipped}件スキップ / ${failed}件失敗\nDB実件数: ${dbTotal}件 / 読込件数: ${memCount}件`, rebuilt>0?'g':'y');
+    const failMsg = failedSheets.length ? '\n失敗シート: '+failedSheets.join(', ') : '';
+    notif(`再構築完了: ${rebuilt}件成功 / ${skipped}件スキップ / ${failed}件失敗\nDB実件数: ${dbTotal}件 / 読込件数: ${memCount}件${failMsg}`, rebuilt>0?'g':'y');
   } catch(e) {
     notif('再構築エラー: '+e.message,'r');
   } finally { hideLoading(); }

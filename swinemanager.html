@@ -3231,9 +3231,20 @@ const api = {
   }),
   deleteSlaughter: (id) => sbFetch(`slaughter_sheets?id=eq.${id}`, { method:'DELETE' }),
   deleteSlaughterDetail: (sheetId) => sbFetch(`slaughter_detail?sheet_id=eq.${sheetId}`, { method:'DELETE' }),
-  getSlaughterDetail: (farm) => {
-    const q = farm && farm !== 'both' ? `?farm=eq.${farm}&limit=50000` : '?limit=50000';
-    return sbFetch('slaughter_detail' + q);
+  getSlaughterDetail: async (farm) => {
+    // PostgRESTのmax_rows制限(1000件)を回避するためページング取得
+    const farmQ = farm && farm !== 'both' ? `farm=eq.${farm}&` : '';
+    const all = [];
+    let offset = 0;
+    const pageSize = 1000;
+    while(true) {
+      const batch = await sbFetch(`slaughter_detail?${farmQ}limit=${pageSize}&offset=${offset}`);
+      if(!batch?.length) break;
+      all.push(...batch);
+      if(batch.length < pageSize) break; // 最終ページ
+      offset += pageSize;
+    }
+    return all;
   },
   getSlaughterDetailCount: async () => {
     const token = await getAuthToken();

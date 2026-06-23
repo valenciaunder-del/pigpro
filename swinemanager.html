@@ -12521,14 +12521,18 @@ async function rebuildSlaughterDetails() {
           backfat: d.backfat,
           sex: d.sex,
           defects: d.defects,
-          amount: calcCarcassAmount(d.carcass_weight, d.unit_price),
+          amount: d.amount || (d.carcass_weight && d.unit_price ? Math.floor(d.carcass_weight * d.unit_price) : null),
         }));
         await api.insertSlaughterDetail(rows);
         rebuilt++;
       } catch(e) { failed++; console.error(sheet.shipped_at, e); }
     }
+    // 再構築後にDATA更新 → 各ページを再描画
     DATA.slaughterDetail = await api.getSlaughterDetail();
-    notif(`再構築完了: ${rebuilt}件成功 / ${skipped}件スキップ / ${failed}件失敗`, rebuilt>0?'g':'y');
+    if(CP==='carcass-analysis') rCarcass();
+    if(CP==='price-analysis') rPriceAnalysis();
+    if(CP==='sl-history') rSlHistory();
+    notif(`再構築完了: ${rebuilt}件成功 / ${skipped}件スキップ / ${failed}件失敗\n枝肉分析・枝肉単価分析が更新されました。`, rebuilt>0?'g':'y');
   } catch(e) {
     notif('再構築エラー: '+e.message,'r');
   } finally { hideLoading(); }

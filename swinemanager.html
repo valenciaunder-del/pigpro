@@ -12945,11 +12945,11 @@ async function openEditBreakdown(sheetId) {
   document.getElementById('be-info').textContent =
     `出荷日: ${sheet.shipped_at}　屠畜日: ${sheet.slaughtered_at||sheet.shipped_at}　合計: ${sheet.head_count}頭`;
 
-  // 現在のshipping_recordsを取得
+  // 現在のshipping_recordsを取得（sheet_id優先、なければfarm+shipped_at+slaughtered_atで照合）
   const ships = DATA.ships.filter(s=>
-    s.farm===sheet.farm &&
-    s.shipped_at===sheet.shipped_at &&
-    s.slaughtered_at===(sheet.slaughtered_at||sheet.shipped_at)
+    s.sheet_id === sheetId ||
+    (!s.sheet_id && s.farm===sheet.farm && s.shipped_at===sheet.shipped_at &&
+     s.slaughtered_at===(sheet.slaughtered_at||sheet.shipped_at))
   );
 
   const rowsEl = document.getElementById('be-rows');

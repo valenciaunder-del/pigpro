@@ -12589,6 +12589,8 @@ async function slhToggleDetail(id, e) {
   const _slhDed = s.deduction_items ? (() => { try { return JSON.parse(s.deduction_items); } catch(e) { return null; } })() : null;
   window._slDedItems = (_slhDed && _slhDed.length) ? _slhDed : slOcrToDeductionItems(s);
   slDedRenderTable(window._slDedItems);
+  // モーダルを開いた時点で仕入金額・消費税・差引支払を計算表示
+  setTimeout(seAutoCalc, 30);
   const cntEl = document.getElementById('slh-dp-detail-cnt');
   document.getElementById('slh-detail-tb').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:12px">読み込み中...</td></tr>';
   try {

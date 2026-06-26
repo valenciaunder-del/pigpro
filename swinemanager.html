@@ -12818,6 +12818,7 @@ function slhEditCell(td, rowId, field) {
       await api.updateSlaughterDetail(rowId, patch);
       Object.assign(row, patch);
       slhRenderDetail(SLH_DETAIL_CACHE);
+      slhUpdateCalcFields(SLH_DETAIL_CACHE);
       notif('更新しました','g');
     } catch(e){ td.innerHTML=origHTML; notif('更新エラー: '+e.message,'r'); }
   };

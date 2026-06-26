@@ -7575,7 +7575,7 @@ function rMonthlySales() {
     ${thS('枝肉・内臓<br>（税抜）')}${thS('消費税8%')}${thS('8%対象<br>税込計')}
     ${thS('原皮<br>（税抜）')}${thS('消費税10%')}${thS('10%対象<br>税込計')}
     ${thS('屠畜経費他<br>（税込）')}${thS('消費税10%<br>（控除）')}${thS('検査料<br>（非課税）')}
-    ${thS('差引支払')}
+    ${thS('差引支払')}${thSL('')}
   </tr></thead><tbody>`;
 
   sheets.sort((a,b)=>(a.shipped_at>b.shipped_at?1:-1)).forEach(s => {
@@ -7605,6 +7605,7 @@ function rMonthlySales() {
       <td style="text-align:right;padding:5px 8px;color:var(--danger)">${fM(slT10)}</td>
       <td style="text-align:right;padding:5px 8px">${fM(insp)}</td>
       <td style="text-align:right;padding:5px 8px;font-weight:700;color:var(--accent2)">${fM(s.net_payment||s.total_amount)}</td>
+      <td style="padding:4px 6px;text-align:center"><button class="btn bs" style="font-size:11px;padding:3px 8px;white-space:nowrap" onclick="slhToggleDetail('${s.id}',event)">編集</button></td>
     </tr>`;
   });
 
@@ -7623,6 +7624,7 @@ function rMonthlySales() {
     <td style="text-align:right;padding:6px 8px;color:var(--danger)">${fM(totalSlFeeT10)}</td>
     <td style="text-align:right;padding:6px 8px">${fM(totalInspNC)}</td>
     <td style="text-align:right;padding:6px 8px;color:var(--accent2)">${fM(totalNet)}</td>
+    <td></td>
   </tr></tbody></table>`;
   document.getElementById('msd-sheets-wrap').innerHTML = sHtml;
 }

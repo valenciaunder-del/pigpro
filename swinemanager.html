@@ -1643,7 +1643,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div><div class="fl">並</div><input type="number" id="se-market_price_nami" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">建値(代表値)</div><input type="number" id="se-market_price" class="fi" style="font-size:12px;padding:4px 8px"></div>
       </div>
-      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">売上</div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">売上 <span id="se-format-note" style="font-weight:400;font-size:10px"></span></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px">
         <div><div class="fl">枝肉金額(税抜)</div><input type="number" id="se-carcass_amount" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">内臓代(税抜)</div><input type="number" id="se-internal_organ_sales" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
@@ -12620,19 +12620,41 @@ function seAutoCalc() {
   const gN = id => { const v = document.getElementById(id)?.value; return v===''||v==null ? 0 : Number(v); };
   const setV = (id, v) => { const el = document.getElementById(id); if(el) el.value = (v||v===0) ? v : ''; };
 
-  // ① 売上：消費税を自動計算（税抜ベース）
+  // 現在開いている仕切書のフォーマット判定
+  const curSheet = (DATA.slaughter||[]).find(s => s.id === SLH_OPEN_ID);
+  const isItochu = curSheet?.buyer?.includes('伊藤忠');
+  const isSendai = !isItochu && (curSheet?.slaughterhouse?.includes('仙台') || curSheet?.buyer?.includes('仙台'));
+
+  // ① 売上：消費税を自動計算
   const carcass = gN('se-carcass_amount');
   const organ   = gN('se-internal_organ_sales');
   const hide    = gN('se-hide_amount');
-  const tax8    = Math.round((carcass + organ) * 0.08);
-  const tax10h  = Math.round(hide * 0.10);
+
+  let tax8, tax10h, salesTotal, salesSubEx;
+  if(isSendai) {
+    // 仙台中央：枝肉・内臓・原皮は税込 → 逆算で消費税を抽出
+    tax8        = Math.round((carcass + organ) / 1.08 * 0.08);
+    tax10h      = Math.round(hide / 1.1 * 0.1);
+    salesTotal  = carcass + organ + hide;            // 既に税込
+    salesSubEx  = salesTotal - tax8 - tax10h;        // 税抜合計
+  } else {
+    // 伊藤忠・その他：枝肉・内臓・原皮は税抜 → 消費税を加算
+    tax8        = Math.round((carcass + organ) * 0.08);
+    tax10h      = Math.round(hide * 0.10);
+    salesSubEx  = carcass + organ + hide;
+    salesTotal  = salesSubEx + tax8 + tax10h;
+  }
   setV('se-tax_carcass_organ', tax8);
   setV('se-tax_hide', tax10h);
-  const salesTotal = carcass + organ + hide + tax8 + tax10h;
   setV('se-total_amount', salesTotal);
 
-  // ② 控除：全項目から合計・消費税を自動計算
-  // 10%税込項目
+  // フォーマットに応じてラベル変更
+  const camtLbl = document.querySelector('label[for="se-carcass_amount"] .fl, #se-carcass_amount')?.closest('div')?.querySelector('.fl');
+  if(camtLbl) camtLbl.innerHTML = isSendai ? '枝肉金額<span style="font-size:10px;color:var(--accent2)">（税込）</span>' : '枝肉金額<span style="font-size:10px;color:var(--muted)">（税抜）</span>';
+  const orgLbl = document.getElementById('se-internal_organ_sales')?.closest('div')?.querySelector('.fl');
+  if(orgLbl) orgLbl.innerHTML = isSendai ? '内臓代<span style="font-size:10px;color:var(--accent2)">（税込）</span>' : '内臓代<span style="font-size:10px;color:var(--muted)">（税抜）</span>';
+
+  // ② 控除：全項目から合計・消費税を自動計算（税込前提）
   const inc10Items = [
     gN('se-slaughter_fee_regular'), gN('se-slaughter_fee_disease'),
     gN('se-grading_fee'), gN('se-incineration_fee'),
@@ -12640,35 +12662,33 @@ function seAutoCalc() {
   ].filter(v=>v!==0);
   const sum10inc = inc10Items.reduce((a,v)=>a+v, 0);
   const tax10d   = Math.round(sum10inc / 1.1 * 0.1);
-
-  // 8%税込項目（内臓廃棄）
   const orgDisp  = gN('se-organ_disposal_fee');
   const tax8od   = orgDisp ? Math.round(orgDisp / 1.08 * 0.08) : 0;
-
-  // 非課税
   const insp     = gN('se-inspection_fee');
-
   const dedTotal = sum10inc + orgDisp + insp;
   const dedSubEx = dedTotal - tax10d - tax8od;
-
-  // フィールド更新
   setV('se-deduction_subtotal', dedSubEx || '');
   setV('se-tax_organ_disposal', tax8od || '');
   setV('se-tax_deduction', tax10d || '');
   setV('se-deduction_total', dedTotal || '');
 
-  // 控除明細の表示（税込合計 + うち消費税）
+  // 控除明細の表示（うち消費税）
   const brkEl = document.getElementById('se-ded-breakdown');
   if(brkEl && dedTotal) {
     const taxTotal = tax10d + tax8od;
     brkEl.innerHTML = `控除合計 <strong>${fM(dedTotal)}</strong>（税抜 ${fM(dedTotal-taxTotal)} ／ うち消費税 <span style="color:var(--danger)">${fM(taxTotal)}</span>）`;
     brkEl.style.display = '';
-  } else if(brkEl) {
-    brkEl.style.display = 'none';
-  }
+  } else if(brkEl) { brkEl.style.display = 'none'; }
 
   // ③ 差引支払 = 仕入金額 - 控除合計
   setV('se-net_payment', dedTotal ? salesTotal - dedTotal : '');
+
+  // ④ フォーマット表示（仙台中央の場合は注記）
+  const fmtNote = document.getElementById('se-format-note');
+  if(fmtNote) {
+    fmtNote.textContent = isSendai ? '※ 仙台中央フォーマット：枝肉・内臓・原皮は税込入力' : '';
+    fmtNote.style.color = 'var(--accent2)';
+  }
 }
 
 async function slhSaveAll() {

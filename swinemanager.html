@@ -1644,23 +1644,23 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       </div>
       <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">売上</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px">
-        <div><div class="fl">枝肉金額(税抜)</div><input type="number" id="se-carcass_amount" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">内臓代(税抜)</div><input type="number" id="se-internal_organ_sales" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">原皮代(税抜)</div><input type="number" id="se-hide_amount" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">枝肉金額(税抜)</div><input type="number" id="se-carcass_amount" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">内臓代(税抜)</div><input type="number" id="se-internal_organ_sales" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">原皮代(税抜)</div><input type="number" id="se-hide_amount" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">消費税8%(枝肉・内臓)</div><input type="number" id="se-tax_carcass_organ" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">消費税10%(原皮)</div><input type="number" id="se-tax_hide" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">仕入金額</div><input type="number" id="se-total_amount" class="fi" style="font-size:12px;padding:4px 8px"></div>
       </div>
       <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">控除（税抜）</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;padding:12px;background:var(--surface2);border-radius:8px">
-        <div><div class="fl">と畜料_並貫</div><input type="number" id="se-slaughter_fee_regular" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">と畜料_並病</div><input type="number" id="se-slaughter_fee_disease" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">格付料</div><input type="number" id="se-grading_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">内臓廃棄（税抜）</div><input type="number" id="se-organ_disposal_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">焼却料</div><input type="number" id="se-incineration_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">保管料／と場使用料</div><input type="number" id="se-storage_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">販売手数料</div><input type="number" id="se-sales_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
-        <div><div class="fl">検査料（非課税）</div><input type="number" id="se-inspection_fee" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">と畜料_並貫</div><input type="number" id="se-slaughter_fee_regular" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">と畜料_並病</div><input type="number" id="se-slaughter_fee_disease" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">格付料</div><input type="number" id="se-grading_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">内臓廃棄（税抜）</div><input type="number" id="se-organ_disposal_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">焼却料</div><input type="number" id="se-incineration_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">保管料／と場使用料</div><input type="number" id="se-storage_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">販売手数料</div><input type="number" id="se-sales_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">検査料（非課税）</div><input type="number" id="se-inspection_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px;border-top:1px solid var(--border)">
         <div><div class="fl" style="font-weight:700">控除小計（税抜）</div><input type="number" id="se-deduction_subtotal" class="fi" style="font-size:12px;padding:4px 8px"></div>
@@ -12600,6 +12600,48 @@ function slhCloseDetail() {
   document.body.style.overflow = '';
 }
 
+
+// 仕切書履歴編集モーダル：売上・控除フィールド変更時の自動再計算
+function seAutoCalc() {
+  const gN = id => { const v = document.getElementById(id)?.value; return v===''||v==null ? 0 : Number(v); };
+  const setV = (id, v) => { const el = document.getElementById(id); if(el) el.value = v||''; };
+
+  // 売上：消費税を自動計算（税抜ベース）
+  const carcass = gN('se-carcass_amount');
+  const organ   = gN('se-internal_organ_sales');
+  const hide    = gN('se-hide_amount');
+  const tax8    = Math.round((carcass + organ) * 0.08);
+  const tax10h  = Math.round(hide * 0.10);
+  setV('se-tax_carcass_organ', tax8);
+  setV('se-tax_hide', tax10h);
+  const salesTotal = carcass + organ + hide + tax8 + tax10h;
+  setV('se-total_amount', salesTotal);
+
+  // 控除：各項目(税込)を合計
+  // 仙台中央/伊藤忠は税込で保存されているのでそのまま合算
+  const slFee   = gN('se-slaughter_fee_regular');
+  const slDis   = gN('se-slaughter_fee_disease');
+  const grad    = gN('se-grading_fee');
+  const orgDisp = gN('se-organ_disposal_fee');
+  const tax8od  = Math.round(orgDisp * 0.08);  // 内臓廃棄は8%
+  const incin   = gN('se-incineration_fee');
+  const stor    = gN('se-storage_fee');
+  const sales   = gN('se-sales_fee');
+  const insp    = gN('se-inspection_fee');      // 非課税
+  // 税込での合計（各フィールドが税込の前提）
+  const dedInc  = slFee + slDis + grad + orgDisp + incin + stor + sales + insp;
+  // 10%控除の消費税（税込から逆算）
+  const tax10d  = Math.round((slFee+slDis+grad+incin+stor+sales) / 1.1 * 0.1);
+  const dedEx   = dedInc - tax10d - tax8od;
+  setV('se-deduction_subtotal', dedEx > 0 ? dedEx : '');
+  setV('se-tax_organ_disposal', tax8od || '');
+  setV('se-tax_deduction', tax10d || '');
+  setV('se-deduction_total', dedInc);
+
+  // 差引支払 = 売上合計 - 控除合計
+  setV('se-net_payment', salesTotal - dedInc);
+}
+
 async function slhSaveAll() {
   if (!SLH_OPEN_ID) return;
   const gV = (id) => document.getElementById(id)?.value||null;
@@ -12644,6 +12686,7 @@ async function slhSaveAll() {
     notif('保存しました','g');
     slhCloseDetail();
     rSlHistory();
+    if(CP==='monthly-sales') rMonthlySales();
   } catch(e) { notif('保存エラー: '+(e.message||e),'r'); }
   finally { hideLoading(); }
 }

@@ -1581,6 +1581,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <span class="ct">仕切書一覧</span>
       <span class="bdg gr" id="slh-count">-</span>
       <button class="btn bs sm" onclick="rebuildSlaughterDetails()" style="margin-left:auto;background:rgba(251,146,60,.1);border-color:var(--accent3);color:var(--accent3)" title="raw_textから頭別明細を再構築">🔧 明細再構築</button>
+      <button class="btn bs sm" onclick="migrateSexToKatakana()" style="background:rgba(139,92,246,.1);border-color:var(--accent4);color:var(--accent4)" title="「雌」を「メス」に一括変換">♀ 性別正規化</button>
       <button class="btn bs sm" onclick="exportSlaughterCsv()">📥 CSV出力（仕切書単位）</button>
       <button class="btn bs sm" onclick="exportSlaughterDetailCsv()" style="background:rgba(34,211,238,.1);border-color:var(--accent2);color:var(--accent2)">📥 FM用CSV（1頭1行）</button>
     </div>
@@ -10069,7 +10070,7 @@ async function analyzeSlaughterWithClaude(b64, mimeType, fileName) {
 - unit_price: 単価（円/kg、@の後の数字）。通常300〜1500程度の3〜4桁の整数。1桁・2桁の数字は必ずOCR誤読なので前後の行や合計行を参照して再確認すること
 - grade: 等級（上/中/並/等外）
 - backfat: 背脂肪（cm）
-- sex: 性別（去勢/雌、不明ならnull）
+- sex: 性別（去勢/メス/雄、不明ならnull。「雌」も「メス」で統一）
 - defects: 瑕疵・備考を全て列挙（例："背厚,被覆,重量大"、なければnull）
 - amount: 金額（円）
 
@@ -12032,7 +12033,7 @@ function slDetailRow(d, i, isDup=false) {
     <td class="mn"><input type="number" step="0.1" value="${d.backfat||''}" style="width:48px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'backfat',parseFloat(this.value));updateSlDetailRender(${i})"> cm</td>
     <td><select style="background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:12px" onchange="updateSlDetail(${i},'sex',this.value)">
       <option value="去勢" ${d.sex==='去勢'?'selected':''}>去勢</option>
-      <option value="雌" ${d.sex==='雌'?'selected':''}>雌</option>
+      <option value="メス" ${(d.sex==='メス'||d.sex==='雌')?'selected':''}>メス</option>
       <option value="" ${!d.sex?'selected':''}>-</option>
     </select></td>
     <td><input type="text" value="${d.defects||''}" style="width:80px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;font-size:11px" onchange="updateSlDetail(${i},'defects',this.value||null)"></td>
@@ -12733,7 +12734,7 @@ function slhRenderDetail(rows) {
   const ec = (r, f, v, s='') => `<td style="cursor:pointer;${s}" onclick="slhEditCell(this,'${r.id}','${f}')">${v}</td>`;
   tb.innerHTML = rows.map(r => `<tr data-detail-id="${r.id}">
     ${ec(r,'carcass_no',r.carcass_no||'-')}
-    ${ec(r,'sex',r.sex||'-')}
+    ${ec(r,'sex',normSex(r.sex)||'-')}
     ${ec(r,'grade',r.grade||'-',`color:${gc[r.grade]||'var(--text)'};font-weight:600`)}
     ${ec(r,'carcass_weight',r.carcass_weight!=null?r.carcass_weight.toFixed(1)+' kg':'-','text-align:right')}
     ${ec(r,'unit_price',r.unit_price?'¥'+r.unit_price:'-','text-align:right')}
@@ -12793,7 +12794,7 @@ function slhEditCell(td, rowId, field) {
     ['上','中','並','等外'].forEach(g=>{const o=document.createElement('option');o.value=g;o.textContent=g;if(g===rawVal)o.selected=true;input.appendChild(o);});
   } else if (field === 'sex') {
     input = document.createElement('select'); input.className='fs'; input.style='font-size:12px;padding:2px 4px;width:55px';
-    ['雌','去勢','雄'].forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;if(s===rawVal)o.selected=true;input.appendChild(o);});
+    ['メス','去勢','雄'].forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;if(s===rawVal)o.selected=true;input.appendChild(o);});
   } else {
     input = document.createElement('input');
     input.type = ['carcass_weight','unit_price','backfat_thickness'].includes(field)?'number':'text';
@@ -12943,6 +12944,27 @@ function rSlHistory() {
 // ══════════════════════════════════════════════
 // 頭別明細再構築（raw_textからslaughter_detailを復元）
 // ══════════════════════════════════════════════
+// 性別表記の正規化（雌→メス に統一）
+const normSex = s => s === '雌' ? 'メス' : (s || '');
+
+
+// 性別表記の一括正規化（雌→メス）
+async function migrateSexToKatakana() {
+  if(!confirm('DBの性別「雌」を「メス」に一括変換します。実行しますか？')) return;
+  showLoading('性別データを修正中...');
+  try {
+    const res = await sbFetch('slaughter_detail?sex=eq.雌', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Prefer': 'count=exact' },
+      body: JSON.stringify({ sex: 'メス' })
+    });
+    DATA.slaughterDetail = await api.getSlaughterDetail();
+    notif('「雌」→「メス」の変換が完了しました', 'g');
+  } catch(e) {
+    notif('変換エラー: ' + e.message, 'r');
+  } finally { hideLoading(); }
+}
+
 async function rebuildSlaughterDetails() {
   if(!confirm('raw_textに保存されたOCRデータから、頭別明細（slaughter_detail）を再構築します。\n既に存在する明細は上書きされます。実行しますか？')) return;
   showLoading('仕切書一覧を取得中...');

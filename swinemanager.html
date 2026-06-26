@@ -11485,6 +11485,8 @@ function calcSlStats(details) {
 function renderSlPreview(data) {
   if(!data?.sheet) return;
   const s = data.sheet;
+  // OCR読取の差引支払金額を保存（バランスチェック用・上書き禁止）
+  if(s._ocr_net === undefined) s._ocr_net = s.net_payment || s.total_amount || 0;
   const details = data.details||[];
   document.getElementById('sl-preview-area').style.display='';
 
@@ -11788,6 +11790,11 @@ function updateSlSummary() {
   s.deduction_subtotal = dedSub;
   s.deduction_total    = dedTotal;
   s.sales_subtotal     = salesSub;       // 売上小計（税抜）
+  // ① 税額フィールドを自動計算結果で上書き（OCRミス防止）
+  s.tax_carcass_organ = tax8;
+  s.tax_hide          = taxHide10;
+  s.tax_organ_disposal= tax8ded;
+  s.tax_deduction     = tax10ded;
   const calcNet  = salesTotal - dedTotal;
   s.net_payment  = calcNet;
   s.total_amount = calcNet;
@@ -11804,6 +11811,26 @@ function updateSlSummary() {
   setText('sl-r-total-calc',  calcNet    ? fM(calcNet)    : '-');
   const avgWt = s.head_count > 0 ? Math.round(s.total_carcass_kg / s.head_count * 10) / 10 : 0;
   setText('sl-r-avg-wt',      avgWt      ? avgWt + 'kg'   : '-');
+
+  // ② バランスチェック：OCR読取の差引支払 vs 計算値
+  const netWarn = document.getElementById('sl-net-warn');
+  const saveBtn = document.getElementById('sl-save-btn');
+  if(netWarn) {
+    const ocrNet = s._ocr_net || 0;
+    const diff   = calcNet - ocrNet;
+    if(ocrNet && Math.abs(diff) >= 1) {
+      netWarn.innerHTML = `⚠️ 計算値 ${fM(calcNet)} ≠ 仕切書記載値 ${fM(ocrNet)}（差額: ${fM(diff)}）<br><span style="font-size:10px;color:var(--muted2)">枝肉・内臓・原皮・控除の金額を確認してください</span>`;
+      netWarn.style.cssText = 'display:block;background:rgba(251,146,60,.15);border:1px solid var(--warn);border-radius:6px;padding:6px 10px;margin-top:4px;font-size:11px;color:var(--warn)';
+      if(saveBtn) saveBtn.style.background = 'var(--warn)';
+    } else if(ocrNet) {
+      netWarn.innerHTML = `✅ 計算値と仕切書記載値が一致しています（${fM(ocrNet)}）`;
+      netWarn.style.cssText = 'display:block;background:rgba(52,211,153,.12);border:1px solid var(--success);border-radius:6px;padding:6px 10px;margin-top:4px;font-size:11px;color:var(--success)';
+      if(saveBtn) { saveBtn.style.background = ''; }
+    } else {
+      netWarn.style.display = 'none';
+      if(saveBtn) saveBtn.style.background = '';
+    }
+  }
 
   // 確かめ算：明細合計 vs サマリ枝肉重量
   const warn = document.getElementById('sl-weight-warn');

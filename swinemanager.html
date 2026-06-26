@@ -7587,7 +7587,7 @@ function rMonthlySales() {
     ${thSL('農場')}${thSL('出荷日')}${thSL('格付日')}${thS('頭数')}${thS('合計枝重')}
     ${thS('枝肉・内臓<br>（税抜）')}${thS('消費税8%')}${thS('8%対象<br>税込計')}
     ${thS('原皮<br>（税抜）')}${thS('消費税10%')}${thS('10%対象<br>税込計')}
-    ${thS('屠畜経費他<br>（税込）')}${thS('消費税10%<br>（控除）')}${thS('検査料<br>（非課税）')}
+    ${thS('屠畜経費他<br>（税抜）')}${thS('消費税10%')}${thS('10%対象<br>税込計')}${thS('検査料<br>（非課税）')}
     ${thS('差引支払')}${thSL('')}
   </tr></thead><tbody>`;
 
@@ -7598,6 +7598,7 @@ function rMonthlySales() {
     const inc8 = ex8 + t8;
     const slInc= calcSlFeeInc(s);
     const slT10= calcSlFeeT10(s);
+    const slEx = slInc - slT10;
     const insp = s.inspection_fee||0;
     const fw   = s.farm==='farm1';
     const fc   = fw?'rgba(52,211,153,.2)':'rgba(139,92,246,.2)';
@@ -7614,8 +7615,9 @@ function rMonthlySales() {
       <td style="text-align:right;padding:5px 8px">${fM(s.hide_amount)}</td>
       <td style="text-align:right;padding:5px 8px;color:var(--danger)">${fM(s.tax_hide)}</td>
       <td style="text-align:right;padding:5px 8px">${fM((s.hide_amount||0)+(s.tax_hide||0))}</td>
-      <td style="text-align:right;padding:5px 8px">${fM(slInc)}</td>
+      <td style="text-align:right;padding:5px 8px">${fM(slEx)}</td>
       <td style="text-align:right;padding:5px 8px;color:var(--danger)">${fM(slT10)}</td>
+      <td style="text-align:right;padding:5px 8px">${fM(slInc)}</td>
       <td style="text-align:right;padding:5px 8px">${fM(insp)}</td>
       <td style="text-align:right;padding:5px 8px;font-weight:700;color:var(--accent2)">${fM(s.net_payment||s.total_amount)}</td>
       <td style="padding:4px 6px;text-align:center"><button class="btn bs" style="font-size:11px;padding:3px 8px;white-space:nowrap" onclick="slhToggleDetail('${s.id}',event)">編集</button></td>
@@ -7633,8 +7635,9 @@ function rMonthlySales() {
     <td style="text-align:right;padding:6px 8px">${fM(totalHide)}</td>
     <td style="text-align:right;padding:6px 8px;color:var(--danger)">${fM(totalHideTax)}</td>
     <td style="text-align:right;padding:6px 8px">${fM(totalInc10)}</td>
-    <td style="text-align:right;padding:6px 8px">${fM(totalSlFeeInc)}</td>
+    <td style="text-align:right;padding:6px 8px">${fM(totalSlFeeInc-totalSlFeeT10)}</td>
     <td style="text-align:right;padding:6px 8px;color:var(--danger)">${fM(totalSlFeeT10)}</td>
+    <td style="text-align:right;padding:6px 8px">${fM(totalSlFeeInc)}</td>
     <td style="text-align:right;padding:6px 8px">${fM(totalInspNC)}</td>
     <td style="text-align:right;padding:6px 8px;color:var(--accent2)">${fM(totalNet)}</td>
     <td></td>
@@ -7668,7 +7671,7 @@ function exportMonthlySalesCsv() {
     ['農場','出荷日','格付日','頭数','合計枝重(kg)',
      '枝肉・内臓(税抜)','消費税8%','8%対象税込計',
      '原皮(税抜)','消費税10%','10%対象税込計',
-     '屠畜経費他(税込)','消費税10%(控除)','検査料(非課税)',
+     '屠畜経費他(税抜)','消費税10%','10%対象税込計','検査料(非課税)',
      '差引支払金額']
   ];
 
@@ -7680,7 +7683,7 @@ function exportMonthlySalesCsv() {
       farmName, s.shipped_at, s.slaughtered_at||'', s.head_count||0, s.total_carcass_kg||0,
       ex8, t8, ex8+t8,
       s.hide_amount||0, s.tax_hide||0, (s.hide_amount||0)+(s.tax_hide||0),
-      calcSlFeeInc2(s), calcSlFeeT102(s), s.inspection_fee||0,
+      calcSlFeeInc2(s)-calcSlFeeT102(s), calcSlFeeT102(s), calcSlFeeInc2(s), s.inspection_fee||0,
       s.net_payment||s.total_amount||0
     ]);
   });

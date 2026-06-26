@@ -7474,7 +7474,13 @@ function rMonthlySales() {
   // 8%課税売上（税抜）= 枝肉 + 内臓 - 内臓廃棄（税抜）
   const calc8taxEx  = s => (s.carcass_amount||0) + (s.internal_organ_sales||0) - calcOrganDispEx(s);
   // 正味消費税8% = tax_carcass_organ - tax_organ_disposal
-  const calc8tax    = s => (s.tax_carcass_organ||0) - (s.tax_organ_disposal||0);
+  // tax_carcass_organが未設定(0)の場合は枝肉・内臓(税抜)×8%でフォールバック
+  const calc8tax    = s => {
+    const stored = (s.tax_carcass_organ||0) - (s.tax_organ_disposal||0);
+    if(stored !== 0) return stored;
+    const base = (s.carcass_amount||0) + (s.internal_organ_sales||0);
+    return base > 0 ? Math.round(base * 0.08) : 0;
+  };
   // 屠畜経費他（全控除のtax含む合計 - 内臓廃棄分）= deduction_total - organ_disposal_fee
   const calcSlFeeInc= s => (s.deduction_total||0) - (s.organ_disposal_fee||0);
   // 屠畜経費他の消費税10% = tax_deduction
@@ -7642,7 +7648,12 @@ function exportMonthlySalesCsv() {
 
   const calcOrganDispEx2 = s => (s.organ_disposal_fee||0) - (s.tax_organ_disposal||0);
   const calc8taxEx2  = s => (s.carcass_amount||0) + (s.internal_organ_sales||0) - calcOrganDispEx2(s);
-  const calc8tax2    = s => (s.tax_carcass_organ||0) - (s.tax_organ_disposal||0);
+  const calc8tax2    = s => {
+    const stored = (s.tax_carcass_organ||0) - (s.tax_organ_disposal||0);
+    if(stored !== 0) return stored;
+    const base = (s.carcass_amount||0) + (s.internal_organ_sales||0);
+    return base > 0 ? Math.round(base * 0.08) : 0;
+  };
   const calcSlFeeInc2= s => (s.deduction_total||0) - (s.organ_disposal_fee||0);
   const calcSlFeeT102= s => (s.tax_deduction||0);
 

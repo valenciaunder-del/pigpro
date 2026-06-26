@@ -7464,192 +7464,165 @@ function rMonthlySales() {
   const farm = fmEl?.value || 'both';
   const mon  = `${yr}-${mo}`;
 
-  // 対象仕切書を絞り込み（出荷日ベース）
   const sheets = DATA.slaughter.filter(s => {
     if(farm!=='both' && s.farm!==farm) return false;
     return (s.shipped_at||'').startsWith(mon);
   });
 
+  // 内臓廃棄の税抜を計算（organ_disposal_fee - tax_organ_disposal = 税抜8%課税額）
+  const calcOrganDispEx = s => (s.organ_disposal_fee||0) - (s.tax_organ_disposal||0);
+  // 8%課税売上（税抜）= 枝肉 + 内臓 - 内臓廃棄（税抜）
+  const calc8taxEx  = s => (s.carcass_amount||0) + (s.internal_organ_sales||0) - calcOrganDispEx(s);
+  // 正味消費税8% = tax_carcass_organ - tax_organ_disposal
+  const calc8tax    = s => (s.tax_carcass_organ||0) - (s.tax_organ_disposal||0);
+  // 屠畜経費他（全控除のtax含む合計 - 内臓廃棄分）= deduction_total - organ_disposal_fee
+  const calcSlFeeInc= s => (s.deduction_total||0) - (s.organ_disposal_fee||0);
+  // 屠畜経費他の消費税10% = tax_deduction
+  const calcSlFeeT10= s => (s.tax_deduction||0);
+  // 屠畜経費他の税抜 = 税込 - 消費税10%
+  const calcSlFeeEx = s => calcSlFeeInc(s) - calcSlFeeT10(s);
+
   // --- KPI ---
-  const totalNet = sheets.reduce((a,s)=>a+(s.net_payment||s.total_amount||0),0);
-  const totalHead = sheets.reduce((a,s)=>a+(s.head_count||0),0);
-  const totalCarcass = sheets.reduce((a,s)=>a+(s.carcass_amount||0),0);
-  const totalSalesTax = sheets.reduce((a,s)=>a+(s.tax_carcass_organ||0)+(s.tax_hide||0),0);
+  const totalHead  = sheets.reduce((a,s)=>a+(s.head_count||0),0);
+  const totalEx8   = sheets.reduce((a,s)=>a+calc8taxEx(s),0);
+  const totalTax8  = sheets.reduce((a,s)=>a+calc8tax(s),0);
+  const totalHideEx= sheets.reduce((a,s)=>a+(s.hide_amount||0),0);
+  const totalT10H  = sheets.reduce((a,s)=>a+(s.tax_hide||0),0);
+  const totalNet   = sheets.reduce((a,s)=>a+(s.net_payment||s.total_amount||0),0);
+  const totalSalesTaxInc = totalEx8+totalTax8+totalHideEx+totalT10H;
+
   document.getElementById('msd-kpi').innerHTML = `
     <div class="kcard c"><div class="kl">出荷頭数</div><div class="kv">${totalHead.toLocaleString()}<span class="ku">頭</span></div></div>
-    <div class="kcard g"><div class="kl">枝肉売上（税抜）</div><div class="kv">${fM(totalCarcass)}</div></div>
-    <div class="kcard y"><div class="kl">消費税合計</div><div class="kv">${fM(totalSalesTax)}</div></div>
+    <div class="kcard g"><div class="kl">8%課税売上（税込）</div><div class="kv">${fM(totalEx8+totalTax8)}</div></div>
+    <div class="kcard y"><div class="kl">10%課税売上（税込）</div><div class="kv">${fM(totalHideEx+totalT10H)}</div></div>
     <div class="kcard p"><div class="kl">差引支払金額</div><div class="kv">${fM(totalNet)}</div></div>`;
 
   document.getElementById('msd-period-label').textContent = `${yr}年${parseInt(mo)}月　${sheets.length}件`;
 
   // --- 集計 ---
-  const sum = (f) => sheets.reduce((a,s)=>a+(s[f]||0),0);
-  // 売上
-  const carcassEx  = sum('carcass_amount');
-  const organEx    = sum('internal_organ_sales');
-  const hideEx     = sum('hide_amount');
-  const tax8       = sum('tax_carcass_organ');
-  const tax10Hide  = sum('tax_hide');
-  // 控除（税込で保存されているものが多い）
-  const slFeeInc   = sum('slaughter_fee_regular'); // 税込10%
-  const coldFeeInc = sum('cold_storage_fee');       // 税込10%
-  const gradingInc = sum('grading_fee');            // 税込10%
-  const organDispInc = sum('organ_disposal_fee');   // 税込8%
-  const taxOrganDisp = sum('tax_organ_disposal');   // 8%消費税分
-  const inspFeeNC  = sum('inspection_fee');         // 非課税
-  const storageFeeInc = sum('storage_fee');         // 税込10%
-  const salesFeeInc   = sum('sales_fee');           // 税込10%
-  const incinFeeInc   = sum('incineration_fee');    // 税込10%
-  const dedTax10   = sum('tax_deduction');          // 控除の消費税10%
-  const dedTotal   = sum('deduction_total');        // 控除合計（税込）
+  const sum  = f => sheets.reduce((a,s)=>a+(s[f]||0),0);
+  const sumF = f => sheets.reduce((a,s)=>a+f(s),0);
 
-  // 税込→税抜逆算（10%）
-  const ex10 = inc => Math.round(inc / 1.1);
-  const t10  = inc => inc - ex10(inc);
+  const totalEx8all   = sumF(calc8taxEx);
+  const totalTax8all  = sumF(calc8tax);
+  const totalInc8     = totalEx8all + totalTax8all;
+  const totalHide     = sum('hide_amount');
+  const totalHideTax  = sum('tax_hide');
+  const totalInc10    = totalHide + totalHideTax;
+  const totalSalesEx  = totalEx8all + totalHide;
+  const totalSalesTax = totalTax8all + totalHideTax;
+  const totalSalesInc = totalSalesEx + totalSalesTax;
 
-  // deduction_itemsのフリー項目集計
-  const freeItems = {};
-  sheets.forEach(s => {
-    if(!s.deduction_items) return;
-    let items;
-    try { items = JSON.parse(s.deduction_items); } catch { return; }
-    (items||[]).forEach(it => {
-      const k = it.name||'その他';
-      if(!freeItems[k]) freeItems[k] = { inc:0, taxType: it.tax_type||'tax10_inc' };
-      freeItems[k].inc += Math.abs(it.amount||0);
-    });
-  });
+  const totalSlFeeEx  = sumF(calcSlFeeEx);
+  const totalSlFeeT10 = sumF(calcSlFeeT10);
+  const totalSlFeeInc = sumF(calcSlFeeInc);
+  const totalInspNC   = sum('inspection_fee');
+  const totalDedEx    = totalSlFeeEx + totalInspNC;
+  const totalDedTax   = totalSlFeeT10;
+  const totalDedInc   = totalSlFeeInc + totalInspNC;
 
-  // 売上行
-  const salesRows = [
-    ['枝肉売上',    carcassEx, Math.round(tax8 * carcassEx / Math.max(1, carcassEx+organEx)), null, '8%'],
-    ['内臓売上',    organEx,   Math.round(tax8 * organEx   / Math.max(1, carcassEx+organEx)), null, '8%'],
-    ['原皮売上',    hideEx,    tax10Hide,  null, '10%'],
-  ];
-  // 枝肉・内臓の按分後税額を補正（合計がtax8になるよう）
-  if(salesRows[0][2]+salesRows[1][2] !== tax8) {
-    salesRows[1][2] = tax8 - salesRows[0][2];
-  }
-  salesRows.forEach(r => r[3] = r[1] + r[2]);
-
-  const salesEx  = carcassEx + organEx + hideEx;
-  const salesTax = tax8 + tax10Hide;
-  const salesInc = salesEx + salesTax;
-
-  // 控除行（標準項目）
-  const dedRows = [];
-  if(slFeeInc)    dedRows.push(['と畜料',     ex10(slFeeInc),   t10(slFeeInc),   slFeeInc,    '10%']);
-  if(gradingInc)  dedRows.push(['格付料',     ex10(gradingInc), t10(gradingInc), gradingInc,   '10%']);
-  if(organDispInc)dedRows.push(['内臓廃棄料', organDispInc-taxOrganDisp, taxOrganDisp, organDispInc, '8%']);
-  if(inspFeeNC)   dedRows.push(['検査料',     inspFeeNC,        0,               inspFeeNC,   '非課税']);
-  if(coldFeeInc)  dedRows.push(['冷蔵保管料', ex10(coldFeeInc), t10(coldFeeInc), coldFeeInc,  '10%']);
-  if(storageFeeInc) dedRows.push(['保管料',   ex10(storageFeeInc), t10(storageFeeInc), storageFeeInc, '10%']);
-  if(salesFeeInc) dedRows.push(['販売手数料', ex10(salesFeeInc), t10(salesFeeInc), salesFeeInc, '10%']);
-  if(incinFeeInc) dedRows.push(['焼却料',     ex10(incinFeeInc), t10(incinFeeInc), incinFeeInc, '10%']);
-  // フリー項目
-  Object.entries(freeItems).forEach(([name, v]) => {
-    const isEx = v.taxType.endsWith('_ex');
-    const is10 = v.taxType.includes('10');
-    const is8  = v.taxType.includes('8');
-    const rate = is10 ? 1.1 : is8 ? 1.08 : 1;
-    const inc  = isEx ? Math.round(v.inc * rate) : v.inc;
-    const ex   = isEx ? v.inc : (is10 ? ex10(v.inc) : is8 ? Math.round(v.inc/1.08) : v.inc);
-    const tax  = inc - ex;
-    const label = is10 ? '10%' : is8 ? '8%' : '非課税';
-    dedRows.push([name, ex, tax, inc, label]);
-  });
-
-  const dedExTotal  = dedRows.reduce((a,r)=>a+r[1],0);
-  const dedTaxTotal = dedRows.reduce((a,r)=>a+r[2],0);
-  const dedIncTotal = dedRows.reduce((a,r)=>a+r[3],0);
-  const netPay      = sheets.reduce((a,s)=>a+(s.net_payment||s.total_amount||0),0);
-
-  // --- サマリテーブルのHTML ---
-  const thStyle = 'style="background:var(--panel2);font-size:11px;padding:6px 10px;text-align:right;white-space:nowrap"';
-  const tdEx = (v,bold)=>`<td style="text-align:right;padding:5px 10px;${bold?'font-weight:700;color:var(--text)':''}">${v?fM(v):'-'}</td>`;
-  const tdTax = (v,bold)=>`<td style="text-align:right;padding:5px 10px;color:var(--danger);${bold?'font-weight:700':''}">${v?fM(v):'-'}</td>`;
-  const tdInc = (v,bold)=>`<td style="text-align:right;padding:5px 10px;${bold?'font-weight:700;color:var(--accent2)':''}">${fM(v)}</td>`;
-  const sep   = '<tr style="border-top:2px solid var(--border)"></tr>';
-  const hdr   = (label,bg)=>`<tr style="background:${bg||'var(--panel2)'}"><td colspan="5" style="padding:6px 10px;font-size:12px;font-weight:700;letter-spacing:.05em">${label}</td></tr>`;
+  // --- サマリテーブル ---
+  const th = (t,right) => `<th style="background:var(--panel2);font-size:11px;padding:6px 10px;${right?'text-align:right':'text-align:left'};white-space:nowrap">${t}</th>`;
+  const tdR = (v,color,bold) => `<td style="text-align:right;padding:5px 10px;${color?'color:'+color:''};${bold?'font-weight:700':''}">${v!==null&&v!==0&&v!==''?fM(v):'-'}</td>`;
+  const tdL = (v,bold) => `<td style="padding:5px 10px;${bold?'font-weight:700':''}">${v}</td>`;
+  const tdC = v => `<td style="text-align:center;font-size:11px;color:var(--muted);padding:5px 10px">${v}</td>`;
 
   let tHtml = `<table style="width:100%;border-collapse:collapse;font-size:13px">
-  <thead><tr>
-    <th ${thStyle} style="text-align:left;min-width:140px">項目</th>
-    <th ${thStyle}>税率</th>
-    <th ${thStyle}>税抜金額</th>
-    <th ${thStyle}>消費税</th>
-    <th ${thStyle}>税込金額</th>
-  </tr></thead><tbody>`;
+  <thead><tr>${th('区分')}${th('項目')}${th('税率')}${th('税抜金額',true)}${th('消費税',true)}${th('税込金額',true)}</tr></thead><tbody>`;
 
   // 売上
-  tHtml += hdr('【売上】','rgba(52,211,153,.08)');
-  salesRows.forEach(r => {
-    tHtml += `<tr><td style="padding:5px 10px">${r[0]}</td><td style="text-align:center;font-size:11px;color:var(--muted)">${r[4]}</td>${tdEx(r[1])}${tdTax(r[2])}${tdInc(r[3])}</tr>`;
+  const salRows = [
+    ['売上','枝肉・内臓売上<br><span style="font-size:10px;color:var(--muted)">（内臓廃棄控除後）</span>','8%', totalEx8all, totalTax8all, totalInc8],
+    ['','原皮売上','10%', totalHide, totalHideTax, totalInc10],
+  ];
+  salRows.forEach((r,i) => {
+    tHtml += `<tr style="background:rgba(52,211,153,.04)">
+      <td style="padding:5px 10px;font-size:11px;color:var(--muted)">${r[0]}</td>
+      <td style="padding:5px 10px">${r[1]}</td>
+      ${tdC(r[2])}${tdR(r[3])}${tdR(r[4],'var(--danger)')}${tdR(r[5],null,false)}</tr>`;
   });
-  tHtml += `<tr style="background:rgba(52,211,153,.05)"><td style="padding:6px 10px;font-weight:700">売上合計</td><td></td>${tdEx(salesEx,true)}${tdTax(salesTax,true)}${tdInc(salesInc,true)}</tr>`;
+  tHtml += `<tr style="background:rgba(52,211,153,.1);border-top:1px solid var(--accent3)">
+    <td colspan="3" style="padding:6px 10px;font-weight:700">売上合計</td>
+    ${tdR(totalSalesEx,null,true)}${tdR(totalSalesTax,'var(--danger)',true)}${tdR(totalSalesInc,'var(--accent3)',true)}</tr>`;
 
   // 控除
-  tHtml += sep + hdr('【控除】','rgba(251,146,60,.08)');
-  dedRows.forEach(r => {
-    tHtml += `<tr><td style="padding:5px 10px">${r[0]}</td><td style="text-align:center;font-size:11px;color:var(--muted)">${r[4]}</td>${tdEx(r[1])}${tdTax(r[2])}${tdInc(r[3])}</tr>`;
-  });
-  tHtml += `<tr style="background:rgba(251,146,60,.05)"><td style="padding:6px 10px;font-weight:700">控除合計</td><td></td>${tdEx(dedExTotal,true)}${tdTax(dedTaxTotal,true)}${tdInc(dedIncTotal,true)}</tr>`;
+  tHtml += `<tr style="background:rgba(251,146,60,.04)">
+    <td style="padding:5px 10px;font-size:11px;color:var(--muted)">控除</td>
+    <td style="padding:5px 10px">屠畜経費他</td>
+    ${tdC('10%')}${tdR(totalSlFeeEx)}${tdR(totalSlFeeT10,'var(--danger)')}${tdR(totalSlFeeInc)}</tr>`;
+  if(totalInspNC) {
+    tHtml += `<tr style="background:rgba(251,146,60,.04)">
+      <td style="padding:5px 10px"></td>
+      <td style="padding:5px 10px">検査料</td>
+      ${tdC('非課税')}${tdR(totalInspNC)}${tdR(0)}${tdR(totalInspNC)}</tr>`;
+  }
+  tHtml += `<tr style="background:rgba(251,146,60,.1);border-top:1px solid var(--accent3)">
+    <td colspan="3" style="padding:6px 10px;font-weight:700">控除合計</td>
+    ${tdR(totalDedEx,null,true)}${tdR(totalDedTax,'var(--danger)',true)}${tdR(totalDedInc,'var(--accent2)',true)}</tr>`;
 
-  // 差引
-  tHtml += sep;
-  tHtml += `<tr style="background:var(--panel2)"><td style="padding:8px 10px;font-weight:700;font-size:14px">差引支払金額</td><td></td><td></td><td></td><td style="text-align:right;padding:8px 10px;font-weight:700;font-size:15px;color:var(--accent2)">${fM(netPay)}</td></tr>`;
+  tHtml += `<tr style="border-top:2px solid var(--border);background:var(--panel2)">
+    <td colspan="5" style="padding:8px 10px;font-weight:700;font-size:14px">差引支払金額</td>
+    <td style="text-align:right;padding:8px 10px;font-weight:700;font-size:15px;color:var(--accent2)">${fM(totalNet)}</td></tr>`;
   tHtml += '</tbody></table>';
   document.getElementById('msd-summary-wrap').innerHTML = tHtml;
 
-  // --- 仕切書別テーブル ---
+  // --- 仕切書別テーブル（Excelフォーマットに合わせる）---
+  const thS = t => `<th style="background:var(--panel2);font-size:11px;padding:5px 8px;text-align:right;white-space:nowrap">${t}</th>`;
+  const thSL= t => `<th style="background:var(--panel2);font-size:11px;padding:5px 8px;text-align:left;white-space:nowrap">${t}</th>`;
   let sHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px">
-  <thead><tr style="background:var(--panel2)">
-    <th style="padding:6px 8px;text-align:left">農場</th>
-    <th style="padding:6px 8px;text-align:left">出荷日</th>
-    <th style="padding:6px 8px;text-align:right">頭数</th>
-    <th style="padding:6px 8px;text-align:right">枝肉（税抜）</th>
-    <th style="padding:6px 8px;text-align:right">内臓（税抜）</th>
-    <th style="padding:6px 8px;text-align:right">原皮（税抜）</th>
-    <th style="padding:6px 8px;text-align:right;color:var(--danger)">消費税8%</th>
-    <th style="padding:6px 8px;text-align:right;color:var(--danger)">消費税10%</th>
-    <th style="padding:6px 8px;text-align:right">売上計（税込）</th>
-    <th style="padding:6px 8px;text-align:right">控除計（税込）</th>
-    <th style="padding:6px 8px;text-align:right;color:var(--accent2)">差引支払</th>
+  <thead><tr>
+    ${thSL('農場')}${thSL('出荷日')}${thSL('格付日')}${thS('頭数')}${thS('合計枝重')}
+    ${thS('枝肉・内臓<br>（税抜）')}${thS('消費税8%')}${thS('8%対象<br>税込計')}
+    ${thS('原皮<br>（税抜）')}${thS('消費税10%')}${thS('10%対象<br>税込計')}
+    ${thS('屠畜経費他<br>（税込）')}${thS('消費税10%<br>（控除）')}${thS('検査料<br>（非課税）')}
+    ${thS('差引支払')}
   </tr></thead><tbody>`;
 
   sheets.sort((a,b)=>(a.shipped_at>b.shipped_at?1:-1)).forEach(s => {
     const farmName = FARMS[s.farm]?.name || s.farm;
-    const salInc = (s.carcass_amount||0)+(s.internal_organ_sales||0)+(s.hide_amount||0)+(s.tax_carcass_organ||0)+(s.tax_hide||0);
+    const ex8  = calc8taxEx(s);
+    const t8   = calc8tax(s);
+    const inc8 = ex8 + t8;
+    const slInc= calcSlFeeInc(s);
+    const slT10= calcSlFeeT10(s);
+    const insp = s.inspection_fee||0;
+    const fw   = s.farm==='farm1';
+    const fc   = fw?'rgba(52,211,153,.2)':'rgba(139,92,246,.2)';
+    const ftc  = fw?'var(--accent3)':'var(--accent4)';
     sHtml += `<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:5px 8px"><span style="font-size:11px;padding:2px 6px;background:${s.farm==='farm1'?'rgba(52,211,153,.2)':'rgba(139,92,246,.2)'};border-radius:4px;color:${s.farm==='farm1'?'var(--accent3)':'var(--accent4)'}">${farmName}</span></td>
+      <td style="padding:5px 8px"><span style="font-size:11px;padding:2px 6px;background:${fc};border-radius:4px;color:${ftc}">${farmName}</span></td>
       <td style="padding:5px 8px">${s.shipped_at}</td>
-      <td style="padding:5px 8px;text-align:right">${s.head_count||0}頭</td>
-      <td style="padding:5px 8px;text-align:right">${fM(s.carcass_amount)}</td>
-      <td style="padding:5px 8px;text-align:right">${fM(s.internal_organ_sales)}</td>
-      <td style="padding:5px 8px;text-align:right">${fM(s.hide_amount)}</td>
-      <td style="padding:5px 8px;text-align:right;color:var(--danger)">${fM(s.tax_carcass_organ)}</td>
-      <td style="padding:5px 8px;text-align:right;color:var(--danger)">${fM(s.tax_hide)}</td>
-      <td style="padding:5px 8px;text-align:right">${fM(salInc)}</td>
-      <td style="padding:5px 8px;text-align:right">${fM(s.deduction_total)}</td>
-      <td style="padding:5px 8px;text-align:right;font-weight:700;color:var(--accent2)">${fM(s.net_payment||s.total_amount)}</td>
+      <td style="padding:5px 8px;color:var(--muted)">${s.slaughtered_at||''}</td>
+      <td style="text-align:right;padding:5px 8px">${s.head_count||0}頭</td>
+      <td style="text-align:right;padding:5px 8px">${s.total_carcass_kg||0}kg</td>
+      <td style="text-align:right;padding:5px 8px">${fM(ex8)}</td>
+      <td style="text-align:right;padding:5px 8px;color:var(--danger)">${fM(t8)}</td>
+      <td style="text-align:right;padding:5px 8px">${fM(inc8)}</td>
+      <td style="text-align:right;padding:5px 8px">${fM(s.hide_amount)}</td>
+      <td style="text-align:right;padding:5px 8px;color:var(--danger)">${fM(s.tax_hide)}</td>
+      <td style="text-align:right;padding:5px 8px">${fM((s.hide_amount||0)+(s.tax_hide||0))}</td>
+      <td style="text-align:right;padding:5px 8px">${fM(slInc)}</td>
+      <td style="text-align:right;padding:5px 8px;color:var(--danger)">${fM(slT10)}</td>
+      <td style="text-align:right;padding:5px 8px">${fM(insp)}</td>
+      <td style="text-align:right;padding:5px 8px;font-weight:700;color:var(--accent2)">${fM(s.net_payment||s.total_amount)}</td>
     </tr>`;
   });
 
   // 合計行
-  const sheetSalInc = sheets.reduce((a,s)=>a+(s.carcass_amount||0)+(s.internal_organ_sales||0)+(s.hide_amount||0)+(s.tax_carcass_organ||0)+(s.tax_hide||0),0);
-  const sheetDedInc = sheets.reduce((a,s)=>a+(s.deduction_total||0),0);
   sHtml += `<tr style="background:var(--panel2);font-weight:700;border-top:2px solid var(--border)">
-    <td colspan="2" style="padding:6px 8px">合計</td>
-    <td style="padding:6px 8px;text-align:right">${totalHead}頭</td>
-    <td style="padding:6px 8px;text-align:right">${fM(carcassEx)}</td>
-    <td style="padding:6px 8px;text-align:right">${fM(organEx)}</td>
-    <td style="padding:6px 8px;text-align:right">${fM(hideEx)}</td>
-    <td style="padding:6px 8px;text-align:right;color:var(--danger)">${fM(tax8)}</td>
-    <td style="padding:6px 8px;text-align:right;color:var(--danger)">${fM(tax10Hide)}</td>
-    <td style="padding:6px 8px;text-align:right">${fM(sheetSalInc)}</td>
-    <td style="padding:6px 8px;text-align:right">${fM(sheetDedInc)}</td>
-    <td style="padding:6px 8px;text-align:right;color:var(--accent2)">${fM(netPay)}</td>
+    <td colspan="3" style="padding:6px 8px">合計</td>
+    <td style="text-align:right;padding:6px 8px">${totalHead}頭</td>
+    <td style="text-align:right;padding:6px 8px">${sheets.reduce((a,s)=>a+(s.total_carcass_kg||0),0).toFixed(1)}kg</td>
+    <td style="text-align:right;padding:6px 8px">${fM(totalEx8all)}</td>
+    <td style="text-align:right;padding:6px 8px;color:var(--danger)">${fM(totalTax8all)}</td>
+    <td style="text-align:right;padding:6px 8px">${fM(totalInc8)}</td>
+    <td style="text-align:right;padding:6px 8px">${fM(totalHide)}</td>
+    <td style="text-align:right;padding:6px 8px;color:var(--danger)">${fM(totalHideTax)}</td>
+    <td style="text-align:right;padding:6px 8px">${fM(totalInc10)}</td>
+    <td style="text-align:right;padding:6px 8px">${fM(totalSlFeeInc)}</td>
+    <td style="text-align:right;padding:6px 8px;color:var(--danger)">${fM(totalSlFeeT10)}</td>
+    <td style="text-align:right;padding:6px 8px">${fM(totalInspNC)}</td>
+    <td style="text-align:right;padding:6px 8px;color:var(--accent2)">${fM(totalNet)}</td>
   </tr></tbody></table>`;
   document.getElementById('msd-sheets-wrap').innerHTML = sHtml;
 }
@@ -7665,28 +7638,29 @@ function exportMonthlySalesCsv() {
     return (s.shipped_at||'').startsWith(mon);
   }).sort((a,b)=>(a.shipped_at>b.shipped_at?1:-1));
 
+  const calcOrganDispEx2 = s => (s.organ_disposal_fee||0) - (s.tax_organ_disposal||0);
+  const calc8taxEx2  = s => (s.carcass_amount||0) + (s.internal_organ_sales||0) - calcOrganDispEx2(s);
+  const calc8tax2    = s => (s.tax_carcass_organ||0) - (s.tax_organ_disposal||0);
+  const calcSlFeeInc2= s => (s.deduction_total||0) - (s.organ_disposal_fee||0);
+  const calcSlFeeT102= s => (s.tax_deduction||0);
+
   const rows = [
-    ['農場','出荷日','屠畜日','頭数','販売先',
-     '枝肉金額(税抜)','内臓代(税抜)','原皮代(税抜)',
-     '消費税8%(枝肉・内臓)','消費税10%(原皮)',
-     '売上計(税込)',
-     'と畜料(税込)','格付料(税込)','内臓廃棄料(税込)','検査料(非課税)','保管料(税込)','販売手数料(税込)','焼却料(税込)',
-     '控除計(税込)',
+    ['農場','出荷日','格付日','頭数','合計枝重(kg)',
+     '枝肉・内臓(税抜)','消費税8%','8%対象税込計',
+     '原皮(税抜)','消費税10%','10%対象税込計',
+     '屠畜経費他(税込)','消費税10%(控除)','検査料(非課税)',
      '差引支払金額']
   ];
 
   sheets.forEach(s => {
     const farmName = FARMS[s.farm]?.name || s.farm;
-    const salInc = (s.carcass_amount||0)+(s.internal_organ_sales||0)+(s.hide_amount||0)+(s.tax_carcass_organ||0)+(s.tax_hide||0);
+    const ex8  = calc8taxEx2(s);
+    const t8   = calc8tax2(s);
     rows.push([
-      farmName, s.shipped_at, s.slaughtered_at||'', s.head_count||0,
-      s.buyer||s.slaughterhouse||'',
-      s.carcass_amount||0, s.internal_organ_sales||0, s.hide_amount||0,
-      s.tax_carcass_organ||0, s.tax_hide||0,
-      salInc,
-      s.slaughter_fee_regular||0, s.grading_fee||0, s.organ_disposal_fee||0,
-      s.inspection_fee||0, s.storage_fee||0, s.sales_fee||0, s.incineration_fee||0,
-      s.deduction_total||0,
+      farmName, s.shipped_at, s.slaughtered_at||'', s.head_count||0, s.total_carcass_kg||0,
+      ex8, t8, ex8+t8,
+      s.hide_amount||0, s.tax_hide||0, (s.hide_amount||0)+(s.tax_hide||0),
+      calcSlFeeInc2(s), calcSlFeeT102(s), s.inspection_fee||0,
       s.net_payment||s.total_amount||0
     ]);
   });

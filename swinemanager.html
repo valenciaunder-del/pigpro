@@ -1660,6 +1660,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div><div class="fl">焼却料</div><input type="number" id="se-incineration_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">保管料／と場使用料</div><input type="number" id="se-storage_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">販売手数料</div><input type="number" id="se-sales_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
+        <div><div class="fl">その他経費／冷蔵保管料 <span style="font-size:10px;color:var(--muted)">(10%税込)</span></div><input type="number" id="se-cold_storage_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">検査料（非課税）</div><input type="number" id="se-inspection_fee" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px;border-top:1px solid var(--border)">
@@ -1667,7 +1668,13 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div><div class="fl">消費税8%（内臓廃棄）</div><input type="number" id="se-tax_organ_disposal" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">消費税10%（その他経費）</div><input type="number" id="se-tax_deduction" class="fi" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl" style="font-weight:700">控除合計（税込）</div><input type="number" id="se-deduction_total" class="fi" style="font-size:12px;padding:4px 8px" oninput="seAutoCalc()"></div>
-        <div><div class="fl" style="font-weight:700">差引支払金額</div><input type="number" id="se-net_payment" class="fi" style="font-size:12px;padding:4px 8px"></div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div class="fl" style="font-weight:700">差引支払金額</div>
+          <input type="number" id="se-net_payment" class="fi" style="font-size:12px;padding:4px 8px">
+        </div>
+        <div style="grid-column:1/-1">
+          <div id="se-ded-breakdown" style="font-size:11px;color:var(--muted2);padding:4px 0;display:none"></div>
+        </div>
       </div>
       <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">頭別明細 <span id="slh-dp-detail-cnt" style="font-weight:400;color:var(--muted)"></span></div>
       <div id="slh-detail-body" style="overflow-x:auto;max-height:45vh">
@@ -12567,6 +12574,7 @@ async function slhToggleDetail(id, e) {
   sv('se-slaughter_fee_regular', s.slaughter_fee_regular||'');
   sv('se-slaughter_fee_disease', s.slaughter_fee_disease||'');
   sv('se-storage_fee', s.storage_fee||'');
+  sv('se-cold_storage_fee', s.cold_storage_fee||'');
   sv('se-grading_fee', s.grading_fee||'');
   sv('se-incineration_fee', s.incineration_fee||'');
   sv('se-organ_disposal_fee', s.organ_disposal_fee||'');
@@ -12604,9 +12612,9 @@ function slhCloseDetail() {
 // 仕切書履歴編集モーダル：売上フィールド変更時の自動再計算
 function seAutoCalc() {
   const gN = id => { const v = document.getElementById(id)?.value; return v===''||v==null ? 0 : Number(v); };
-  const setV = (id, v) => { const el = document.getElementById(id); if(el && v !== '') el.value = v; };
+  const setV = (id, v) => { const el = document.getElementById(id); if(el) el.value = (v||v===0) ? v : ''; };
 
-  // 消費税を自動計算（税抜ベース）
+  // ① 売上：消費税を自動計算（税抜ベース）
   const carcass = gN('se-carcass_amount');
   const organ   = gN('se-internal_organ_sales');
   const hide    = gN('se-hide_amount');
@@ -12617,9 +12625,44 @@ function seAutoCalc() {
   const salesTotal = carcass + organ + hide + tax8 + tax10h;
   setV('se-total_amount', salesTotal);
 
-  // 差引支払 = 仕入金額 - 控除合計（税込）
-  const dedTotal = gN('se-deduction_total');
-  if(dedTotal) setV('se-net_payment', salesTotal - dedTotal);
+  // ② 控除：全項目から合計・消費税を自動計算
+  // 10%税込項目
+  const inc10Items = [
+    gN('se-slaughter_fee_regular'), gN('se-slaughter_fee_disease'),
+    gN('se-grading_fee'), gN('se-incineration_fee'),
+    gN('se-storage_fee'), gN('se-sales_fee'), gN('se-cold_storage_fee')
+  ].filter(v=>v!==0);
+  const sum10inc = inc10Items.reduce((a,v)=>a+v, 0);
+  const tax10d   = Math.round(sum10inc / 1.1 * 0.1);
+
+  // 8%税込項目（内臓廃棄）
+  const orgDisp  = gN('se-organ_disposal_fee');
+  const tax8od   = orgDisp ? Math.round(orgDisp / 1.08 * 0.08) : 0;
+
+  // 非課税
+  const insp     = gN('se-inspection_fee');
+
+  const dedTotal = sum10inc + orgDisp + insp;
+  const dedSubEx = dedTotal - tax10d - tax8od;
+
+  // フィールド更新
+  setV('se-deduction_subtotal', dedSubEx || '');
+  setV('se-tax_organ_disposal', tax8od || '');
+  setV('se-tax_deduction', tax10d || '');
+  setV('se-deduction_total', dedTotal || '');
+
+  // 控除明細の表示（税込合計 + うち消費税）
+  const brkEl = document.getElementById('se-ded-breakdown');
+  if(brkEl && dedTotal) {
+    const taxTotal = tax10d + tax8od;
+    brkEl.innerHTML = `控除合計 <strong>${fM(dedTotal)}</strong>（税抜 ${fM(dedTotal-taxTotal)} ／ うち消費税 <span style="color:var(--danger)">${fM(taxTotal)}</span>）`;
+    brkEl.style.display = '';
+  } else if(brkEl) {
+    brkEl.style.display = 'none';
+  }
+
+  // ③ 差引支払 = 仕入金額 - 控除合計
+  setV('se-net_payment', dedTotal ? salesTotal - dedTotal : '');
 }
 
 async function slhSaveAll() {
@@ -12647,6 +12690,7 @@ async function slhSaveAll() {
     slaughter_fee_regular: gN('se-slaughter_fee_regular'),
     slaughter_fee_disease: gN('se-slaughter_fee_disease'),
     storage_fee: gN('se-storage_fee'),
+    cold_storage_fee: gN('se-cold_storage_fee'),
     grading_fee: gN('se-grading_fee'),
     incineration_fee: gN('se-incineration_fee'),
     organ_disposal_fee: gN('se-organ_disposal_fee'),

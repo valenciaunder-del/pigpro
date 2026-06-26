@@ -1677,7 +1677,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div id="se-ded-breakdown" style="font-size:11px;color:var(--muted2);padding:4px 0;display:none"></div>
         </div>
       </div>
-      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">頭別明細 <span id="slh-dp-detail-cnt" style="font-weight:400;color:var(--muted)"></span></div>
+      <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px;display:flex;align-items:center;gap:8px">頭別明細 <span id="slh-dp-detail-cnt" style="font-weight:400;color:var(--muted)"></span><button class="btn bs" onclick="fixInvalidGrades()" style="font-size:10px;padding:2px 8px;color:var(--danger);border-color:var(--danger)">⚠️ 等級修正</button></div>
       <div id="slh-detail-body" style="overflow-x:auto;max-height:45vh">
         <table class="tbl" style="font-size:12px;min-width:700px">
           <thead><tr>
@@ -12735,7 +12735,7 @@ function slhRenderDetail(rows) {
   tb.innerHTML = rows.map(r => `<tr data-detail-id="${r.id}">
     ${ec(r,'carcass_no',r.carcass_no||'-')}
     ${ec(r,'sex',normSex(r.sex)||'-')}
-    ${ec(r,'grade',r.grade||'-',`color:${gc[r.grade]||'var(--text)'};font-weight:600`)}
+    ${(()=>{ const validGrades=['上','中','並','等外']; const isInvalid=r.grade&&!validGrades.includes(r.grade); return ec(r,'grade', isInvalid?`⚠️${r.grade}`:r.grade||'-', isInvalid?'color:var(--danger);font-weight:600;background:rgba(239,68,68,.15);border-radius:4px;padding:2px 4px':`color:${gc[r.grade]||'var(--muted)'};font-weight:600`); })()}
     ${ec(r,'carcass_weight',r.carcass_weight!=null?r.carcass_weight.toFixed(1)+' kg':'-','text-align:right')}
     ${ec(r,'unit_price',r.unit_price?'¥'+r.unit_price:'-','text-align:right')}
     <td class="tr3" style="color:var(--muted2)">${r.amount!=null?fM(r.amount):'-'}</td>
@@ -12781,6 +12781,26 @@ function slhUpdateCalcFields(rows) {
     const avgEl = document.getElementById('se-avg-carcass-wt');
     if(avgEl) avgEl.textContent = hc > 0 ? (Math.round(totalWt/hc*10)/10) + 'kg' : '-';
   }
+}
+
+
+// 無効な等級値（性別値が混入したもの）をクリアする
+async function fixInvalidGrades() {
+  const validGrades = ['上','中','並','等外'];
+  const invalid = SLH_DETAIL_CACHE.filter(r => r.grade && !validGrades.includes(r.grade));
+  if(!invalid.length) { notif('無効な等級はありません', 'g'); return; }
+  if(!confirm(`等級に性別値が混入しているレコードが${invalid.length}件あります。\n等級をクリア（空白）しますか？\n\n対象: ${invalid.map(r=>r.carcass_no+' ('+r.grade+')').join(', ')}`)) return;
+  showLoading('等級を修正中...');
+  try {
+    for(const r of invalid) {
+      await api.updateSlaughterDetail(r.id, { grade: null });
+      r.grade = null;
+    }
+    slhRenderDetail(SLH_DETAIL_CACHE);
+    slhUpdateCalcFields(SLH_DETAIL_CACHE);
+    notif(`${invalid.length}件の等級を修正しました`, 'g');
+  } catch(e) { notif('修正エラー: '+e.message, 'r'); }
+  finally { hideLoading(); }
 }
 
 function slhEditCell(td, rowId, field) {

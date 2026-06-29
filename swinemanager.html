@@ -1435,7 +1435,13 @@ tbody td{padding:8px 10px;white-space:nowrap;}
               <span class="sl">出荷日（農場）</span>
               <input class="fi" type="date" id="sl-r-shipped-at" style="width:140px;font-size:12px" title="農場から出荷した日。ADG計算に使用。前日出荷の場合は変更してください。">
             </div>
-            <div class="sr"><span class="sl">農場</span><span class="sv" id="sl-r-farm">-</span></div>
+            <div class="sr">
+              <span class="sl">農場</span>
+              <select class="fi" id="sl-r-farm" style="width:140px;font-size:12px" onchange="slChangeFarm(this.value)">
+                <option value="farm1">中田農場</option>
+                <option value="farm2">米山農場</option>
+              </select>
+            </div>
             <div class="sr"><span class="sl">と畜場</span><span class="sv" id="sl-r-slh">-</span></div>
             <div class="sr"><span class="sl">販売先</span><span class="sv" id="sl-r-buyer">-</span></div>
             <div class="sr"><span class="sl">出荷頭数</span><input class="fi" type="number" id="sl-r-cnt" style="width:120px" onchange="updateSlSummary()"></div>
@@ -11493,6 +11499,18 @@ function calcSlStats(details) {
   };
 }
 
+
+// 仕切書プレビューの農場手動変更
+function slChangeFarm(farmId) {
+  if(!SL_DATA?.sheet) return;
+  SL_DATA.sheet.farm      = farmId;
+  SL_DATA.sheet.farm_name = FARMS[farmId]?.name || farmId;
+  // 警告表示があれば消す
+  const warn = document.getElementById('sl-farm-warn');
+  if(warn) warn.style.display = 'none';
+  notif(`農場を「${FARMS[farmId]?.name || farmId}」に変更しました`, 'g');
+}
+
 function renderSlPreview(data) {
   if(!data?.sheet) return;
   const s = data.sheet;
@@ -11522,7 +11540,7 @@ function renderSlPreview(data) {
   // 出荷日はデフォルト=屠畜日、既に設定されている場合はそちらを優先
   const shippedAtEl = document.getElementById('sl-r-shipped-at');
   if(shippedAtEl) shippedAtEl.value = s.shipped_at_farm || s.shipped_at || '';
-  document.getElementById('sl-r-farm').textContent  = s.farm_name||'-';
+  const farmSel = document.getElementById('sl-r-farm'); if(farmSel) farmSel.value = s.farm || 'farm1';
   document.getElementById('sl-r-slh').textContent   = s.slaughterhouse||'-';
   if(document.getElementById('sl-r-buyer')) document.getElementById('sl-r-buyer').textContent = s.buyer||'-';
   document.getElementById('sl-r-cnt').value   = s.head_count || 0;

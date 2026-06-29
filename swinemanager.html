@@ -11505,6 +11505,9 @@ function slChangeFarm(farmId) {
   if(!SL_DATA?.sheet) return;
   SL_DATA.sheet.farm      = farmId;
   SL_DATA.sheet.farm_name = FARMS[farmId]?.name || farmId;
+  // ヘッダーバッジを更新
+  const badge = document.getElementById('sl-farm-badge');
+  if(badge) badge.innerHTML = `<span class="bdg ${farmId==='farm1'?'f1':'f2'}">${FARMS[farmId]?.name || farmId}</span>`;
   // 警告表示があれば消す
   const warn = document.getElementById('sl-farm-warn');
   if(warn) warn.style.display = 'none';

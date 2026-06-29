@@ -1504,6 +1504,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <span class="ct">頭別明細（量目表＋格付け）</span>
         <span class="bdg gr" id="sl-detail-cnt">-</span>
       </div>
+      <div id="sl-detail-warn" style="margin-bottom:6px"></div>
       <div class="tw"><table>
         <thead><tr><th>番号</th><th>枝肉重量</th><th>単価</th><th>金額</th><th>格付け</th><th>背脂肪</th><th>性別</th><th>瑕疵</th></tr></thead>
         <tbody id="sl-detail-tb"></tbody>
@@ -11514,6 +11515,15 @@ function slChangeFarm(farmId) {
   notif(`農場を「${FARMS[farmId]?.name || farmId}」に変更しました`, 'g');
 }
 
+
+// 頭別明細の枝番を一括クリア（OCR誤認識時）
+function slClearAllCarcassNo() {
+  if(!SL_DATA?.details) return;
+  SL_DATA.details.forEach(d => { d.carcass_no = null; });
+  renderSlPreview(SL_DATA);
+  notif('枝番をクリアしました。正しい番号を入力してください。', 'y');
+}
+
 function renderSlPreview(data) {
   if(!data?.sheet) return;
   const s = data.sheet;
@@ -11582,7 +11592,25 @@ function renderSlPreview(data) {
   });
   // 枝肉番号の重複検出（保存前の視覚的な警告用）
   const dupNoCounts = {};
-  details.forEach(d=>{ if(d.carcass_no) dupNoCounts[d.carcass_no]=(dupNoCounts[d.carcass_no]||0)+1; });
+  // null/0/undefinedは重複カウントに含めない（OCRが読めなかった場合を除外）
+  details.forEach(d=>{ if(d.carcass_no != null && d.carcass_no !== 0 && d.carcass_no !== '') dupNoCounts[d.carcass_no]=(dupNoCounts[d.carcass_no]||0)+1; });
+  // 全行が同一値かチェック（OCR誤認識の典型パターン）
+  const allNos = details.map(d=>d.carcass_no).filter(n=>n!=null&&n!==0&&n!=='');
+  const allSame = allNos.length > 1 && new Set(allNos).size === 1;
+  if(allSame) {
+    // 全行同一値の場合は一括クリアを促す
+    const clearBtn = `<div style="background:rgba(239,68,68,.1);border:1px solid var(--danger);border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px;display:flex;align-items:center;gap:10px">
+      <span style="color:var(--danger)">⚠️ 枝番が全行「${allNos[0]}」で同一です（OCR読み取りエラーの可能性）</span>
+      <button class="btn" onclick="slClearAllCarcassNo()" style="font-size:11px;padding:3px 10px;background:rgba(239,68,68,.2);border-color:var(--danger);color:var(--danger);white-space:nowrap">一括クリア</button>
+    </div>`;
+    const warnEl = document.getElementById('sl-detail-warn');
+    if(warnEl) warnEl.innerHTML = clearBtn;
+    // 全行同一の場合はisDupを全てfalseにする（誤警告防止）
+    Object.keys(dupNoCounts).forEach(k => dupNoCounts[k] = 1);
+  } else {
+    const warnEl = document.getElementById('sl-detail-warn');
+    if(warnEl) warnEl.innerHTML = '';
+  }
   document.getElementById('sl-detail-tb').innerHTML = sortedDetailIdx.map(i=>slDetailRow(details[i],i,dupNoCounts[details[i]?.carcass_no]>1)).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">頭別データなし</td></tr>';
   updateSlSummary();
   try { checkSlConsistency(data); } catch(e) { console.warn('checkSlConsistency error:', e); }

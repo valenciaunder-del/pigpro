@@ -1444,7 +1444,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             </div>
             <div class="sr"><span class="sl">と畜場</span><span class="sv" id="sl-r-slh">-</span></div>
             <div class="sr"><span class="sl">販売先</span><span class="sv" id="sl-r-buyer">-</span></div>
-            <div class="sr"><span class="sl">出荷頭数</span><input class="fi" type="number" id="sl-r-cnt" style="width:120px" onchange="updateSlSummary()"></div>
+            <div class="sr"><span class="sl">出荷頭数</span><input class="fi" type="number" id="sl-r-cnt" style="width:120px" onchange="slChangeHeadCount()"></div>
             <div class="sr"><span class="sl">枝肉重量合計</span><input class="fi" type="number" id="sl-r-wt" step="0.1" style="width:120px" onchange="updateSlSummary()"></div>
             <div class="sr"><span class="sl">平均枝肉重</span><span class="sv mn" id="sl-r-avg-wt">-</span></div>
             <div class="sr"><span class="sl">枝重中央値</span><span class="sv mn" id="sl-r-med-wt">-</span></div>
@@ -11810,6 +11810,44 @@ function slDedToggleMenu(e) {
 
   const close = ev => { menu.style.display='none'; document.removeEventListener('click',close); };
   setTimeout(() => document.addEventListener('click', close), 0);
+}
+
+
+// 出荷頭数を手動修正した際、頭別明細を自動で合わせる（OCRが過剰な行を作った場合の救済）
+function slChangeHeadCount() {
+  if(!SL_DATA?.sheet) return;
+  const newCount = parseInt(document.getElementById('sl-r-cnt')?.value) || 0;
+  const details = SL_DATA.details || [];
+  const curCount = details.length;
+
+  if(newCount > 0 && newCount < curCount) {
+    const diff = curCount - newCount;
+    const ok = confirm(
+      `出荷頭数を${curCount}頭→${newCount}頭に変更します。\n` +
+      `頭別明細が${curCount}件あるため、枝肉番号の若い順に上位${newCount}件のみ残し、` +
+      `残り${diff}件を削除します。\n\n` +
+      `（明細の編集はこの後の頭別明細テーブルで個別に行えます）`
+    );
+    if(ok) {
+      // 枝肉番号で昇順ソートしてから上位newCount件のみ残す
+      const sorted = [...details].sort((a,b) => {
+        const na = parseFloat(a?.carcass_no), nb = parseFloat(b?.carcass_no);
+        const naValid = !isNaN(na), nbValid = !isNaN(nb);
+        if(!naValid && !nbValid) return 0;
+        if(!naValid) return 1;
+        if(!nbValid) return -1;
+        return na - nb;
+      });
+      SL_DATA.details = sorted.slice(0, newCount);
+      renderSlPreview(SL_DATA); // 明細テーブル・サマリ両方を再描画
+      notif(`頭別明細を${newCount}件に調整しました。内容を確認してください。`, 'y');
+      return;
+    }
+  } else if(newCount > curCount) {
+    notif(`頭数(${newCount})が明細件数(${curCount})より多いため、不足分は頭別明細に行を追加して入力してください。`, 'y');
+  }
+
+  updateSlSummary();
 }
 
 function updateSlSummary() {

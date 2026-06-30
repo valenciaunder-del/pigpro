@@ -12315,14 +12315,27 @@ async function saveSlaughter() {
 
   // 廃棄チェック：明細件数を販売頭数とし、受付頭数との差を廃棄とする
   const soldCount = SL_DATA.details?.length || s.head_count;
-  const receivedCount = s.received_count || s.head_count || soldCount;
-  const discardCount = Math.max(0, receivedCount - soldCount);
+  let receivedCount = s.received_count || s.head_count || soldCount;
+  // 明細内に実際の「枝肉廃棄」行（重量0かつ金額0の行）が存在するかを確認
+  const explicitDiscardRows = (SL_DATA.details||[]).filter(d =>
+    (d.carcass_weight === 0 || d.carcass_weight == null) && (d.amount === 0 || d.amount == null) &&
+    (d.defects?.includes('廃棄') || d.grade?.includes('廃棄'))
+  ).length;
+  let discardCount = Math.max(0, receivedCount - soldCount);
+  // 明細上に廃棄行の根拠がないのに受付頭数だけ多い場合は、OCRの誤読とみなして無視する
+  if(discardCount > 0 && explicitDiscardRows === 0) {
+    console.warn(`受付頭数(${receivedCount})と販売頭数(${soldCount})に差がありますが、明細内に廃棄行が見つからないためOCR誤読とみなし、受付頭数を販売頭数に補正します。`);
+    receivedCount = soldCount;
+    discardCount = 0;
+  }
   // head_countを明細件数で上書き
   s.head_count = soldCount;
+  s.received_count = receivedCount;
   let registerDiscard = false;
   if(discardCount > 0) {
     const ok = confirm(
-      `受付頭数(${receivedCount}頭) と販売頭数(${soldCount}頭) に差があります。\n\n` +
+      `受付頭数(${receivedCount}頭) と販売頭数(${soldCount}頭) に差があります。\n` +
+      `（明細内に枝肉廃棄${explicitDiscardRows}行を確認済み）\n\n` +
       `${discardCount}頭が枝肉廃棄となっています。\n` +
       `出荷日(${s.shipped_at})に事故として自動登録しますか？\n\n` +
       `※廃棄頭数は成績分析の分母に含まれません`

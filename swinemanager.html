@@ -3777,116 +3777,107 @@ function calcLotFcrByBarn(lot) {
 // ══════════════════════════════════════════════
 function calcLotProdCost(lot) {
   const farm = lot.farm;
-  if(!lot.price && !lot.start_weight) return null;
 
   // ① 子豚費/頭（税抜）
   const pigletCostPerHead = lot.price || 0;
 
-  // ② FCRと増体重から飼料費を計算
-  const fcr = calcLotFcrByBarn(lot) || (calcCurrentHead(lot) === 0 ? calcLotFcr(lot) : null);
-  if(!fcr) return { pigletCost: pigletCostPerHead, feedCost: null, total: null, perCw: null };
-
-  // 平均生体重（出荷記録から）
-  const lotShipsAll = DATA.ships.filter(s => s.lot_id === lot.id && s.count > 0 && s.shipped_at);
-  if(!lotShipsAll.length) return { pigletCost: pigletCostPerHead, feedCost: null, total: null, perCw: null };
-
-  const yieldRate = getYieldRate(farm) / 100;
-  let totalLw = 0, totalHead = 0;
-  lotShipsAll.forEach(s => {
-    let lw = s.live_weight > 0 ? s.live_weight : null;
-    if(!lw) {
-      const sheet = DATA.slaughter.find(x=>x.farm===farm && x.shipped_at===s.shipped_at);
-      if(sheet?.total_carcass_kg && sheet?.head_count)
-        lw = (sheet.total_carcass_kg / sheet.head_count) / yieldRate;
+  // ② FCR（lot単位 → 農場全体フォールバック）
+  let fcr = calcLotFcrByBarn(lot);
+  if(!fcr && calcCurrentHead(lot) === 0) fcr = calcLotFcr(lot);
+  if(!fcr) {
+    // 農場全体FCRでフォールバック
+    for(let i=0; i<=3; i++) {
+      const d = new Date(); d.setMonth(d.getMonth()-i);
+      fcr = calcFarmFcr(farm, d.toISOString().slice(0,7));
+      if(fcr) break;
     }
-    if(lw > 0) { totalLw += lw * s.count; totalHead += s.count; }
-  });
-  if(!totalHead) return { pigletCost: pigletCostPerHead, feedCost: null, total: null, perCw: null };
+  }
+  if(!fcr) return { pigletCost: pigletCostPerHead, feedCost: null, total: pigletCostPerHead||null, perCw: null };
 
-  const avgLiveWeight = totalLw / totalHead;
-  const weightGainPerHead = avgLiveWeight - (lot.start_weight || 30); // kg
-  if(weightGainPerHead <= 0) return { pigletCost: pigletCostPerHead, feedCost: null, total: null, perCw: null };
+  // ③ 出荷生体重（出荷記録 or 仕切書から逆算）
+  const yieldRate = getYieldRate(farm) / 100;
+  const lotShipsAll = DATA.ships.filter(s => s.lot_id === lot.id && s.count > 0 && s.shipped_at);
+  let avgLiveWeight = 0;
+  if(lotShipsAll.length) {
+    let totalLw = 0, totalHead = 0;
+    lotShipsAll.forEach(s => {
+      let lw = s.live_weight > 0 ? s.live_weight : null;
+      if(!lw) {
+        const sheet = DATA.slaughter.find(x => x.farm === farm && x.shipped_at === s.shipped_at);
+        if(sheet?.total_carcass_kg && sheet?.head_count)
+          lw = (sheet.total_carcass_kg / sheet.head_count) / yieldRate;
+      }
+      if(lw > 0) { totalLw += lw * s.count; totalHead += s.count; }
+    });
+    if(totalHead > 0) avgLiveWeight = totalLw / totalHead;
+  }
+  // 出荷データがない（在籍中）場合は現在の推計生体重
+  if(!avgLiveWeight) {
+    const w = calcCurrentWeight(lot);
+    avgLiveWeight = w.value || 0;
+  }
+  if(!avgLiveWeight || avgLiveWeight <= (lot.start_weight || 30))
+    return { pigletCost: pigletCostPerHead, feedCost: null, total: pigletCostPerHead||null, perCw: null };
 
-  // 飼料単価（期間加重平均）
-  // 月次の子豚用・肉豚用消費量比率で加重
+  const weightGain = avgLiveWeight - (lot.start_weight || 30); // kg/頭
+
+  // ④ 飼料単価（加重平均：子豚用 + 肉豚用）
+  // 導入日基準の四半期単価を使用
+  const pigletPrice   = getFeedPrice(farm, lot.start_date || new Date().toISOString().slice(0,10), 'piglet')   || 0;
+  const finisherPrice = getFeedPrice(farm, lot.start_date || new Date().toISOString().slice(0,10), 'finisher') || 0;
+
+  // 飼料使用比率（飼料タンクデータから、なければ経験則40:60）
+  let pigletRatio = 0.4;
   const allTankRows = DATA.feedTank.filter(r => r.farm === farm && r.date);
-  const barnObj = (() => {
-    const fo = FARMS[farm];
-    return fo?.barns?.find(b => lot.barn && (lot.barn.includes(b.id) || lot.barn === b.name));
-  })();
-  const tankLabels = barnObj
-    ? [barnObj.tank_hog_label, barnObj.tank_piglet_label].filter(Boolean)
-    : [];
-
-  // 期間内の子豚/肉豚タンク消費量を集計して飼料単価を算出
-  const startYM = lot.start_date.slice(0,7);
-  const lastShip = lotShipsAll.map(s=>s.shipped_at).sort().pop();
-  const endYM = lastShip.slice(0,7);
-  let totalPigletT = 0, totalFinisherT = 0;
-  let cur = new Date(startYM+'-01');
-  while(cur <= new Date(endYM+'-01')) {
-    const mon = cur.toISOString().slice(0,7);
-    const monStart = mon+'-01';
-    // 豚舎タンクがある場合はタンク別、ない場合はfeed_type別
-    if(tankLabels.length) {
-      const hogLabel = barnObj?.tank_hog_label;
-      const pigLabel = barnObj?.tank_piglet_label;
-      [hogLabel, pigLabel].forEach((tnLabel, idx) => {
-        if(!tnLabel) return;
-        const rows = allTankRows.filter(r=>r.tank_name===tnLabel&&r.date.startsWith(mon))
-          .sort((a,b)=>a.date.localeCompare(b.date));
+  if(allTankRows.length && lot.start_date) {
+    const startYM = lot.start_date.slice(0,7);
+    const endYM   = (lotShipsAll.map(s=>s.shipped_at).sort().pop() || new Date().toISOString().slice(0,7)).slice(0,7);
+    let pigT = 0, finT = 0;
+    let cur = new Date(startYM+'-01');
+    while(cur <= new Date(endYM+'-01')) {
+      const mon = cur.toISOString().slice(0,7);
+      const monStart = mon+'-01';
+      // feed_typeベースで集計
+      ['piglet','finisher'].forEach(ft => {
+        const rows = allTankRows.filter(r=>r.feed_type===ft&&r.date.startsWith(mon)).sort((a,b)=>a.date.localeCompare(b.date));
         if(!rows.length) return;
-        const prev = allTankRows.filter(r=>r.tank_name===tnLabel&&r.date<monStart)
-          .sort((a,b)=>b.date.localeCompare(a.date));
-        const opening = prev.length ? (prev[0].tank_remaining||0) : (rows[0].tank_remaining||0);
+        const prev = allTankRows.filter(r=>r.feed_type===ft&&r.date<monStart).sort((a,b)=>b.date.localeCompare(a.date));
+        const opening = prev.length?(prev[0].tank_remaining||0):(rows[0].tank_remaining||0);
         const closing = rows[rows.length-1].tank_remaining||0;
         const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
         const usage = opening+delivery-closing;
-        if(usage>0) {
-          if(idx===0) totalFinisherT += usage; // hog tank
-          else totalPigletT += usage;           // piglet tank
-        }
+        if(usage > 0) ft === 'piglet' ? (pigT += usage) : (finT += usage);
       });
-    } else {
-      // タンク設定なし → feed_typeベース
-      const pRows = allTankRows.filter(r=>r.feed_type==='piglet'&&r.date.startsWith(mon));
-      const fRows = allTankRows.filter(r=>r.feed_type==='finisher'&&r.date.startsWith(mon));
-      totalPigletT   += pRows.reduce((a,r)=>a+(r.daily_usage||0),0)/1000;
-      totalFinisherT += fRows.reduce((a,r)=>a+(r.daily_usage||0),0)/1000;
+      cur.setMonth(cur.getMonth()+1);
     }
-    cur.setMonth(cur.getMonth()+1);
+    const tot = pigT + finT;
+    if(tot > 0) pigletRatio = pigT / tot;
   }
 
-  // 飼料単価（中間月の四半期単価を使用）
-  const midDate = lot.start_date; // 導入時の単価を基準に
-  const pigletPrice   = getFeedPrice(farm, midDate, 'piglet')   || 0; // 円/t
-  const finisherPrice = getFeedPrice(farm, midDate, 'finisher') || 0; // 円/t
-  const totalFeedT = totalPigletT + totalFinisherT;
-  const avgFeedPricePerT = totalFeedT > 0
-    ? (pigletPrice * totalPigletT + finisherPrice * totalFinisherT) / totalFeedT
-    : (pigletPrice + finisherPrice) / 2;
+  const avgFeedPricePerT = pigletPrice * pigletRatio + finisherPrice * (1 - pigletRatio);
+  if(!avgFeedPricePerT)
+    return { pigletCost: pigletCostPerHead, feedCost: null, total: pigletCostPerHead||null, perCw: null };
 
-  if(!avgFeedPricePerT) return { pigletCost: pigletCostPerHead, feedCost: null, total: null, perCw: null };
+  // ⑤ 飼料費/頭 = FCR × 増体重(kg) × 飼料単価(円/t) ÷ 1000
+  const feedCostPerHead = Math.round(fcr * weightGain * avgFeedPricePerT / 1000);
 
-  // 飼料費/頭 = FCR × 増体重(kg) × 飼料単価(円/t) / 1000
-  const feedCostPerHead = Math.round(fcr * weightGainPerHead * avgFeedPricePerT / 1000);
-
-  // 平均枝重
-  const avgCwForCost = (totalLw / totalHead) * yieldRate;
-
+  // ⑥ 製造原価/枝肉kg
+  const avgCw = avgLiveWeight * yieldRate;
   const total = Math.round(pigletCostPerHead + feedCostPerHead);
-  const perCw = avgCwForCost > 0 ? Math.round(total / avgCwForCost) : null;
+  const perCw = avgCw > 0 ? Math.round(total / avgCw) : null;
 
   return {
     pigletCost: Math.round(pigletCostPerHead),
     feedCost:   feedCostPerHead,
     total,
     perCw,
-    fcr, weightGain: Math.round(weightGainPerHead*10)/10,
-    avgFeedPrice: Math.round(avgFeedPricePerT),
-    pigletRatio: totalFeedT > 0 ? Math.round(totalPigletT/totalFeedT*100) : null,
+    fcr,
+    weightGain:     Math.round(weightGain * 10) / 10,
+    avgFeedPrice:   Math.round(avgFeedPricePerT),
+    pigletRatio:    Math.round(pigletRatio * 100),
   };
 }
+
 
 // ══════════════════════════════════════════════
 // FCR計算（農場全体・月次）

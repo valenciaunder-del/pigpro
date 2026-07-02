@@ -1503,6 +1503,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="ch">
         <span class="ct">頭別明細（量目表＋格付け）</span>
         <span class="bdg gr" id="sl-detail-cnt">-</span>
+        <button class="btn bs sm" onclick="slAddDetailRow()" style="margin-left:auto;font-size:11px">＋ 行追加</button>
       </div>
       <div id="sl-detail-warn" style="margin-bottom:6px"></div>
       <div class="tw"><table>
@@ -11544,6 +11545,33 @@ function slClearAllCarcassNo() {
   SL_DATA.details.forEach(d => { d.carcass_no = null; });
   renderSlPreview(SL_DATA);
   notif('枝番をクリアしました。正しい番号を入力してください。', 'y');
+}
+
+
+// 頭別明細に空行を追加（OCRが行を読み飛ばした場合の手動補完）
+function slAddDetailRow() {
+  if(!SL_DATA) return;
+  if(!SL_DATA.details) SL_DATA.details = [];
+  // 現在の最大枝番+1をデフォルト枝番に
+  const nos = SL_DATA.details.map(d=>parseFloat(d.carcass_no)||0).filter(n=>n>0);
+  const nextNo = nos.length ? Math.max(...nos) + 1 : null;
+  // 現在の建値をデフォルト単価に
+  const defPrice = SL_DATA.sheet?.market_price || SL_DATA.details.find(d=>d.unit_price>0)?.unit_price || null;
+  SL_DATA.details.push({
+    carcass_no: nextNo,
+    carcass_weight: null,
+    unit_price: defPrice,
+    amount: null,
+    grade: null,
+    backfat: null,
+    sex: null,
+    defects: null,
+  });
+  renderSlPreview(SL_DATA);
+  // 追加した行にスクロール
+  const rows = document.querySelectorAll('#sl-detail-tb tr');
+  if(rows.length) rows[rows.length-1].scrollIntoView({ behavior:'smooth', block:'center' });
+  notif('行を追加しました。枝肉重量・格付けなどを入力してください。', 'y');
 }
 
 function renderSlPreview(data) {

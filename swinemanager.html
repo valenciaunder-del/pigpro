@@ -8012,6 +8012,27 @@ function showLD(id) {
       return `<div class="sep" style="margin:12px 0"></div>
       <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:10px">🏁 出荷成績</div>
       <div class="sr"><span class="sl">出荷頭数</span><span class="sv">${totalShipped}頭 / 導入${l.count}頭</span></div>
+      ${(()=>{
+        // 出荷日別履歴（shipping_recordsから集計）
+        const shipsByDate = {};
+        allShips.forEach(s => {
+          const d = s.shipped_at || '-';
+          if(!shipsByDate[d]) shipsByDate[d] = { count:0, slaughtered_at: s.slaughtered_at };
+          shipsByDate[d].count += (s.count||0);
+        });
+        const dates = Object.keys(shipsByDate).sort();
+        if(!dates.length) return '';
+        const rows = dates.map(d => {
+          const info = shipsByDate[d];
+          return `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:11px">
+            <span style="color:var(--muted)">${d}</span>
+            <span style="color:var(--muted2)">${info.slaughtered_at&&info.slaughtered_at!==d?'→'+info.slaughtered_at+' ':''}
+            <span style="color:var(--text);font-weight:600">${info.count}頭</span></span>
+          </div>`;
+        }).join('');
+        return `<div style="margin:6px 0 4px;font-size:11px;color:var(--muted);font-weight:600">出荷履歴</div>
+          <div style="background:var(--panel2);border-radius:6px;padding:6px 10px;margin-bottom:4px">${rows}</div>`;
+      })()}
       <div class="sr"><span class="sl">事故</span><span class="sv ${accidents>0?'nb':''}">農場${accidents}頭 / 廃棄${discards}頭</span></div>
       <div class="sr"><span class="sl">事故率</span><span class="sv ${adrCls}">${accRate}%</span></div>
       <div class="sr"><span class="sl">肥育日数</span><span class="sv mn">${daysOnFeed ? daysOnFeed+'日' : '-'}</span></div>

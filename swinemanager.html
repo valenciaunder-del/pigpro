@@ -6503,12 +6503,17 @@ function rPerfFull() {
 
   // FCR（出荷済みロットのみ）
   const avgFcr = (() => {
-    const fcrVals = lots
-      .filter(l => calcCurrentHead(l) === 0)
-      .map(l => calcLotFcr(l))
-      .filter(v => v && v > 0);
-    if(!fcrVals.length) return null;
-    return (fcrVals.reduce((a,v)=>a+v,0)/fcrVals.length).toFixed(2);
+    // calcLotFcrByBarn：出荷済み分があれば計算可（全頭完了不要）
+    // calcLotFcr：全頭出荷完了ロットのみ（フォールバック）
+    const fcrEntries = lots.map(l => {
+      const v = calcLotFcrByBarn(l) || (calcCurrentHead(l) === 0 ? calcLotFcr(l) : null);
+      return { v, count: l.count || 1 };
+    }).filter(e => e.v && e.v > 0);
+    if(!fcrEntries.length) return null;
+    // 頭数加重平均
+    const wSum = fcrEntries.reduce((a,e) => a + e.v * e.count, 0);
+    const hSum = fcrEntries.reduce((a,e) => a + e.count, 0);
+    return hSum > 0 ? (wSum / hSum).toFixed(2) : null;
   })();
 
   // 平均導入体重（対象ロットの頭数加重平均）

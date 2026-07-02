@@ -4563,7 +4563,17 @@ function rDash() {
     // 現在選択中の集計期間（4ヶ月 or 12ヶ月）
     const kpiMonths = window._dashKpiMonths ?? 0;
     const adg = calcRecentAdg(f, kpiMonths) || 0;
-    const fcrVal = calcFarmFcr(f, null);
+    // null指定だと最新月（未完了）が取れてnullになるため、直近3ヶ月で有効値を探索
+    const fcrVal = (() => {
+      const now = new Date();
+      for(let i=0; i<=3; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+        const mon = d.toISOString().slice(0,7);
+        const v = calcFarmFcr(f, mon);
+        if(v !== null) return v;
+      }
+      return null;
+    })();
     const fcr = fcrVal !== null ? fcrVal.toFixed(2) : '-';
     const deathRate = calcDeathRate(f, kpiMonths) || '0.0';
     const sal = gSalesVal(f, mon);

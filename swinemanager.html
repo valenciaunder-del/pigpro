@@ -3671,8 +3671,9 @@ function calcLotFcrByBarn(lot) {
   if(!barn) return null;
   const barnObj = (farmObj.barns||[]).find(b => barn.includes(b.id) || barn === b.name);
   if(!barnObj) return null;
-  const hogTankLabel = barnObj.tank_hog_label;
-  if(!hogTankLabel) return null;
+  // 子豚タンク＋肉豚タンクの両方を合算（肉豚要求率）
+  const tankLabels = [barnObj.tank_hog_label, barnObj.tank_piglet_label].filter(Boolean);
+  if(!tankLabels.length) return null;
 
   const lotShips = DATA.ships.filter(s=>s.lot_id===lot.id && s.live_weight>0 && s.shipped_at);
   if(!lotShips.length) return null;
@@ -3725,16 +3726,21 @@ function calcLotFcrByBarn(lot) {
     }
     if(barnHD<=0) continue;
 
-    const tankRows = allTankRows.filter(r=>r.tank_name===hogTankLabel&&r.date.startsWith(mon))
-      .sort((a,b)=>a.date.localeCompare(b.date));
-    if(!tankRows.length) continue;
-    const prevRows = allTankRows.filter(r=>r.tank_name===hogTankLabel&&r.date<monStart)
-      .sort((a,b)=>b.date.localeCompare(a.date));
-    const opening  = prevRows.length?(prevRows[0].tank_remaining||0):(tankRows[0].tank_remaining||0);
-    const closing  = tankRows[tankRows.length-1].tank_remaining||0;
-    const delivery = tankRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
-    const usage    = opening+delivery-closing;
-    if(usage>0) totalFeedT += usage*(lotHD/barnHD);
+    // 子豚＋肉豚の全タンク消費量を合算
+    let barnMonFeedT = 0;
+    for(const tnLabel of tankLabels) {
+      const tankRows = allTankRows.filter(r=>r.tank_name===tnLabel&&r.date.startsWith(mon))
+        .sort((a,b)=>a.date.localeCompare(b.date));
+      if(!tankRows.length) continue;
+      const prevRows = allTankRows.filter(r=>r.tank_name===tnLabel&&r.date<monStart)
+        .sort((a,b)=>b.date.localeCompare(a.date));
+      const opening  = prevRows.length?(prevRows[0].tank_remaining||0):(tankRows[0].tank_remaining||0);
+      const closing  = tankRows[tankRows.length-1].tank_remaining||0;
+      const delivery = tankRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const usage    = opening+delivery-closing;
+      if(usage>0) barnMonFeedT += usage;
+    }
+    if(barnMonFeedT>0) totalFeedT += barnMonFeedT*(lotHD/barnHD);
   }
 
   if(totalFeedT<=0) return null;
@@ -5049,7 +5055,7 @@ function rLotFull() {
         <td style="font-size:11px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--accent)">${l.source||'-'}</td>
         <td class="mn">${(()=>{const w=calcCurrentWeight(l);return w.value?w.value.toFixed(1)+' kg':'-';})()}</td>
         <td class="mn ${(()=>{const a=calcLotAdg(l,true);return a?ac(a):'';})()}">${(()=>{const a=calcLotAdg(l,true);if(!a)return '-';const partial=calcCurrentHead(l)>0;return a+' g'+(partial?'<span style="font-size:9px;color:var(--muted)"> 暫定</span>':'');})()}</td>
-        <td class="mn ${fc(l.fcr)}">${l.fcr||0}</td>
+        <td class="mn ${(()=>{const v=calcLotFcrByBarn(l)||calcLotFcr(l);return v?(v<=2.5?'ng':v<=2.8?'nw':'nb'):'';})()}">${(()=>{const v=calcLotFcrByBarn(l)||calcLotFcr(l);return v?v.toFixed(2):'-';})()}</td>
         <td class="mn ${(l.deaths||0)>3?'nb':'nw'}">${l.deaths||0}頭</td>
         <td class="mn">${(()=>{const dead=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id&&d.confirmed!==false));const rate=l.count>0?(dead/l.count*100):0;const cls=rate>=5?'nb':rate>=3?'nw':'ng';return dead>0?'<span class="'+cls+'">'+rate.toFixed(1)+'%</span>':'<span style="color:var(--muted)">0%</span>';})()}</td>
         <td>${sb2(calcLotStatus(l))}</td>

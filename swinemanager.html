@@ -1105,7 +1105,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     <div class="tw">
       <table>
         <thead><tr>
-          <th>農場</th><th id="pf-acc-col2">豚舎</th><th>ロット数</th><th>導入頭数</th><th>死廃頭数</th><th>事故率</th><th>平均ADG</th><th>平均肥育日数</th>
+          <th>農場</th><th id="pf-acc-col2">豚舎</th><th>ロット数</th><th>導入頭数</th><th>死廃頭数</th><th>事故率</th><th>平均ADG</th><th>平均FCR</th><th>平均肥育日数</th>
         </tr></thead>
         <tbody id="pf-barn-accident-tb"></tbody>
       </table>
@@ -6503,17 +6503,26 @@ function rPerfFull() {
 
   // FCR（出荷済みロットのみ）
   const avgFcr = (() => {
-    // calcLotFcrByBarn：出荷済み分があれば計算可（全頭完了不要）
-    // calcLotFcr：全頭出荷完了ロットのみ（フォールバック）
+    // 優先順：①豚舎タンク按分 ②農場全体（出荷完了ロット）③農場全体FCR（フォールバック）
     const fcrEntries = lots.map(l => {
-      const v = calcLotFcrByBarn(l) || (calcCurrentHead(l) === 0 ? calcLotFcr(l) : null);
+      const v = calcLotFcrByBarn(l)
+             || (calcCurrentHead(l) === 0 ? calcLotFcr(l) : null);
       return { v, count: l.count || 1 };
     }).filter(e => e.v && e.v > 0);
-    if(!fcrEntries.length) return null;
-    // 頭数加重平均
-    const wSum = fcrEntries.reduce((a,e) => a + e.v * e.count, 0);
-    const hSum = fcrEntries.reduce((a,e) => a + e.count, 0);
-    return hSum > 0 ? (wSum / hSum).toFixed(2) : null;
+    if(fcrEntries.length) {
+      const wSum = fcrEntries.reduce((a,e) => a + e.v * e.count, 0);
+      const hSum = fcrEntries.reduce((a,e) => a + e.count, 0);
+      return hSum > 0 ? (wSum / hSum).toFixed(2) : null;
+    }
+    // ③ 豚舎未設定 or 未出荷 → 農場全体FCR（最近3ヶ月で探索）でフォールバック
+    const farm = pfFarm || (lots.length > 0 ? lots[0].farm : null);
+    if(!farm || farm === 'both') return null;
+    for(let i=0; i<=3; i++) {
+      const d = new Date(); d.setMonth(d.getMonth()-i);
+      const v = calcFarmFcr(farm, d.toISOString().slice(0,7));
+      if(v !== null) return v.toFixed(2) + '*';  // *=農場推計値
+    }
+    return null;
   })();
 
   // 平均導入体重（対象ロットの頭数加重平均）
@@ -6758,6 +6767,13 @@ function renderBarnAccident(lots) {
       <td class="mn">${g.deaths}頭</td>
       <td class="mn"><span class="${rateCls}" style="font-weight:700">${rate !== '-' ? rate + '%' : '-'}</span></td>
       <td class="mn ${avgAdg ? ac(avgAdg) : ''}">${avgAdg ? avgAdg + ' g/日' : '-'}</td>
+      <td class="mn">${(()=>{
+        const fv=g.lots.map(l=>calcLotFcrByBarn(l)||(calcCurrentHead(l)===0?calcLotFcr(l):null)).filter(v=>v>0);
+        if(!fv.length) return '-';
+        const avg=(fv.reduce((a,v)=>a+v,0)/fv.length);
+        const cls=avg<=2.5?'ng':avg<=2.8?'nw':'nb';
+        return '<span class="'+cls+'">'+avg.toFixed(2)+'</span>';
+      })()}</td>
       <td class="mn">${avgDays ? avgDays + '日' : '-'}</td>
     </tr>`;
   });
@@ -6773,6 +6789,7 @@ function renderBarnAccident(lots) {
     <td class="mn">${totalIntros.toLocaleString()}頭</td>
     <td class="mn">${totalDeaths}頭</td>
     <td class="mn"><span class="${totalRateCls}" style="font-weight:700">${totalRate !== '-' ? totalRate + '%' : '-'}</span></td>
+    <td class="mn">-</td>
     <td class="mn">-</td>
     <td class="mn">-</td>
   </tr>`;

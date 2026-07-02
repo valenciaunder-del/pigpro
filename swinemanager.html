@@ -5251,7 +5251,7 @@ function getPfSeason(dateStr) {
 
 // フィルタ条件に合うロットを取得
 function getPfLots() {
-  const farm     = document.getElementById('pf-f-farm')?.value || '';
+  const farm     = document.getElementById('pf-f-farm')?.value || (CF !== 'both' ? CF : '');
   const barn     = document.getElementById('pf-f-barn')?.value || '';
   const source   = document.getElementById('pf-f-source')?.value || '';
   const buyer    = document.getElementById('pf-f-buyer')?.value || '';
@@ -5431,7 +5431,7 @@ function setPfAxis(axis, el) {
 let _spChart = null;
 
 function rShipPlan() {
-  const farm = document.getElementById('pf-f-farm')?.value || 'farm1';
+  const farm = document.getElementById('pf-f-farm')?.value || (CF !== 'both' ? CF : 'farm1');
   const farmObj = FARMS[farm];
   // 歩留はFORECAST_YIELD固定（78kg枝重・65%）または農場設定の主要出荷先から取得
   // 個頭計算では各頭の出荷先ごとに個別歩留を使う（下のoptDaysArr計算内で適用）
@@ -6053,7 +6053,7 @@ function rShipMonthly() {
   const [yr, mo] = selVal.split('-').map(Number);
   const DAY_NAMES = ['日','月','火','水','木','金','土'];
 
-  const farmFilter = document.getElementById('pf-f-farm')?.value || 'farm1';
+  const farmFilter = document.getElementById('pf-f-farm')?.value || (CF !== 'both' ? CF : 'farm1');
 
   const activeLots = DATA.lots.filter(l => {
     if(farmFilter !== 'all' && l.farm !== farmFilter) return false;
@@ -6393,6 +6393,7 @@ function renderMonthlySummary() {
 
 function rPerfFull() {
   if(PF_GRAPH_TYPE === 'monthly-summary') { renderMonthlySummary(); return; }
+  if(PF_GRAPH_TYPE === 'shipplan') { rShipPlan(); return; }
   const lots = getPfLots();
 
   // フィルタセレクトの選択肢を更新
@@ -6419,7 +6420,7 @@ function rPerfFull() {
 
   // KPIカード
   // 期間フィルター値（全KPIを仕切書・事故・導入の発生日ベースで集計 = FileMaker月次サマリーと同じ方式）
-  const pfFarm    = document.getElementById('pf-f-farm')?.value    || '';
+  const pfFarm    = document.getElementById('pf-f-farm')?.value    || (CF !== 'both' ? CF : '');
   const pfOutFrom = document.getElementById('pf-f-out-from')?.value || '';
   const pfOutTo   = document.getElementById('pf-f-out-to')?.value   || '';
 

@@ -3823,8 +3823,10 @@ function calcLotProdCost(lot) {
 
   // ④ 飼料単価（加重平均：子豚用 + 肉豚用）
   // 導入日基準の四半期単価を使用
-  const pigletPrice   = getFeedPrice(farm, lot.start_date || new Date().toISOString().slice(0,10), 'piglet')   || 0;
-  const finisherPrice = getFeedPrice(farm, lot.start_date || new Date().toISOString().slice(0,10), 'finisher') || 0;
+  const baseDate = lot.start_date || new Date().toISOString().slice(0,10);
+  // feed_price_masterのfeed_typeは日本語（'子豚用'/'肥育用'）
+  const pigletPrice   = getFeedPrice(farm, baseDate, '子豚用')   || 0;
+  const finisherPrice = getFeedPrice(farm, baseDate, '肥育用') || 0;
 
   // 飼料使用比率（飼料タンクデータから、なければ経験則40:60）
   let pigletRatio = 0.4;

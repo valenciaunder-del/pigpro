@@ -1083,6 +1083,15 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <!-- KPIカード -->
   <div class="kgrid mb18" id="pf-kpi"></div>
 
+  <!-- 性別別ADG -->
+  <div class="card mb18" id="pf-sex-adg-card" style="display:none">
+    <div class="ch"><span class="ct">♂♀ 性別別 ADG・枝重</span><span id="pf-sex-adg-note" style="font-size:11px;color:var(--muted);margin-left:auto"></span></div>
+    <div class="tw"><table>
+      <thead><tr><th>性別</th><th>頭数</th><th>平均ADG</th><th>平均枝重</th><th>平均背脂肪</th></tr></thead>
+      <tbody id="pf-sex-adg-tb"></tbody>
+    </table></div>
+  </div>
+
   <!-- 豚舎別事故率 -->
   <div class="card mb18" id="pf-barn-accident-card">
     <div class="ch" style="flex-wrap:wrap;gap:8px">
@@ -6595,6 +6604,78 @@ function setPfAccAxis(axis, el) {
   _pfAccAxis = axis;
   document.querySelectorAll('.pf-acc-axis-btn').forEach(b=>b.classList.remove('active'));
   if(el) el.classList.add('active');
+  // ── 性別別ADG（頭別明細から計算）─────────────────────────────
+  (() => {
+    const card = document.getElementById('pf-sex-adg-card');
+    if(!card) return;
+    if(!periodDetails.length) { card.style.display='none'; return; }
+
+    // 頭別明細からADGを計算
+    // sheet → shipping_records → lot の連鎖でstart_date/start_weightを取得
+    const sheetMap = {};
+    DATA.slaughter.forEach(s=>{ sheetMap[s.id]=s; });
+    // sheet_idごとのロット情報を事前構築
+    const sheetLotMap = {};
+    DATA.ships.forEach(s=>{
+      if(!s.sheet_id||!s.lot_id) return;
+      if(!sheetLotMap[s.sheet_id]) sheetLotMap[s.sheet_id]=[];
+      sheetLotMap[s.sheet_id].push(s.lot_id);
+    });
+    const lotMap = {};
+    DATA.lots.forEach(l=>{ lotMap[l.id]=l; });
+
+    const sexGroups = {};
+    periodDetails.forEach(d => {
+      if(!d.carcass_weight || !d.sex) return;
+      const sex = normSex(d.sex)||d.sex;
+      if(!sexGroups[sex]) sexGroups[sex] = { adgs:[], cws:[], bfs:[] };
+
+      // ADG計算：枝重→生体重→ADG
+      const sheet = sheetMap[d.sheet_id];
+      const yield_ = sheet ? getYieldRate(sheet.farm, sheet.slaughterhouse)/100 : 0.65;
+      const lw = d.carcass_weight / yield_;
+      // ロットの導入情報を取得
+      const lotIds2 = sheetLotMap[d.sheet_id] || [];
+      const lotsArr = lotIds2.map(id=>lotMap[id]).filter(Boolean);
+      if(lotsArr.length && d.shipped_at) {
+        const avgStart = lotsArr.reduce((a,l)=>a+(l.start_weight||30),0)/lotsArr.length;
+        const avgDate  = lotsArr.reduce((a,l)=>a+new Date(l.start_date||d.shipped_at).getTime(),0)/lotsArr.length;
+        const days = (new Date(d.shipped_at)-new Date(avgDate))/86400000;
+        if(days>0 && lw>avgStart) {
+          const adg = (lw-avgStart)/days*1000;
+          if(adg>0 && adg<2000) sexGroups[sex].adgs.push(adg);
+        }
+      }
+      sexGroups[sex].cws.push(d.carcass_weight);
+      if(d.backfat>0) sexGroups[sex].bfs.push(d.backfat);
+    });
+
+    const sexOrder = ['去勢','メス','雄'];
+    const rows = sexOrder.filter(s=>sexGroups[s]).map(sex => {
+      const g = sexGroups[sex];
+      const n = g.cws.length;
+      const avgAdg = g.adgs.length ? Math.round(g.adgs.reduce((a,v)=>a+v,0)/g.adgs.length) : null;
+      const avgCw  = n ? (g.cws.reduce((a,v)=>a+v,0)/n).toFixed(1) : '-';
+      const avgBf  = g.bfs.length ? (g.bfs.reduce((a,v)=>a+v,0)/g.bfs.length).toFixed(1) : '-';
+      const adgCls = avgAdg?(avgAdg>=750?'ng':avgAdg>=650?'nw':'nb'):'';
+      return `<tr>
+        <td style="font-weight:600">${sex}</td>
+        <td class="mn">${n}頭</td>
+        <td class="mn ${adgCls}">${avgAdg?avgAdg+' g/日':'-'}</td>
+        <td class="mn">${avgCw} kg</td>
+        <td class="mn">${avgBf} cm</td>
+      </tr>`;
+    });
+
+    if(rows.length) {
+      document.getElementById('pf-sex-adg-tb').innerHTML = rows.join('');
+      document.getElementById('pf-sex-adg-note').textContent = `${periodDetails.length}頭の明細データから集計`;
+      card.style.display='';
+    } else {
+      card.style.display='none';
+    }
+  })();
+
   document.getElementById('pf-acc-title').textContent = axis==='barn' ? '🏠 豚舎別 事故率' : '📦 導入元別 事故率';
   document.getElementById('pf-acc-col2').textContent = axis==='barn' ? '豚舎' : '導入元';
   if(window._pfAccLots) renderBarnAccident(window._pfAccLots);

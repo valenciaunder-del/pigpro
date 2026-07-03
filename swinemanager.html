@@ -5394,7 +5394,7 @@ function getPfSeason(dateStr) {
 
 // フィルタ条件に合うロットを取得
 function getPfLots() {
-  const farm     = document.getElementById('pf-f-farm')?.value || (CF !== 'both' ? CF : '');
+  const farm     = CF !== 'both' ? CF : (document.getElementById('pf-f-farm')?.value || '');
   const barn     = document.getElementById('pf-f-barn')?.value || '';
   const source   = document.getElementById('pf-f-source')?.value || '';
   const buyer    = document.getElementById('pf-f-buyer')?.value || '';
@@ -5574,7 +5574,7 @@ function setPfAxis(axis, el) {
 let _spChart = null;
 
 function rShipPlan() {
-  const farm = document.getElementById('pf-f-farm')?.value || (CF !== 'both' ? CF : 'farm1');
+  const farm = CF !== 'both' ? CF : (document.getElementById('pf-f-farm')?.value || 'farm1');
   const farmObj = FARMS[farm];
   // 歩留はFORECAST_YIELD固定（78kg枝重・65%）または農場設定の主要出荷先から取得
   // 個頭計算では各頭の出荷先ごとに個別歩留を使う（下のoptDaysArr計算内で適用）
@@ -6196,7 +6196,7 @@ function rShipMonthly() {
   const [yr, mo] = selVal.split('-').map(Number);
   const DAY_NAMES = ['日','月','火','水','木','金','土'];
 
-  const farmFilter = document.getElementById('pf-f-farm')?.value || (CF !== 'both' ? CF : 'farm1');
+  const farmFilter = CF !== 'both' ? CF : (document.getElementById('pf-f-farm')?.value || 'farm1');
 
   const activeLots = DATA.lots.filter(l => {
     if(farmFilter !== 'all' && l.farm !== farmFilter) return false;
@@ -6596,7 +6596,7 @@ function rPerfFull() {
   const deathRate = periodIntroHead > 0 ? (deathSum/periodIntroHead*100).toFixed(1) : null;
 
   // estStartHead（在場頭数推計）は従来通り
-  const pfFarm    = document.getElementById('pf-f-farm')?.value || (CF !== 'both' ? CF : '');
+  const pfFarm    = CF !== 'both' ? CF : (document.getElementById('pf-f-farm')?.value || '');
   const pfOutFrom = document.getElementById('pf-f-out-from')?.value || '';
   const pfOutTo   = document.getElementById('pf-f-out-to')?.value   || '';
   const estStartHead = (() => {

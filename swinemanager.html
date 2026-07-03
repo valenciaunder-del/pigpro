@@ -5410,11 +5410,13 @@ function getPfLots() {
     if(inFrom && (l.start_date||'') < inFrom) return false;
     if(inTo   && (l.start_date||'') > inTo)   return false;
     if(outFrom || outTo) {
-      const ships = DATA.ships.filter(s=>s.lot_id===l.id);
-      if(!ships.length) return false;
-      const lastShip = ships.map(s=>s.shipped_at).sort().pop();
-      if(outFrom && lastShip < outFrom) return false;
-      if(outTo   && lastShip > outTo)   return false;
+      // 期間内に1回でも出荷があるロットを対象にする
+      const hasShipInPeriod = DATA.ships.some(s =>
+        s.lot_id === l.id && s.shipped_at &&
+        (!outFrom || s.shipped_at >= outFrom) &&
+        (!outTo   || s.shipped_at <= outTo)
+      );
+      if(!hasShipInPeriod) return false;
     }
     if(buyer) {
       const hasShip = DATA.ships.some(s=>s.lot_id===l.id && DATA.slaughter.some(ss=>ss.farm===l.farm && ss.shipped_at===s.shipped_at && ss.buyer===buyer));
@@ -6566,31 +6568,41 @@ function rPerfFull() {
   // → 農場・豚舎・導入元・販売先・日付の全フィルターが一貫して反映される
   const lotIds = new Set(lots.map(l=>l.id));
 
-  // 対象ロットに紐づく仕切書（出荷記録のsheet_idベース）
-  const lotShipRecords = DATA.ships.filter(s=>lotIds.has(s.lot_id));
+  // 期間フィルター（出荷日）
+  const _outFrom = document.getElementById('pf-f-out-from')?.value || '';
+  const _outTo   = document.getElementById('pf-f-out-to')?.value   || '';
+  const inPeriod = dt => dt && (!_outFrom || dt >= _outFrom) && (!_outTo || dt <= _outTo);
+
+  // 対象ロットの出荷記録のうち期間内のもの（イベント単位で集計）
+  const lotShipRecords = DATA.ships.filter(s => lotIds.has(s.lot_id) &&
+    (!(_outFrom||_outTo) || inPeriod(s.shipped_at)));
   const lotSheetIds = new Set(lotShipRecords.map(s=>s.sheet_id).filter(Boolean));
-  const periodSheets = DATA.slaughter.filter(s => lotSheetIds.has(s.id) ||
-    // sheet_idなし旧データ：farm+shipped_atで照合
+  // 期間内の仕切書（sheet_id照合、旧データはfarm+shipped_at照合）
+  const periodSheets = DATA.slaughter.filter(s =>
+    lotSheetIds.has(s.id) ||
     (!lotSheetIds.size && lotShipRecords.some(r=>!r.sheet_id && r.farm===s.farm && r.shipped_at===s.shipped_at))
   );
   const periodSheetIds = new Set(periodSheets.map(s=>s.id));
   const periodShipFarmDates = new Set(periodSheets.map(s=>`${s.farm}|${s.shipped_at}`));
 
-  // 頭別明細（対象ロットに紐づく仕切書のもの）
+  // 頭別明細（期間内の仕切書のもの）
   const periodDetails = DATA.slaughterDetail.filter(d => {
     if(d.sheet_id) return periodSheetIds.has(d.sheet_id);
     return periodShipFarmDates.has(`${d.farm}|${d.shipped_at}`);
   });
 
-  // 月間出荷頭数（対象ロットの仕切書ベース）
-  const totalShipped = periodSheets.reduce((a,s)=>a+(s.head_count||0),0);
+  // 月間出荷頭数（期間内の出荷記録 count 合計）
+  const totalShipped = lotShipRecords.reduce((a,s)=>a+(s.count||0),0);
 
-  // 月間事故頭数（対象ロットの事故記録）
-  const periodDeaths = DATA.deaths.filter(d=>lotIds.has(d.lot_id));
+  // 月間事故頭数（対象ロットの事故のうち発生日が期間内）
+  const periodDeaths = DATA.deaths.filter(d => lotIds.has(d.lot_id) &&
+    (!(_outFrom||_outTo) || inPeriod((d.occurred_at||'').substring(0,10))));
   const deathSum = calcAccidentOnly(periodDeaths);
 
-  // 月間導入頭数（対象ロットの導入頭数合計）
-  const periodIntroHead = lots.reduce((a,l)=>a+(l.count||0),0);
+  // 月間導入頭数（期間指定時：その期間に導入されたロットのみ／未指定時：全対象ロット）
+  const periodIntroHead = lots
+    .filter(l => !(_outFrom||_outTo) || inPeriod(l.start_date||''))
+    .reduce((a,l)=>a+(l.count||0),0);
 
   // 事故率（導入頭数ベース）
   const deathRate = periodIntroHead > 0 ? (deathSum/periodIntroHead*100).toFixed(1) : null;

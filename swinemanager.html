@@ -260,7 +260,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <div class="nv" onclick="gp('feed-master',this)"><span class="ic">💹</span><span>飼料単価設定</span></div>
   <div class="nv" onclick="gp('feed-purchase',this)"><span class="ic">🌾</span><span>飼料購入記録</span></div>
   <div class="nv" onclick="gp('feed-tank',this)"><span class="ic">🛢️</span><span>飼料タンク管理</span></div>
-  <div class="nv" onclick="gp('inventory-import',this)"><span class="ic">📋</span><span>棚卸データ取込</span></div>
+  <div class="nv" onclick="gp('inventory-import',this)" style="display:none"><span class="ic">📋</span><span>棚卸データ取込</span></div>
   <div class="sb-sec">レポート</div>
   <div class="nv" onclick="gp('report',this)"><span class="ic">📋</span><span>月次レポート</span></div>
   <div class="nv" onclick="gp('mf-import',this)"><span class="ic">📥</span><span>MF取込</span></div>
@@ -10134,29 +10134,24 @@ function rDaily() {
   document.getElementById('daily-title').textContent = `${mon} 日次集計表`;
   document.getElementById('daily-badge').textContent = farmLabel;
 
-  // 棚卸データの有無を確認
-  const invRows = DATA.invDaily.filter(r =>
-    (farm==='both'||r.farm===farm) && r.date.startsWith(mon)
-  );
-  const hasInvData = invRows.length > 0;
-
-  // データソース表示バッジ
-  const srcBadge = hasInvData
-    ? `<span class="bdg g" style="margin-left:8px;font-size:10px">📋 棚卸データ使用</span>`
-    : `<span class="bdg gr" style="margin-left:8px;font-size:10px">各種記録から集計</span>`;
+  // 常に各種記録（仕切書・事故・ロット登録）からリアルタイム集計
+  const invRows = [];  // 棚卸取込データは使用しない
+  const hasInvData = false;
+  const srcBadge = `<span class="bdg gr" style="margin-left:8px;font-size:10px">仕切書・事故・ロット登録から自動集計</span>`;
   document.getElementById('daily-badge').innerHTML = farmLabel + srcBadge;
 
   let cumPnL = 0;
   const rows = [];
   let monthTotals = { inHead:0, outHead:0, deathHead:0, feedCost:0, shipSales:0, pnl:0, grossProfit:0 };
 
-  // 月初在場頭数（棚卸データがある場合は前日の在庫頭数を使用）
-  const prevDateStr = `${mon.slice(0,4)}-${String(m).padStart(2,'0')}-00`;
-  const prevInv = DATA.invDaily
-    .filter(r=>(farm==='both'||r.farm===farm)&&r.date<mon+'-01'&&r.stock_head)
-    .sort((a,b)=>b.date.localeCompare(a.date))[0];
-  let runningHeads = prevInv?.stock_head ||
-    DATA.lots.filter(l=>(farm==='both'||l.farm===farm)&&l.start_date&&l.start_date<mon+'-01').reduce((a,l)=>a+l.count,0);
+  // 月初在場頭数：ロット登録から計算（導入 − 月初までの出荷 − 事故）
+  let runningHeads = (() => {
+    const cutoff = mon + '-01';
+    const intro = DATA.lots.filter(l=>(farm==='both'||l.farm===farm)&&l.start_date&&l.start_date<cutoff).reduce((a,l)=>a+(l.count||0),0);
+    const shipped = DATA.ships.filter(s=>(farm==='both'||s.farm===farm)&&s.shipped_at&&s.shipped_at<cutoff).reduce((a,s)=>a+(s.count||0),0);
+    const dead = calcAccidentOnly(DATA.deaths.filter(x=>(farm==='both'||x.farm===farm)&&(x.occurred_at||'').substring(0,10)<cutoff));
+    return Math.max(0, intro - shipped - dead);
+  })();
 
   for(let d=1; d<=daysInMonth; d++) {
     const dateStr = `${mon}-${String(d).padStart(2,'0')}`;
@@ -10210,7 +10205,6 @@ function rDaily() {
     rows.push(`<tr style="${!hasData&&!inv?'opacity:.35':''}" id="daily-row-${dateStr}">
       <td class="mn" style="color:${inv?'var(--text)':'var(--muted2)'};padding:6px 10px">
         ${d}日
-        <button onclick="editDailyRow('${dateStr}','${farm}')" style="margin-left:4px;font-size:10px;padding:1px 5px;background:var(--panel2);border:1px solid var(--border);border-radius:3px;color:var(--muted2);cursor:pointer">✏️</button>
       </td>
       <td class="tr3 mn">${stockHead.toLocaleString()}</td>
       <td class="tr3 mn ${inHead?'ng':''}">${inHead||'-'}</td>

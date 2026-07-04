@@ -4053,15 +4053,78 @@ function calcRecentAdg(farm) {
 }
 
 // 在場頭数計算（導入頭数 - 出荷頭数 - 事故頭数）
-function calcCurrentHead(lot) {
+// 指定日時点でのロット在場頭数（dateStr省略時は現在時点）
+// 導入頭数 − その日までの出荷頭数 − その日までの事故頭数（未確定＝棚卸自動登録分は除く）
+function calcLotHeadAsOf(lot, dateStr) {
+  if(dateStr && lot.start_date && lot.start_date > dateStr) return 0; // まだ導入前
   const shipped = DATA.ships
-    .filter(s=>s.lot_id===lot.id)
+    .filter(s=>s.lot_id===lot.id && (!dateStr || (s.shipped_at && s.shipped_at<=dateStr)))
     .reduce((a,s)=>a+(s.count||0), 0);
   // 廃棄（出荷後）は出荷頭数に含まれるためカウントしない
-  const dead = DATA.deaths
-    .filter(d=>d.lot_id===lot.id && d.category !== '廃棄（出荷後）')
-    .reduce((a,d)=>a+(d.count||0), 0);
+  const dead = calcAccidentOnly(
+    DATA.deaths.filter(d=>d.lot_id===lot.id && (!dateStr || (d.occurred_at && d.occurred_at<=dateStr)))
+  );
   return Math.max(0, (lot.count||0) - shipped - dead);
+}
+
+function calcCurrentHead(lot) {
+  return calcLotHeadAsOf(lot, null);
+}
+
+// ── 棚卸データ自動生成（inventory_daily自動同期）──────────────────
+// ロット登録・出荷確定（仕切書）・事故登録のたびに、当該日〜今日までの
+// inventory_dailyを実績データ（ロット×出荷×事故×飼料購入）から再計算し、Supabaseへupsertする
+function recalcInvDailyRange(farm, fromDateStr, toDateStr) {
+  const lots = DATA.lots.filter(l=>l.farm===farm);
+  const rows = [];
+  let d = new Date(fromDateStr + 'T00:00:00');
+  const end = new Date(toDateStr + 'T00:00:00');
+  if(isNaN(d) || isNaN(end)) return rows;
+  while(d <= end) {
+    const dateStr = d.toISOString().slice(0,10);
+    const stockHead = lots.reduce((a,l)=>a+calcLotHeadAsOf(l, dateStr), 0);
+    const inHead = lots.filter(l=>l.start_date===dateStr).reduce((a,l)=>a+(l.count||0),0);
+    const dayShips = DATA.ships.filter(s=>s.farm===farm && s.shipped_at===dateStr);
+    const outHead = dayShips.reduce((a,s)=>a+(s.count||0),0);
+    const carcassAmount = dayShips.reduce((a,s)=>a+Math.round((s.carcass_weight||0)*(s.unit_price||0)*(s.count||0)),0);
+    const accidentHead = calcAccidentOnly(DATA.deaths.filter(x=>x.farm===farm && x.occurred_at===dateStr));
+    const feedAmount = getFeedPurchaseCostByDate(farm, dateStr) ||
+      DATA.feeds.filter(f=>f.farm===farm && f.fed_at===dateStr).reduce((a,f)=>a+(f.amount_kg||0)*(f.unit_price||0),0);
+    rows.push({
+      farm, date: dateStr,
+      stock_head: stockHead,
+      in_head: inHead,
+      out_head: outHead,
+      accident_head: accidentHead,
+      feed_amount: Math.round(feedAmount)||0,
+      carcass_amount: carcassAmount,
+      gross_profit: carcassAmount - (Math.round(feedAmount)||0),
+    });
+    d.setDate(d.getDate()+1);
+  }
+  return rows;
+}
+
+async function syncInvDaily(farm, fromDateStr) {
+  try {
+    if(!farm || farm==='both' || !fromDateStr) return;
+    const todayStr = new Date().toISOString().slice(0,10);
+    const from = fromDateStr < todayStr ? fromDateStr : todayStr;
+    // 一度に同期する期間は安全のため最大400日に制限（古い日付の遡及登録対策）
+    const fromDate = new Date(from + 'T00:00:00');
+    const todayDate = new Date(todayStr + 'T00:00:00');
+    const dayDiff = Math.round((todayDate - fromDate) / 86400000);
+    const cappedFrom = dayDiff > 400
+      ? new Date(todayDate.getTime() - 400*86400000).toISOString().slice(0,10)
+      : from;
+    const rows = recalcInvDailyRange(farm, cappedFrom, todayStr);
+    if(rows.length) {
+      await api.upsertInvDaily(rows);
+      DATA.invDaily = await api.getInvDaily();
+    }
+  } catch(e) {
+    console.error('inv_daily自動同期エラー:', e);
+  }
 }
 
 // 出荷時平均日齢（頭数加重平均）
@@ -8795,6 +8858,7 @@ async function addLot() {
   try {
     await api.insertLot(data);
     DATA.lots = await api.getLots();
+    syncInvDaily(data.farm, data.start_date);
     notif(`ロット ${id} を登録しました`); refreshShipPlanIfActive();
     rLotFull(); fillSelects(); updateSBInfo();
     genLotId(); // DATA.lots更新後に次のロット番号を再生成（連番対応）
@@ -8993,6 +9057,7 @@ async function addDeath() {
 
     const [deaths, lots, ival] = await Promise.all([api.getDeaths(), api.getLots(), api.getIval()]);
     DATA.deaths = deaths; DATA.lots = lots; DATA.ival = ival;
+    syncInvDaily(data.farm, data.occurred_at);
     // リセット
     document.getElementById('acc-final').dataset.userEdited = '';
     rDthTb(); updateSBInfo(); notif('死亡・廃用記録を登録しました'); refreshShipPlanIfActive();
@@ -13027,6 +13092,7 @@ async function saveSlaughter() {
     DATA.sales = await api.getSales();
     DATA.slaughterDetail = await api.getSlaughterDetail();
     if(registerDiscard) DATA.deaths = await api.getDeaths();
+    syncInvDaily(s.farm, s.shipped_at);
 
     // ロット別ADG・現体重を出荷データから逆算して更新
     if(SL_DATA.lotBreakdown?.length > 0) {

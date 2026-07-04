@@ -3017,6 +3017,37 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 </div>
 
 <script>
+function calcMonthlyUsage(feedTankData, farm, monthStr) {
+  const mon = monthStr;
+  const tankRows = feedTankData.filter(r=>
+    r.farm===farm && r.date && r.date.startsWith(mon)
+  );
+  
+  let pigletFeedT = 0;
+  let finisherFeedT = 0;
+  
+  for(const ft of ['piglet', 'finisher']) {
+    const ftRows = tankRows.filter(r => r.feed_type === ft);
+    const tankNames = [...new Set(ftRows.map(r=>r.tank_name).filter(Boolean))];
+
+    for(const tn of tankNames) {
+      const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+      if(!rows.length) continue;
+      const opening = rows[0].tank_remaining||0;
+      const closing = rows[rows.length-1].tank_remaining||0;  
+      const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const usage = opening + delivery - closing;
+      
+      if(ft === 'piglet' && usage > 0) pigletFeedT += usage;
+      if(ft === 'finisher' && usage > 0) finisherFeedT += usage;
+    }
+  }
+
+  return {
+    piglet: Math.round(pigletFeedT*100)/100, 
+    finisher: Math.round(finisherFeedT*100)/100
+  };
+}
 // ══════════════════════════════════════════════
 // SUPABASE CONFIG & AUTH
 // ══════════════════════════════════════════════
@@ -15824,11 +15855,16 @@ function rFeedTank() {
 
   // ─── 月次履歴タブ ───────────────────────────────
   const byMonth = {};
-  DATA.feedTank.filter(r=>r.farm===farm).forEach(r=>{
-    const m=r.date.slice(0,7);
-    if(!byMonth[m]) byMonth[m]={month:m,farm,piglet:0,finisher:0};
-    if(r.feed_type==='piglet') byMonth[m].piglet+=r.daily_usage||0;
-    if(r.feed_type==='finisher') byMonth[m].finisher+=r.daily_usage||0;
+  // 月次集計を期首期末方式に変更
+  const allMonths = [...new Set(DATA.feedTank.map(r=>r.date.slice(0,7)))].sort();
+  allMonths.forEach(mon => {
+    const usage = calcMonthlyUsage(DATA.feedTank, farm, mon);
+    byMonth[mon] = {
+      month: mon,
+      farm,
+      piglet: usage.piglet,
+      finisher: usage.finisher
+    };  
   });
   const sortedMonths = Object.values(byMonth).sort((a,b)=>b.month.localeCompare(a.month));
 

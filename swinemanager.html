@@ -3982,7 +3982,7 @@ function calcFarmFcr(farm, monthStr) {
   const recentLots = DATA.lots.filter(l => l.farm === farm && l.start_date >= cutoffDate);
   let weightedAdg = 0, totalHead = 0;
   recentLots.forEach(l => {
-    const adg = calcLotAdg(l, true);
+    const adg = calcLotAdg(l);
     if(!adg) return;
     const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.live_weight>0);
     const head = ships.reduce((a,s)=>a+s.count, 0);
@@ -5195,7 +5195,7 @@ function rDashFcr() {
     const cutoff = f==='farm2'?'2026-02-13':'2020-01-01';
     const lots = DATA.lots.filter(l=>l.farm===f&&l.start_date>=cutoff);
     let wA=0,tH=0;
-    lots.forEach(l=>{const adg=calcLotAdg(l,true);if(!adg)return;const sh=DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);const h=sh.reduce((a,s)=>a+s.count,0);if(h>0){wA+=adg*h;tH+=h;}});
+    lots.forEach(l=>{const adg=calcLotAdg(l);if(!adg)return;const sh=DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);const h=sh.reduce((a,s)=>a+s.count,0);if(h>0){wA+=adg*h;tH+=h;}});
     farmAdg[f] = tH>0 ? wA/tH : FARMS[f]?.adgT||750;
   });
 
@@ -5408,7 +5408,7 @@ function rPfCmp() {
     // ADG：出荷頭数加重平均（shipping_records.live_weightベース）
     let adgWsum = 0, adgHsum = 0;
     g.lots.forEach(l => {
-      const adg = calcLotAdg(l, true);
+      const adg = calcLotAdg(l);
       if(!adg) return;
       const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.live_weight>0);
       const head = ships.reduce((a,s)=>a+s.count, 0);
@@ -6739,7 +6739,7 @@ function rPerfFull() {
   // ロットベースKPI（ADG・FCR・肥育日数・導入体重はロット単位で計算）
   let adgWsum=0, adgHsum=0;
   lots.forEach(l=>{
-    const adg = calcLotAdg(l,true);
+    const adg = calcLotAdg(l);
     if(!adg) return;
     const sh = DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);
     const h = sh.reduce((a,s)=>a+s.count,0);
@@ -7018,7 +7018,7 @@ function renderBarnAccident(lots) {
     g.lots.push(l);
     g.intros += l.count || 0;
     g.deaths += calcAccidentOnly(DATA.deaths.filter(d => d.lot_id === l.id && d.confirmed !== false));
-    const adg = calcLotAdg(l, true);
+    const adg = calcLotAdg(l);
     if(adg) {
       const sh = DATA.ships.filter(s => s.lot_id === l.id && s.live_weight > 0);
       const h = sh.reduce((a, s) => a + s.count, 0);
@@ -7105,7 +7105,7 @@ function renderPfChart(lots) {
 
   if(PF_GRAPH_TYPE === 'adg-dist') {
     // ADGヒストグラム
-    const adgVals = lots.map(l=>calcLotAdg(l,true)).filter(v=>v>0);
+    const adgVals = lots.map(l=>calcLotAdg(l)).filter(v=>v>0);
     if(!adgVals.length) { canvas.style.display='none'; emptyEl.style.display=''; return; }
     canvas.style.display=''; emptyEl.style.display='none';
     const min=Math.min(...adgVals), max=Math.max(...adgVals);
@@ -7263,7 +7263,7 @@ function renderPfChart(lots) {
       const k=getGroupKey(l);
       if(!groups[k]) groups[k]={lots:[],adgWs:0,adgHs:0,deaths:0,intros:0};
       groups[k].lots.push(l);
-      const adg=calcLotAdg(l,true);
+      const adg=calcLotAdg(l);
       if(adg){const sh=DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);const h=sh.reduce((a,s)=>a+s.count,0);if(h>0){groups[k].adgWs+=adg*h;groups[k].adgHs+=h;}}
       groups[k].deaths+=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id&&d.confirmed!==false&&d.cause!=='棚卸データより自動登録'));
       groups[k].intros+=l.count||0;
@@ -15798,7 +15798,7 @@ function rFeedTank() {
   const recentLots = DATA.lots.filter(l=>l.farm===farm && l.start_date>=cutoffDate);
   let wAdg=0, tHead=0;
   recentLots.forEach(l=>{
-    const adg=calcLotAdg(l,true); if(!adg) return;
+    const adg=calcLotAdg(l); if(!adg) return;
     const ships=DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);
     const h=ships.reduce((a,s)=>a+s.count,0);
     if(h>0){wAdg+=adg*h;tHead+=h;}
@@ -16056,7 +16056,7 @@ function rFeedTank() {
     const cutoffDate = farm==='farm2'?'2026-02-13':'2020-01-01';
     const rLots = DATA.lots.filter(l=>l.farm===farm&&l.start_date>=cutoffDate);
     let wA=0,tH=0;
-    rLots.forEach(l=>{const adg=calcLotAdg(l,true);if(!adg)return;const sh=DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);const h=sh.reduce((a,s)=>a+s.count,0);if(h>0){wA+=adg*h;tH+=h;}});
+    rLots.forEach(l=>{const adg=calcLotAdg(l);if(!adg)return;const sh=DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);const h=sh.reduce((a,s)=>a+s.count,0);if(h>0){wA+=adg*h;tH+=h;}});
     const farmAdg = tH>0 ? wA/tH : FARMS[farm]?.adgT||750;
 
     // タンク×豚舎の紐付け（FARMS設定から）

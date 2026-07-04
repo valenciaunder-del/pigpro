@@ -15789,11 +15789,11 @@ function rFeedTank() {
   const fcrResult = calcFarmFcr(farm, mon);
   const fcr = fcrResult !== null ? fcrResult.toFixed(2) : '-';
 
-  // FCR詳細計算用変数
-  const invRows = DATA.invDaily.filter(r=>r.farm===farm && r.date && r.date.startsWith(mon));
-  const headDays = invRows.reduce((a,r)=>a+(r.stock_head||0), 0);
-  const daysInMon = invRows.length || 1;
-  const avgHeads = Math.round(headDays / daysInMon);
+  // FCR詳細計算用変数（月次履歴・FCR本体の計算方式と統一：inv_dailyがなければロット推定にフォールバック）
+  const headDays = estimateHeadDaysForMonth(farm, mon);
+  const [_hdY, _hdM] = mon.split('-').map(Number);
+  const daysInMon = new Date(_hdY, _hdM, 0).getDate();
+  const avgHeads = daysInMon>0 ? Math.round(headDays / daysInMon) : 0;
   const cutoffDate = farm==='farm2' ? '2026-02-13' : '2020-01-01';
   const recentLots = DATA.lots.filter(l=>l.farm===farm && l.start_date>=cutoffDate);
   let wAdg=0, tHead=0;

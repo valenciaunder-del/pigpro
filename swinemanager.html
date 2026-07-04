@@ -6695,13 +6695,27 @@ function rPerfFull() {
   // 月間出荷頭数（期間内の出荷記録 count 合計）
   const totalShipped = lotShipRecords.reduce((a,s)=>a+(s.count||0),0);
 
+  // 月間事故頭数・月間導入頭数用：出荷実績の有無に関係なく、
+  // 農場・豚舎・導入元の条件だけで対象ロットを決める
+  // （出荷日で絞った lots だと「その月に導入されたがまだ出荷していないロット」の
+  //   事故・導入がまるごと漏れるため、出荷実績を要件にしない）
+  const _farmVal   = CF !== 'both' ? CF : (document.getElementById('pf-f-farm')?.value || '');
+  const _barnVal   = document.getElementById('pf-f-barn')?.value || '';
+  const _sourceVal = document.getElementById('pf-f-source')?.value || '';
+  const cohortLots = DATA.lots.filter(l =>
+    (!_farmVal   || l.farm===_farmVal) &&
+    (!_barnVal   || l.barn===_barnVal) &&
+    (!_sourceVal || l.source===_sourceVal)
+  );
+  const cohortLotIds = new Set(cohortLots.map(l=>l.id));
+
   // 月間事故頭数（対象ロットの事故のうち発生日が期間内）
-  const periodDeaths = DATA.deaths.filter(d => lotIds.has(d.lot_id) &&
+  const periodDeaths = DATA.deaths.filter(d => cohortLotIds.has(d.lot_id) &&
     (!(_outFrom||_outTo) || inPeriod((d.occurred_at||'').substring(0,10))));
   const deathSum = calcAccidentOnly(periodDeaths);
 
   // 月間導入頭数（期間指定時：その期間に導入されたロットのみ／未指定時：全対象ロット）
-  const periodIntroHead = lots
+  const periodIntroHead = cohortLots
     .filter(l => !(_outFrom||_outTo) || inPeriod(l.start_date||''))
     .reduce((a,l)=>a+(l.count||0),0);
 

@@ -6828,6 +6828,19 @@ function rPerfFull() {
     });
     return kgSum > 0 ? Math.round(amtSum / kgSum) : null;
   })();
+  // 手取単価（税抜）＝枝肉金額(税抜) − 控除小計(税抜・deduction_subtotal) を重量で加重平均
+  const avgNetUnitPrice = (() => {
+    let amtSum = 0, kgSum = 0;
+    periodSheets.forEach(s => {
+      if(!s.total_carcass_kg) return;
+      const carcassEx = calcCarcassAmountEx(s);
+      if(!carcassEx) return;
+      const net = carcassEx - (s.deduction_subtotal||0);
+      amtSum += net;
+      kgSum  += s.total_carcass_kg;
+    });
+    return kgSum > 0 ? Math.round(amtSum / kgSum) : null;
+  })();
 
   document.getElementById('pf-kpi').innerHTML = `
     <div class="kcard g" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間導入頭数</div><div class="kv">${periodIntroHead||'-'}<span class="ku">頭</span></div></div>
@@ -6839,6 +6852,7 @@ function rPerfFull() {
     <div class="kcard o"><div class="kl">枝肉達成率</div><div class="kv">${cwAch!==null?cwAch+' %':'-'}</div></div>
     <div class="kcard g"><div class="kl">建値（税抜）</div><div class="kv">${avgMarketPrice?'¥'+avgMarketPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard c"><div class="kl">枝肉単価（税抜）</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
+    <div class="kcard o"><div class="kl">手取単価（税抜）</div><div class="kv">${avgNetUnitPrice?'¥'+avgNetUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard g"><div class="kl">平均ADG</div><div class="kv ${avgAdg?ac(avgAdg):''}">${avgAdg||'-'}<span class="ku">g/日</span></div></div>
     <div class="kcard c"><div class="kl">平均FCR</div><div class="kv ${avgFcr?fc(parseFloat(avgFcr)):''}">${avgFcr||'-'}</div></div>
     <div class="kcard o"><div class="kl">平均肥育日数</div><div class="kv">${avgDays||'-'}<span class="ku">日</span></div></div>

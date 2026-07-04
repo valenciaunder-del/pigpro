@@ -16034,8 +16034,8 @@ function rFeedTank() {
     // タンク×豚舎の紐付け（FARMS設定から）
     const tankBarnMap = {};
     (FARMS[farm]?.barns||[]).forEach(b=>{
-      if(b.tank_piglet_label) tankBarnMap[b.tank_piglet_label]={barn:b.name,type:'子豚用'};
-      if(b.tank_hog_label)    tankBarnMap[b.tank_hog_label]   ={barn:b.name,type:'肉豚用'};
+      if(b.tank_piglet_label) tankBarnMap[b.tank_piglet_label]={barn:b.name,barnId:b.id,type:'子豚用'};
+      if(b.tank_hog_label)    tankBarnMap[b.tank_hog_label]   ={barn:b.name,barnId:b.id,type:'肉豚用'};
     });
 
     barnFcrTb.innerHTML = tankNamesList.map(tn=>{
@@ -16047,15 +16047,30 @@ function rFeedTank() {
         tR.reduce((a,r)=>a+(r.delivery_ton||0),0) -
         (tR[tR.length-1].tank_remaining||0)
       );
-      // 在場頭日数（inv_dailyはfarm全体なのでタンク数で按分）
-      const invR = DATA.invDaily.filter(r=>r.farm===farm &&
-        r.date>=tR[0].date && r.date<=tR[tR.length-1].date);
-      const totalHeadDays = invR.reduce((a,r)=>a+(r.stock_head||0),0);
-      // このタンクの豚種に応じた按分比（同種タンク数で均等按分）
       const barnInfo = tankBarnMap[tn];
-      const sameType = tankNamesList.filter(t=>tankBarnMap[t]?.type===barnInfo?.type);
-      const allocRatio = sameType.length > 0 ? 1/sameType.length : 0.5;
-      const tankHeadDays = totalHeadDays * allocRatio;
+      // 在場頭日数：このタンクの豚舎に登録されているロットから日次集計
+      // （旧ロジックは「同種タンク数で均等按分」で、タンク数が同じだと豚種を問わず同一値になるバグがあった）
+      let tankHeadDays = 0;
+      if(barnInfo) {
+        const barnLots = DATA.lots.filter(l=>l.farm===farm && l.barn &&
+          (l.barn.includes(barnInfo.barnId) || l.barn===barnInfo.barn));
+        let d = new Date(tR[0].date+'T00:00:00');
+        const end = new Date(tR[tR.length-1].date+'T00:00:00');
+        while(d <= end) {
+          const ds = d.toISOString().slice(0,10);
+          tankHeadDays += barnLots.reduce((a,l)=>a+calcLotHeadAsOf(l, ds), 0);
+          d.setDate(d.getDate()+1);
+        }
+      }
+      if(!tankHeadDays) {
+        // 豚舎紐付けがロット側に無い場合のフォールバック（従来方式）
+        const invR = DATA.invDaily.filter(r=>r.farm===farm &&
+          r.date>=tR[0].date && r.date<=tR[tR.length-1].date);
+        const totalHeadDays = invR.reduce((a,r)=>a+(r.stock_head||0),0);
+        const sameType = tankNamesList.filter(t=>tankBarnMap[t]?.type===barnInfo?.type);
+        const allocRatio = sameType.length > 0 ? 1/sameType.length : 0.5;
+        tankHeadDays = totalHeadDays * allocRatio;
+      }
       const gainT = tankHeadDays * farmAdg / 1e6; // g→kg→t変換は÷1,000,000が正しい（以前は誤って÷1e9になっていた）
       let fcrV = (feedT>0 && gainT>0) ? feedT/gainT : null;
       if(fcrV !== null && (fcrV < 1.0 || fcrV > 10.0)) fcrV = null; // 異常値除外

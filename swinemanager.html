@@ -15856,8 +15856,8 @@ function rFeedTank() {
   // ─── 月次履歴タブ ───────────────────────────────
   const byMonth = {};
   // 月次集計を期首期末方式に変更
-  const allMonths = [...new Set(DATA.feedTank.map(r=>r.date.slice(0,7)))].sort();
-  allMonths.forEach(mon => {
+  const feedTankMonths = [...new Set(DATA.feedTank.map(r=>r.date.slice(0,7)))].sort();
+  feedTankMonths.forEach(mon => {
     const usage = calcMonthlyUsage(DATA.feedTank, farm, mon);
     byMonth[mon] = {
       month: mon,

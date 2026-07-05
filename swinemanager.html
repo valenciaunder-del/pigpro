@@ -14846,7 +14846,8 @@ function rWeightProfitAnalysis() {
   }).map(r=>{
     const info = shipLotIdx[r.farm+'|'+r.shipped_at];
     const days = info ? dElBetween(info.startDate, r.shipped_at) : null;
-    return { ...r, daysOnFarm: days };
+    const lot = info ? DATA.lots.find(l=>l.id===info.lotId) : null;
+    return { ...r, daysOnFarm: days, pigletCost: lot?.price || null };
   }).filter(r=>r.daysOnFarm && r.daysOnFarm>0);
 
   if(!rows.length) {
@@ -14855,10 +14856,12 @@ function rWeightProfitAnalysis() {
     return;
   }
 
-  // 農場の1頭1日あたり平均飼料費・平均子豚費/頭
+  // 農場の1頭1日あたり平均飼料費（子豚費は帯ごとに実データから算出するためここでは求めない）
   const dailyFeedCostPerHead = calcDailyFeedCostPerHead(farm, from, to);
-  const lotsInScope = DATA.lots.filter(l=>(farm==='all'||l.farm===farm) && l.price>0);
-  const avgPigletCost = lotsInScope.length ? lotsInScope.reduce((a,l)=>a+(l.price||0),0)/lotsInScope.length : 0;
+  // 全体フォールバック用（帯内にpigletCost判明頭が1頭も無い場合のみ使用）
+  const fallbackLots = DATA.lots.filter(l=>(farm==='all'||l.farm===farm) && l.price>0 &&
+    (!from || (l.start_date||'').slice(0,7)>=from) && (!to || (l.start_date||'').slice(0,7)<=to));
+  const fallbackPigletCost = fallbackLots.length ? fallbackLots.reduce((a,l)=>a+(l.price||0),0)/fallbackLots.length : 0;
 
   // 枝肉重量帯でビニング（2kg刻み）
   const BIN = 2;
@@ -14877,10 +14880,14 @@ function rWeightProfitAnalysis() {
       const avgPrice  = b.rows.reduce((a,r)=>a+r.unit_price,0)/n;
       const avgWeight = b.rows.reduce((a,r)=>a+r.carcass_weight,0)/n;
       const avgDays   = b.rows.reduce((a,r)=>a+r.daysOnFarm,0)/n;
+      const withPiglet = b.rows.filter(r=>r.pigletCost>0);
+      const avgPigletCost = withPiglet.length
+        ? withPiglet.reduce((a,r)=>a+r.pigletCost,0)/withPiglet.length
+        : fallbackPigletCost;
       const revenuePerHead  = avgWeight * avgPrice;
       const feedCostPerHead = avgDays * dailyFeedCostPerHead;
       const profitPerHead   = revenuePerHead - feedCostPerHead - avgPigletCost;
-      return { weightFrom:b.weightFrom, weightTo:b.weightTo, n, avgPrice, avgWeight, avgDays, revenuePerHead, feedCostPerHead, profitPerHead };
+      return { weightFrom:b.weightFrom, weightTo:b.weightTo, n, avgPrice, avgWeight, avgDays, avgPigletCost, revenuePerHead, feedCostPerHead, profitPerHead };
     });
 
   if(!binResults.length) {
@@ -14919,7 +14926,7 @@ function rWeightProfitAnalysis() {
     <td class="tr3 mn">¥${Math.round(b.avgPrice).toLocaleString()}/kg</td>
     <td class="tr3 mn ng">¥${Math.round(b.revenuePerHead).toLocaleString()}</td>
     <td class="tr3 mn nb">¥${Math.round(b.feedCostPerHead).toLocaleString()}</td>
-    <td class="tr3 mn">¥${Math.round(avgPigletCost).toLocaleString()}</td>
+    <td class="tr3 mn">¥${Math.round(b.avgPigletCost).toLocaleString()}</td>
     <td class="tr3 mn" style="font-weight:700;color:${b.profitPerHead>=0?'var(--accent)':'var(--danger)'}">¥${Math.round(b.profitPerHead).toLocaleString()}</td>
   </tr>`).join('');
 }

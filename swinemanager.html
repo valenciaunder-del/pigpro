@@ -14905,7 +14905,7 @@ function rWeightProfitAnalysis() {
   const dailyFeedCostPerHead = calcDailyFeedCostPerHead(farm, from, to);
   const feedCostWarning = !dailyFeedCostPerHead
     ? `<div style="grid-column:1/-1;font-size:12px;color:var(--danger);background:rgba(248,113,113,.08);padding:8px 12px;border-radius:8px;margin-bottom:8px">
-        ⚠️ 選択中の期間（${from||'開始'}〜${to||'終了'}）に対象農場の飼料購入記録が見つからないため、推定飼料費が¥0になっています。「飼料購入記録」ページでこの期間のデータが登録されているかご確認ください。
+        ⚠️ 選択中の期間（${from||'開始'}〜${to||'終了'}）について、タンク消費量×飼料単価設定・飼料購入記録のいずれからも飼料費を算出できなかったため、推定飼料費が¥0になっています。「飼料単価設定」または「飼料購入記録」にこの期間のデータが登録されているかご確認ください。
       </div>` : '';
   // 全体フォールバック用（帯内にpigletCost判明頭が1頭も無い場合のみ使用）
   const fallbackLots = DATA.lots.filter(l=>(farm==='all'||l.farm===farm) && l.price>0 &&
@@ -15113,9 +15113,30 @@ function getFeedPurchaseCostByMonth(farm, month) {
 
 // 農場の「1頭1日あたり平均飼料費」（飼料購入実績の総額 ÷ 総頭日数）
 // from/toは'YYYY-MM'形式（省略時は購入記録がある全期間）
+// 農場の「1頭1日あたり平均飼料費」
+// ①タンク消費量(子豚用/肉豚用トン数)×飼料単価設定(四半期)から算出（実消費ベース・優先）
+// ②単価設定が無い、またはタンクデータが無い場合は飼料購入記録（実額）にフォールバック
 function calcDailyFeedCostPerHead(farm, from, to) {
   const farms = farm==='all' ? ['farm1','farm2'] : [farm];
+
   let totalCost = 0, totalHeadDays = 0;
+  farms.forEach(f => {
+    const months = [...new Set(DATA.feedTank.filter(r=>r.farm===f && r.date).map(r=>r.date.slice(0,7)))]
+      .filter(m => (!from || m>=from) && (!to || m<=to));
+    months.forEach(mon => {
+      const usage = calcMonthlyUsage(DATA.feedTank, f, mon); // {piglet, finisher} トン
+      const pigletPrice   = getFeedPrice(f, mon+'-01', '子豚用') || 0; // 円/t
+      const finisherPrice = getFeedPrice(f, mon+'-01', '肥育用') || 0; // 円/t
+      if(pigletPrice || finisherPrice) {
+        totalCost += (usage.piglet||0)*pigletPrice + (usage.finisher||0)*finisherPrice;
+        totalHeadDays += estimateHeadDaysForMonth(f, mon);
+      }
+    });
+  });
+  if(totalHeadDays > 0 && totalCost > 0) return totalCost / totalHeadDays;
+
+  // フォールバック：飼料購入記録（実額）
+  totalCost = 0; totalHeadDays = 0;
   farms.forEach(f => {
     const months = [...new Set(DATA.feedPurchase.filter(p=>p.farm===f).map(p=>(p.purchased_at||'').slice(0,7)))]
       .filter(m => m && (!from || m>=from) && (!to || m<=to));

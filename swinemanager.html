@@ -3988,8 +3988,8 @@ function calcFarmFcr(farm, monthStr) {
     const head = ships.reduce((a,s)=>a+s.count, 0);
     if(head > 0) { weightedAdg += adg * head; totalHead += head; }
   });
-  if(!totalHead) return null;
-  const adg = weightedAdg / totalHead;
+  // 完了ロットが0件の場合は農場のADG目標値にフォールバック（他の集計箇所と統一）
+  const adg = totalHead > 0 ? weightedAdg / totalHead : (FARMS[farm]?.adgT || 750);
 
   // 日頭数（共通関数で推定）
   const headDays = estimateHeadDaysForMonth(farm, mon);

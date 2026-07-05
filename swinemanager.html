@@ -1882,7 +1882,8 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     <div class="card">
       <div class="ch">
         <span class="ct">頭別 枝肉単価 明細</span>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="pa-det-weight-chip" style="display:none;font-size:11px;background:var(--accent);color:#000;padding:3px 9px;border-radius:20px;cursor:pointer" onclick="clearPaDetWeight()"></span>
           <select class="fs" style="width:auto;padding:4px 9px;font-size:12px" id="pa-det-date" onchange="rPaDetail()">
             <option value="all">全出荷日</option>
           </select>
@@ -1934,7 +1935,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="ch"><span class="ct">枝肉重量帯別 利益（1頭あたり）</span></div>
       <div class="cb" id="pa-profit-bars"></div>
     </div>
-    <div class="card">
+    <div class="card mb18">
       <div class="ch"><span class="ct">枝肉重量帯別 詳細</span></div>
       <div class="tw"><table class="pt">
         <thead><tr>
@@ -1944,6 +1945,21 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <th class="tr3">推定利益/頭</th>
         </tr></thead>
         <tbody id="pa-profit-tb"></tbody>
+      </table></div>
+    </div>
+
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">
+      上表は個体差（同じ日齢でも体重にはばらつきがある）が混ざるため、「もっと引っ張ると得か損か」の判断には不向きです。
+      同一ロットが複数回に分けて出荷された実績（早出し・遅出しのペア）を比較し、日齢を伸ばした分の売上増加と飼料費増加を突き合わせます。
+    </div>
+    <div class="card">
+      <div class="ch"><span class="ct">出荷延長の限界損益（同一ロット内の早出し→遅出し比較）</span></div>
+      <div class="tw"><table class="pt">
+        <thead><tr>
+          <th>開始体重帯</th><th class="tr3">比較件数</th><th class="tr3">平均延長日数</th>
+          <th class="tr3">売上増/頭</th><th class="tr3">飼料費増/頭</th><th class="tr3">限界損益/頭</th>
+        </tr></thead>
+        <tbody id="pa-marginal-tb"></tbody>
       </table></div>
     </div>
   </div>
@@ -14781,6 +14797,20 @@ function rPriceAnalysis() {
   rPaDetail();
 }
 
+// 収益性分析の重量帯クリックから頭別明細へ渡す一時フィルター
+let PA_DET_WEIGHT = null; // {from, to} or null
+
+function jumpToPaDetail(weightFrom, weightTo, el) {
+  PA_DET_WEIGHT = { from: weightFrom, to: weightTo };
+  st('pa-t', 'pa-detail', document.querySelector('#page-price-analysis .tabs .tab:nth-child(2)'));
+  rPaDetail();
+}
+
+function clearPaDetWeight() {
+  PA_DET_WEIGHT = null;
+  rPaDetail();
+}
+
 function rPaDetail() {
   const farmF = CF==='both' ? 'all' : CF;
   const dateF = document.getElementById('pa-det-date')?.value||'all';
@@ -14789,6 +14819,13 @@ function rPaDetail() {
   if(farmF!=='all') rows=rows.filter(r=>r.farm===farmF);
   if(dateF!=='all') rows=rows.filter(r=>r.shipped_at===dateF);
   if(gradeF!=='all') rows=rows.filter(r=>r.grade===gradeF);
+  if(PA_DET_WEIGHT) rows=rows.filter(r=>r.carcass_weight>=PA_DET_WEIGHT.from && r.carcass_weight<PA_DET_WEIGHT.to);
+
+  const chip = document.getElementById('pa-det-weight-chip');
+  if(chip) {
+    if(PA_DET_WEIGHT) { chip.style.display='inline'; chip.textContent = `重量帯: ${PA_DET_WEIGHT.from}〜${PA_DET_WEIGHT.to}kg ✕`; }
+    else chip.style.display='none';
+  }
 
   document.getElementById('pa-det-tb').innerHTML = rows.slice(0,300).map(r=>`<tr>
     <td>${fb(r.farm)}</td>
@@ -14919,7 +14956,7 @@ function rWeightProfitAnalysis() {
     </div>`;
   }).join('');
 
-  if(tbEl) tbEl.innerHTML = binResults.map(b=>`<tr${b===best?' style="background:rgba(74,222,128,0.08)"':''}>
+  if(tbEl) tbEl.innerHTML = binResults.map(b=>`<tr${b===best?' style="background:rgba(74,222,128,0.08);cursor:pointer"':' style="cursor:pointer"'} onclick="jumpToPaDetail(${b.weightFrom},${b.weightTo},this)" title="クリックで頭別明細を表示">
     <td class="mn">${b.weightFrom}〜${b.weightTo}kg${b===best?' <span style="color:var(--accent)">★</span>':''}</td>
     <td class="tr3 mn">${b.n}頭</td>
     <td class="tr3 mn">${b.avgDays.toFixed(0)}日</td>
@@ -14928,6 +14965,95 @@ function rWeightProfitAnalysis() {
     <td class="tr3 mn nb">¥${Math.round(b.feedCostPerHead).toLocaleString()}</td>
     <td class="tr3 mn">¥${Math.round(b.avgPigletCost).toLocaleString()}</td>
     <td class="tr3 mn" style="font-weight:700;color:${b.profitPerHead>=0?'var(--accent)':'var(--danger)'}">¥${Math.round(b.profitPerHead).toLocaleString()}</td>
+  </tr>`).join('');
+
+  rMarginalProfitAnalysis(farm, from, to, dailyFeedCostPerHead);
+}
+
+// 同一ロットの早出し→遅出し（複数回出荷）を比較し、延長日数あたりの限界損益を算出
+function buildLotShipmentBatches(farm, from, to) {
+  const shipLotIdx = buildShipLotIndex(farm);
+  const rows = DATA.slaughterDetail.filter(r=>{
+    if(farm!=='all' && r.farm!==farm) return false;
+    const m=(r.shipped_at||'').slice(0,7);
+    if(from && m<from) return false;
+    if(to && m>to) return false;
+    return r.unit_price>0 && r.carcass_weight>0;
+  });
+  const lotMap = {};
+  rows.forEach(r=>{
+    const info = shipLotIdx[r.farm+'|'+r.shipped_at];
+    if(!info) return;
+    if(!lotMap[info.lotId]) lotMap[info.lotId] = { startDate: info.startDate, batches: {} };
+    if(!lotMap[info.lotId].batches[r.shipped_at]) lotMap[info.lotId].batches[r.shipped_at] = [];
+    lotMap[info.lotId].batches[r.shipped_at].push(r);
+  });
+  return lotMap;
+}
+
+function calcMarginalTransitions(farm, from, to, dailyFeedCostPerHead) {
+  const lotMap = buildLotShipmentBatches(farm, from, to);
+  const transitions = [];
+  Object.values(lotMap).forEach(info => {
+    const dates = Object.keys(info.batches).sort();
+    if(dates.length < 2) return; // 複数回出荷したロットのみ対象
+    for(let i=1; i<dates.length; i++) {
+      const prevRows = info.batches[dates[i-1]];
+      const currRows = info.batches[dates[i]];
+      const prevDays = dElBetween(info.startDate, dates[i-1]);
+      const currDays = dElBetween(info.startDate, dates[i]);
+      const dDays = currDays - prevDays;
+      if(dDays <= 0) continue;
+      const prevW = prevRows.reduce((a,r)=>a+r.carcass_weight,0)/prevRows.length;
+      const currW = currRows.reduce((a,r)=>a+r.carcass_weight,0)/currRows.length;
+      const prevP = prevRows.reduce((a,r)=>a+r.unit_price,0)/prevRows.length;
+      const currP = currRows.reduce((a,r)=>a+r.unit_price,0)/currRows.length;
+      const dRevenue  = (currW*currP) - (prevW*prevP);
+      const dFeedCost = dDays * dailyFeedCostPerHead;
+      transitions.push({ fromWeight:prevW, toWeight:currW, dDays, dRevenue, dFeedCost, marginalProfit: dRevenue-dFeedCost });
+    }
+  });
+  return transitions;
+}
+
+function rMarginalProfitAnalysis(farm, from, to, dailyFeedCostPerHead) {
+  const tbEl = document.getElementById('pa-marginal-tb');
+  if(!tbEl) return;
+  const transitions = calcMarginalTransitions(farm, from, to, dailyFeedCostPerHead);
+  if(!transitions.length) {
+    tbEl.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:16px">同一ロットが複数回出荷された実績データが不足しています（早出し・遅出しの比較には最低2回の出荷が必要です）。</td></tr>';
+    return;
+  }
+  const BIN = 4;
+  const buckets = {};
+  transitions.forEach(t=>{
+    const key = Math.floor(t.fromWeight/BIN)*BIN;
+    if(!buckets[key]) buckets[key] = { from:key, to:key+BIN, items:[] };
+    buckets[key].items.push(t);
+  });
+  const results = Object.values(buckets)
+    .filter(b=>b.items.length>=2)
+    .sort((a,b)=>a.from-b.from)
+    .map(b=>{
+      const n = b.items.length;
+      const avgDDays    = b.items.reduce((a,t)=>a+t.dDays,0)/n;
+      const avgDRevenue = b.items.reduce((a,t)=>a+t.dRevenue,0)/n;
+      const avgDFeedCost= b.items.reduce((a,t)=>a+t.dFeedCost,0)/n;
+      return { from:b.from, to:b.to, n, avgDDays, avgDRevenue, avgDFeedCost, avgMarginal: avgDRevenue-avgDFeedCost };
+    });
+
+  if(!results.length) {
+    tbEl.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:16px">体重帯ごとのサンプル数が不足しています（各帯2件以上が必要）。</td></tr>';
+    return;
+  }
+
+  tbEl.innerHTML = results.map(r=>`<tr>
+    <td class="mn">${r.from}〜${r.to}kg〜</td>
+    <td class="tr3 mn">${r.n}件</td>
+    <td class="tr3 mn">${r.avgDDays.toFixed(1)}日</td>
+    <td class="tr3 mn ng">¥${Math.round(r.avgDRevenue).toLocaleString()}</td>
+    <td class="tr3 mn nb">¥${Math.round(r.avgDFeedCost).toLocaleString()}</td>
+    <td class="tr3 mn" style="font-weight:700;color:${r.avgMarginal>=0?'var(--accent)':'var(--danger)'}">¥${Math.round(r.avgMarginal).toLocaleString()}</td>
   </tr>`).join('');
 }
 

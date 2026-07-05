@@ -1842,6 +1842,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="tab active" onclick="st('pa-t','pa-overview',this)">概要</div>
       <div class="tab" onclick="st('pa-t','pa-detail',this)">頭別明細</div>
       <div class="tab" onclick="st('pa-t','pa-compare',this)">出荷日比較</div>
+      <div class="tab" onclick="st('pa-t','pa-profit',this)">収益性分析</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select class="fs" id="pa-from-y" onchange="syncMon('pa-from');rPriceAnalysis()" style="width:72px"></select><select class="fs" id="pa-from-m" onchange="syncMon('pa-from');rPriceAnalysis()" style="width:52px"></select><input type="hidden" id="pa-from">
@@ -1918,6 +1919,31 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <th class="th2 tr3">米山農場</th>
         </tr></thead>
         <tbody id="pa-compare-tb"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- 収益性分析 -->
+  <div class="pa-t-c" id="pa-profit" style="display:none">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">
+      同一ロット内の複数回出荷（早出し・遅出し）の実データから、枝肉重量帯ごとの売上・推定飼料費・利益を算出します。
+      飼料費は農場の飼料購入実績÷在場頭日数から求めた「1頭1日あたり平均飼料費」×日齢で推定した概算値です。
+    </div>
+    <div class="kgrid mb18" style="grid-template-columns:repeat(4,1fr)" id="pa-profit-kpi"></div>
+    <div class="card mb18">
+      <div class="ch"><span class="ct">枝肉重量帯別 利益（1頭あたり）</span></div>
+      <div class="cb" id="pa-profit-bars"></div>
+    </div>
+    <div class="card">
+      <div class="ch"><span class="ct">枝肉重量帯別 詳細</span></div>
+      <div class="tw"><table class="pt">
+        <thead><tr>
+          <th>重量帯</th><th class="tr3">頭数</th><th class="tr3">平均日齢</th>
+          <th class="tr3">平均単価</th><th class="tr3">売上/頭</th>
+          <th class="tr3">推定飼料費/頭</th><th class="tr3">子豚費/頭</th>
+          <th class="tr3">推定利益/頭</th>
+        </tr></thead>
+        <tbody id="pa-profit-tb"></tbody>
       </table></div>
     </div>
   </div>
@@ -4411,6 +4437,7 @@ function st(grp, tid, el) {
   if(tid==='lt-weight') rWtTb();
   if(tid==='lt-feed') rFdTb();
   if(tid==='lt-list') rLotFull();
+  if(tid==='pa-profit') rWeightProfitAnalysis();
 }
 
 function om(id) {
@@ -14778,6 +14805,126 @@ function rPaDetail() {
 }
 
 // ══════════════════════════════════════════════
+// 出荷体重帯別 収益性分析
+// ══════════════════════════════════════════════
+// 同一ロットの複数回出荷（早出し・遅出し）から、shipping_records(farm+shipped_at)を
+// 手掛かりにslaughter_detail（頭別データ）へロットの導入日を紐付け、日齢を算出する。
+// 同一farm+shipped_atに複数ロットが混在する場合は日齢を一意に決められないため対象外とする。
+function buildShipLotIndex(farm) {
+  const idx = {};
+  const ambiguous = new Set();
+  DATA.ships.forEach(s => {
+    if(farm!=='all' && s.farm!==farm) return;
+    if(!s.shipped_at) return;
+    const key = s.farm+'|'+s.shipped_at;
+    const lot = DATA.lots.find(l=>l.id===s.lot_id);
+    if(!lot || !lot.start_date) return;
+    if(idx[key] && idx[key].lotId !== s.lot_id) { ambiguous.add(key); return; }
+    idx[key] = { lotId: s.lot_id, startDate: lot.start_date };
+  });
+  ambiguous.forEach(k => delete idx[k]);
+  return idx;
+}
+
+function rWeightProfitAnalysis() {
+  const farm = CF==='both' ? 'all' : CF;
+  const from = document.getElementById('pa-from')?.value||'';
+  const to   = document.getElementById('pa-to')?.value||'';
+  const kpiEl = document.getElementById('pa-profit-kpi');
+  const barsEl = document.getElementById('pa-profit-bars');
+  const tbEl = document.getElementById('pa-profit-tb');
+  if(!kpiEl) return;
+
+  const shipLotIdx = buildShipLotIndex(farm);
+
+  const rows = DATA.slaughterDetail.filter(r=>{
+    if(farm!=='all' && r.farm!==farm) return false;
+    const m=(r.shipped_at||'').slice(0,7);
+    if(from && m<from) return false;
+    if(to && m>to) return false;
+    return r.unit_price>0 && r.carcass_weight>0;
+  }).map(r=>{
+    const info = shipLotIdx[r.farm+'|'+r.shipped_at];
+    const days = info ? dElBetween(info.startDate, r.shipped_at) : null;
+    return { ...r, daysOnFarm: days };
+  }).filter(r=>r.daysOnFarm && r.daysOnFarm>0);
+
+  if(!rows.length) {
+    kpiEl.innerHTML = '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">日齢を特定できるデータがありません（同一日に複数ロットが出荷された場合など、ロットを一意に特定できないデータは対象外です）。</div>';
+    barsEl.innerHTML=''; if(tbEl) tbEl.innerHTML='';
+    return;
+  }
+
+  // 農場の1頭1日あたり平均飼料費・平均子豚費/頭
+  const dailyFeedCostPerHead = calcDailyFeedCostPerHead(farm, from, to);
+  const lotsInScope = DATA.lots.filter(l=>(farm==='all'||l.farm===farm) && l.price>0);
+  const avgPigletCost = lotsInScope.length ? lotsInScope.reduce((a,l)=>a+(l.price||0),0)/lotsInScope.length : 0;
+
+  // 枝肉重量帯でビニング（2kg刻み）
+  const BIN = 2;
+  const bins = {};
+  rows.forEach(r=>{
+    const key = Math.floor(r.carcass_weight/BIN)*BIN;
+    if(!bins[key]) bins[key] = { weightFrom:key, weightTo:key+BIN, rows:[] };
+    bins[key].rows.push(r);
+  });
+
+  const binResults = Object.values(bins)
+    .filter(b=>b.rows.length>=3) // サンプル数が少なすぎる帯は除外
+    .sort((a,b)=>a.weightFrom-b.weightFrom)
+    .map(b=>{
+      const n = b.rows.length;
+      const avgPrice  = b.rows.reduce((a,r)=>a+r.unit_price,0)/n;
+      const avgWeight = b.rows.reduce((a,r)=>a+r.carcass_weight,0)/n;
+      const avgDays   = b.rows.reduce((a,r)=>a+r.daysOnFarm,0)/n;
+      const revenuePerHead  = avgWeight * avgPrice;
+      const feedCostPerHead = avgDays * dailyFeedCostPerHead;
+      const profitPerHead   = revenuePerHead - feedCostPerHead - avgPigletCost;
+      return { weightFrom:b.weightFrom, weightTo:b.weightTo, n, avgPrice, avgWeight, avgDays, revenuePerHead, feedCostPerHead, profitPerHead };
+    });
+
+  if(!binResults.length) {
+    kpiEl.innerHTML = '<div style="color:var(--muted);font-size:12px;grid-column:1/-1">重量帯ごとのサンプル数が不足しています（各帯3頭以上が必要）。</div>';
+    barsEl.innerHTML=''; if(tbEl) tbEl.innerHTML='';
+    return;
+  }
+
+  const best = binResults.reduce((a,b)=>(!a||b.profitPerHead>a.profitPerHead)?b:a, null);
+  const worst = binResults.reduce((a,b)=>(!a||b.profitPerHead<a.profitPerHead)?b:a, null);
+
+  kpiEl.innerHTML = `
+    <div class="kcard g"><div class="kl">最も利益/頭が高い重量帯</div><div class="kv">${best.weightFrom}〜${best.weightTo}<span class="ku">kg</span></div></div>
+    <div class="kcard c"><div class="kl">その利益/頭</div><div class="kv">¥${Math.round(best.profitPerHead).toLocaleString()}</div></div>
+    <div class="kcard y"><div class="kl">1頭1日あたり飼料費（推定）</div><div class="kv">¥${Math.round(dailyFeedCostPerHead).toLocaleString()}</div></div>
+    <div class="kcard o"><div class="kl">分析対象頭数</div><div class="kv">${rows.length.toLocaleString()}<span class="ku">頭</span></div></div>`;
+
+  const maxAbsProfit = Math.max(...binResults.map(b=>Math.abs(b.profitPerHead)), 1);
+  barsEl.innerHTML = binResults.map(b=>{
+    const isBest = b===best;
+    const w = Math.abs(b.profitPerHead)/maxAbsProfit*100;
+    const color = b.profitPerHead<0 ? 'var(--danger)' : (isBest ? 'var(--accent)' : 'var(--accent2)');
+    return `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:13px;font-weight:${isBest?700:400}">${b.weightFrom}〜${b.weightTo}kg${isBest?' ★':''}</span>
+        <span class="mn" style="font-weight:${isBest?700:400}">¥${Math.round(b.profitPerHead).toLocaleString()}/頭 <span style="color:var(--muted)">(n=${b.n})</span></span>
+      </div>
+      <div class="pb" style="height:12px"><div class="pf" style="width:${w}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+
+  if(tbEl) tbEl.innerHTML = binResults.map(b=>`<tr${b===best?' style="background:rgba(74,222,128,0.08)"':''}>
+    <td class="mn">${b.weightFrom}〜${b.weightTo}kg${b===best?' <span style="color:var(--accent)">★</span>':''}</td>
+    <td class="tr3 mn">${b.n}頭</td>
+    <td class="tr3 mn">${b.avgDays.toFixed(0)}日</td>
+    <td class="tr3 mn">¥${Math.round(b.avgPrice).toLocaleString()}/kg</td>
+    <td class="tr3 mn ng">¥${Math.round(b.revenuePerHead).toLocaleString()}</td>
+    <td class="tr3 mn nb">¥${Math.round(b.feedCostPerHead).toLocaleString()}</td>
+    <td class="tr3 mn">¥${Math.round(avgPigletCost).toLocaleString()}</td>
+    <td class="tr3 mn" style="font-weight:700;color:${b.profitPerHead>=0?'var(--accent)':'var(--danger)'}">¥${Math.round(b.profitPerHead).toLocaleString()}</td>
+  </tr>`).join('');
+}
+
+// ══════════════════════════════════════════════
 // FEED HELPERS
 // ══════════════════════════════════════════════
 const FEED_TYPES = ['後期用','子豚用','肥育用'];
@@ -14816,6 +14963,22 @@ function getFeedPurchaseCostByMonth(farm, month) {
   return DATA.feedPurchase
     .filter(p => (farm==='both'||p.farm===farm) && (p.purchased_at||'').startsWith(month))
     .reduce((a,p) => a+(p.total_amount||0), 0);
+}
+
+// 農場の「1頭1日あたり平均飼料費」（飼料購入実績の総額 ÷ 総頭日数）
+// from/toは'YYYY-MM'形式（省略時は購入記録がある全期間）
+function calcDailyFeedCostPerHead(farm, from, to) {
+  const farms = farm==='all' ? ['farm1','farm2'] : [farm];
+  let totalCost = 0, totalHeadDays = 0;
+  farms.forEach(f => {
+    const months = [...new Set(DATA.feedPurchase.filter(p=>p.farm===f).map(p=>(p.purchased_at||'').slice(0,7)))]
+      .filter(m => m && (!from || m>=from) && (!to || m<=to));
+    months.forEach(mon => {
+      totalCost += getFeedPurchaseCostByMonth(f, mon);
+      totalHeadDays += estimateHeadDaysForMonth(f, mon);
+    });
+  });
+  return totalHeadDays > 0 ? totalCost / totalHeadDays : 0;
 }
 
 // ══════════════════════════════════════════════

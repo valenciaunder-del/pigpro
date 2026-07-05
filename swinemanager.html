@@ -14903,6 +14903,10 @@ function rWeightProfitAnalysis() {
 
   // 農場の1頭1日あたり平均飼料費（子豚費は帯ごとに実データから算出するためここでは求めない）
   const dailyFeedCostPerHead = calcDailyFeedCostPerHead(farm, from, to);
+  const feedCostWarning = !dailyFeedCostPerHead
+    ? `<div style="grid-column:1/-1;font-size:12px;color:var(--danger);background:rgba(248,113,113,.08);padding:8px 12px;border-radius:8px;margin-bottom:8px">
+        ⚠️ 選択中の期間（${from||'開始'}〜${to||'終了'}）に対象農場の飼料購入記録が見つからないため、推定飼料費が¥0になっています。「飼料購入記録」ページでこの期間のデータが登録されているかご確認ください。
+      </div>` : '';
   // 全体フォールバック用（帯内にpigletCost判明頭が1頭も無い場合のみ使用）
   const fallbackLots = DATA.lots.filter(l=>(farm==='all'||l.farm===farm) && l.price>0 &&
     (!from || (l.start_date||'').slice(0,7)>=from) && (!to || (l.start_date||'').slice(0,7)<=to));
@@ -14945,6 +14949,7 @@ function rWeightProfitAnalysis() {
   const worst = binResults.reduce((a,b)=>(!a||b.profitPerHead<a.profitPerHead)?b:a, null);
 
   kpiEl.innerHTML = `
+    ${feedCostWarning}
     <div class="kcard g"><div class="kl">最も利益/頭が高い重量帯</div><div class="kv">${best.weightFrom}〜${best.weightTo}<span class="ku">kg</span></div></div>
     <div class="kcard c"><div class="kl">その利益/頭</div><div class="kv">¥${Math.round(best.profitPerHead).toLocaleString()}</div></div>
     <div class="kcard y"><div class="kl">1頭1日あたり飼料費（推定）</div><div class="kv">¥${Math.round(dailyFeedCostPerHead).toLocaleString()}</div></div>

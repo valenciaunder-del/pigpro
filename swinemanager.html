@@ -2329,21 +2329,25 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
           <div style="background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:14px">
             <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:10px">🐷 後期用</div>
-            <div class="fg mb16"><label class="fl">単価（円/t）</label><input class="fi" type="number" id="fpm-p1" placeholder="例: 57000"></div>
-            <div style="font-size:11px;color:var(--muted)" id="fpm-p1-kg">円/kg: -</div>
+            <div class="fg mb16"><label class="fl">飼料費（円/t）</label><input class="fi" type="number" id="fpm-p1" placeholder="例: 57000"></div>
+            <div class="fg mb16"><label class="fl">運賃（円/t）</label><input class="fi" type="number" id="fpm-f1" placeholder="例: 2000"></div>
+            <div style="font-size:11px;color:var(--muted)" id="fpm-p1-kg">合計 円/kg: -</div>
           </div>
           <div style="background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.2);border-radius:8px;padding:14px">
             <div style="font-size:12px;font-weight:600;color:var(--accent2);margin-bottom:10px">🐣 子豚用</div>
-            <div class="fg mb16"><label class="fl">単価（円/t）</label><input class="fi" type="number" id="fpm-p2" placeholder="例: 54000"></div>
-            <div style="font-size:11px;color:var(--muted)" id="fpm-p2-kg">円/kg: -</div>
+            <div class="fg mb16"><label class="fl">飼料費（円/t）</label><input class="fi" type="number" id="fpm-p2" placeholder="例: 54000"></div>
+            <div class="fg mb16"><label class="fl">運賃（円/t）</label><input class="fi" type="number" id="fpm-f2" placeholder="例: 2000"></div>
+            <div style="font-size:11px;color:var(--muted)" id="fpm-p2-kg">合計 円/kg: -</div>
           </div>
           <div style="background:rgba(251,146,60,.06);border:1px solid rgba(251,146,60,.2);border-radius:8px;padding:14px">
             <div style="font-size:12px;font-weight:600;color:var(--accent3);margin-bottom:10px">🥩 肥育用</div>
-            <div class="fg mb16"><label class="fl">単価（円/t）</label><input class="fi" type="number" id="fpm-p3" placeholder="例: 60000"></div>
-            <div style="font-size:11px;color:var(--muted)" id="fpm-p3-kg">円/kg: -</div>
+            <div class="fg mb16"><label class="fl">飼料費（円/t）</label><input class="fi" type="number" id="fpm-p3" placeholder="例: 60000"></div>
+            <div class="fg mb16"><label class="fl">運賃（円/t）</label><input class="fi" type="number" id="fpm-f3" placeholder="例: 2000"></div>
+            <div style="font-size:11px;color:var(--muted)" id="fpm-p3-kg">合計 円/kg: -</div>
           </div>
         </div>
         <button class="btn bp" onclick="saveFeedMaster()">✓ 単価を保存</button>
+        <button class="btn bs" onclick="clearFeedMasterForm()" style="margin-left:8px">クリア</button>
       </div>
     </div>
     <!-- 設定済み単価一覧 -->
@@ -2355,7 +2359,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       </div>
       <div class="tw">
         <table>
-          <thead><tr><th>農場</th><th>四半期</th><th>後期用(円/t)</th><th>子豚用(円/t)</th><th>肥育用(円/t)</th><th>備考</th><th></th></tr></thead>
+          <thead><tr><th>農場</th><th>四半期</th><th>後期用(飼料費+運賃)</th><th>子豚用(飼料費+運賃)</th><th>肥育用(飼料費+運賃)</th><th>備考</th><th></th></tr></thead>
           <tbody id="fpm-tb"></tbody>
         </table>
       </div>
@@ -15090,11 +15094,21 @@ function dateToQuarter(dateStr) {
   return `${fy}-Q${q}`;
 }
 
-// 農場・四半期・飼料種類で単価を取得（円/t）
+// 農場・四半期・飼料種類で単価を取得（円/t）＝飼料費＋運賃の合計
 function getFeedPrice(farm, dateStr, feedType) {
   const q = dateToQuarter(dateStr);
   const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType);
-  return rec?.price_per_ton || null;
+  if(!rec) return null;
+  const total = (rec.price_per_ton||0) + (rec.freight_per_ton||0);
+  return total || null;
+}
+
+// 飼料費と運賃を内訳付きで取得（表示用）
+function getFeedPriceDetail(farm, dateStr, feedType) {
+  const q = dateToQuarter(dateStr);
+  const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType);
+  if(!rec) return null;
+  return { price: rec.price_per_ton||0, freight: rec.freight_per_ton||0, total: (rec.price_per_ton||0)+(rec.freight_per_ton||0) };
 }
 
 // 購入記録から日次飼料費を集計
@@ -15160,31 +15174,66 @@ function rFeedMaster() {
   items.forEach(r => {
     const key = r.farm+'|'+r.quarter;
     if(!grouped[key]) grouped[key] = { farm:r.farm, quarter:r.quarter, note:r.note, prices:{} };
-    grouped[key].prices[r.feed_type] = r.price_per_ton;
+    grouped[key].prices[r.feed_type] = { price:r.price_per_ton||0, freight:r.freight_per_ton||0 };
   });
+
+  const fmtCell = (p) => {
+    if(!p || (!p.price && !p.freight)) return '-';
+    const total = p.price + p.freight;
+    return `¥${fM(total)}/t<div style="font-size:10px;color:var(--muted)">（飼料${fM(p.price)}+運賃${fM(p.freight)}）</div>`;
+  };
 
   document.getElementById('fpm-tb').innerHTML = Object.values(grouped).length
     ? Object.values(grouped).sort((a,b)=>b.quarter.localeCompare(a.quarter)).map(g=>`<tr>
         <td>${fb(g.farm)}</td>
         <td class="mn">${g.quarter}</td>
-        <td class="mn ng">${g.prices['後期用']?fM(g.prices['後期用'])+'/t':'-'}</td>
-        <td class="mn nn">${g.prices['子豚用']?fM(g.prices['子豚用'])+'/t':'-'}</td>
-        <td class="mn" style="color:var(--accent3)">${g.prices['肥育用']?fM(g.prices['肥育用'])+'/t':'-'}</td>
+        <td class="mn ng">${fmtCell(g.prices['後期用'])}</td>
+        <td class="mn nn">${fmtCell(g.prices['子豚用'])}</td>
+        <td class="mn" style="color:var(--accent3)">${fmtCell(g.prices['肥育用'])}</td>
         <td style="color:var(--muted)">${g.note||'-'}</td>
-        <td><button class="btn bd sm" onclick="delFeedMasterGroup('${g.farm}','${g.quarter}')">削除</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn bs sm" onclick='editFeedMasterGroup(${JSON.stringify(g).replace(/'/g,"&apos;")})'>編集</button>
+          <button class="btn bd sm" onclick="delFeedMasterGroup('${g.farm}','${g.quarter}')">削除</button>
+        </td>
       </tr>`).join('')
     : '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">単価が登録されていません</td></tr>';
 
-  // 円/kg表示更新
-  ['1','2','3'].forEach((n,i) => {
-    const el = document.getElementById(`fpm-p${n}`);
+  // 合計 円/kg表示更新（飼料費・運賃どちらの変更でも再計算）
+  ['1','2','3'].forEach(n => {
+    const pEl = document.getElementById(`fpm-p${n}`);
+    const fEl = document.getElementById(`fpm-f${n}`);
     const lbl = document.getElementById(`fpm-p${n}-kg`);
-    if(el && lbl) {
-      el.oninput = () => {
-        const v = parseFloat(el.value)||0;
-        lbl.textContent = v ? `円/kg: ${(v/1000).toFixed(2)}` : '円/kg: -';
-      };
-    }
+    const update = () => {
+      const price = parseFloat(pEl?.value)||0;
+      const freight = parseFloat(fEl?.value)||0;
+      const total = price+freight;
+      if(lbl) lbl.textContent = total ? `合計 円/kg: ${(total/1000).toFixed(2)}` : '合計 円/kg: -';
+    };
+    if(pEl) pEl.oninput = update;
+    if(fEl) fEl.oninput = update;
+  });
+}
+
+// 一覧の「編集」クリックでフォームに値を読み込む
+function editFeedMasterGroup(g) {
+  document.getElementById('fpm-farm').value = g.farm;
+  document.getElementById('fpm-quarter').value = g.quarter;
+  document.getElementById('fpm-note').value = g.note||'';
+  const map = { '後期用':'1', '子豚用':'2', '肥育用':'3' };
+  Object.entries(map).forEach(([type,n])=>{
+    const p = g.prices[type] || {price:0,freight:0};
+    const pEl = document.getElementById(`fpm-p${n}`);
+    const fEl = document.getElementById(`fpm-f${n}`);
+    if(pEl) pEl.value = p.price || '';
+    if(fEl) fEl.value = p.freight || '';
+    if(pEl) pEl.dispatchEvent(new Event('input'));
+  });
+  notif(`${g.farm==='farm1'?'中田農場':'米山農場'} / ${g.quarter} を編集モードで読み込みました`);
+}
+
+function clearFeedMasterForm() {
+  ['fpm-p1','fpm-f1','fpm-p2','fpm-f2','fpm-p3','fpm-f3','fpm-note'].forEach(id=>{
+    const el=document.getElementById(id); if(el){ el.value=''; el.dispatchEvent(new Event('input')); }
   });
 }
 
@@ -15193,26 +15242,24 @@ async function saveFeedMaster() {
   const quarter = document.getElementById('fpm-quarter').value;
   const note = document.getElementById('fpm-note').value||null;
   const prices = [
-    { feed_type:'後期用', el:'fpm-p1' },
-    { feed_type:'子豚用', el:'fpm-p2' },
-    { feed_type:'肥育用', el:'fpm-p3' },
+    { feed_type:'後期用', pEl:'fpm-p1', fEl:'fpm-f1' },
+    { feed_type:'子豚用', pEl:'fpm-p2', fEl:'fpm-f2' },
+    { feed_type:'肥育用', pEl:'fpm-p3', fEl:'fpm-f3' },
   ];
-  const hasAny = prices.some(p => document.getElementById(p.el).value);
-  if(!hasAny) { notif('単価を1つ以上入力してください','r'); return; }
+  const hasAny = prices.some(p => document.getElementById(p.pEl).value || document.getElementById(p.fEl).value);
+  if(!hasAny) { notif('飼料費または運賃を1つ以上入力してください','r'); return; }
 
   showLoading('保存中...');
   try {
     for(const p of prices) {
-      const val = parseInt(document.getElementById(p.el).value)||0;
-      if(!val) continue;
-      await api.upsertFeedMaster({ farm, feed_type:p.feed_type, quarter, price_per_ton:val, note });
+      const priceVal = parseInt(document.getElementById(p.pEl).value)||0;
+      const freightVal = parseInt(document.getElementById(p.fEl).value)||0;
+      if(!priceVal && !freightVal) continue;
+      await api.upsertFeedMaster({ farm, feed_type:p.feed_type, quarter, price_per_ton:priceVal, freight_per_ton:freightVal, note });
     }
     DATA.feedMaster = await api.getFeedMaster();
     rFeedMaster(); notif('飼料単価を保存しました');
-    // 入力クリア
-    ['fpm-p1','fpm-p2','fpm-p3','fpm-note'].forEach(id=>{
-      const el=document.getElementById(id); if(el) el.value='';
-    });
+    clearFeedMasterForm();
   } catch(e) { notif('保存エラー: '+e.message,'r'); }
   finally { hideLoading(); }
 }

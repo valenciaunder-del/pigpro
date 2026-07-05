@@ -3579,10 +3579,18 @@ function calcCurrentWeight(lot) {
 // 出荷済みロットのADG計算（枝肉逆算）
 // 出荷済み分の頭数加重平均ADGを計算（肥育中ロットも暫定計算可）
 // isPartial: trueの場合は出荷済み分のみで暫定計算
-function calcLotAdg(lot, allowPartial=false) {
+function calcLotAdg(lot, allowPartial=false, minShipRatio=null) {
   const currentHead = calcCurrentHead(lot);
-  // 在場頭数が0でない場合は allowPartial=true の時のみ計算
-  if(currentHead > 0 && !allowPartial) return null;
+  if(currentHead > 0) {
+    if(minShipRatio !== null) {
+      // 出荷率がしきい値未満なら除外（早出しバイアスを抑えつつ実質完了ロットも拾う）
+      const shippedRatio = lot.count > 0 ? (lot.count - currentHead) / lot.count : 0;
+      if(shippedRatio < minShipRatio) return null;
+    } else if(!allowPartial) {
+      // 在場頭数が0でない場合は allowPartial=true の時のみ計算
+      return null;
+    }
+  }
   if(!lot.start_date || !lot.start_weight) return null;
 
   // shipping_recordsのlive_weightから直接ADG計算（確定値を使用）
@@ -3944,10 +3952,12 @@ function estimateHeadDaysForMonth(farm, mon) {
 // 優先順位: ①出荷完了ロットの実績 → ②未完了ロットも含めた実出荷データ → ③農場のADG目標値（実績が皆無の場合のみ）
 function calcFarmActualAdg(farm, cutoffDate) {
   const lots = DATA.lots.filter(l => l.farm === farm && (!cutoffDate || l.start_date >= cutoffDate));
+  const SHIP_RATIO_THRESHOLD = 0.95; // 出荷率95%以上のロットを「実質完了」とみなす
 
+  // ①出荷率95%以上のロット（早出しバイアスを抑えつつサンプル数を確保）
   let wA = 0, tH = 0;
   lots.forEach(l => {
-    const adg = calcLotAdg(l); // 出荷完了ロットのみ（早出しバイアス排除）
+    const adg = calcLotAdg(l, false, SHIP_RATIO_THRESHOLD);
     if(!adg) return;
     const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.live_weight>0);
     const head = ships.reduce((a,s)=>a+s.count, 0);
@@ -3955,7 +3965,7 @@ function calcFarmActualAdg(farm, cutoffDate) {
   });
   if(tH > 0) return wA / tH;
 
-  // 完了ロットが無い場合は、未完了ロットの実出荷分も含めた実績データで算出
+  // ②95%基準でも該当ロットが無い場合は、未完了ロットの実出荷分も含めた実績データで算出
   let wA2 = 0, tH2 = 0;
   lots.forEach(l => {
     const adg2 = calcLotAdg(l, true);

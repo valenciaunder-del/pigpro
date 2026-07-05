@@ -2359,7 +2359,11 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       </div>
       <div class="tw">
         <table>
-          <thead><tr><th>農場</th><th>四半期</th><th>後期用(飼料費+運賃)</th><th>子豚用(飼料費+運賃)</th><th>肥育用(飼料費+運賃)</th><th>備考</th><th></th></tr></thead>
+          <thead><tr>
+            <th style="position:sticky;left:0;background:var(--panel2);z-index:2;min-width:90px">農場</th>
+            <th style="position:sticky;left:90px;background:var(--panel2);z-index:2;min-width:100px;box-shadow:2px 0 4px rgba(0,0,0,.2)">四半期</th>
+            <th>後期用(飼料費+運賃)</th><th>子豚用(飼料費+運賃)</th><th>肥育用(飼料費+運賃)</th><th>備考</th><th></th>
+          </tr></thead>
           <tbody id="fpm-tb"></tbody>
         </table>
       </div>
@@ -15230,8 +15234,8 @@ function rFeedMaster() {
 
   document.getElementById('fpm-tb').innerHTML = Object.values(grouped).length
     ? Object.values(grouped).sort((a,b)=>b.quarter.localeCompare(a.quarter)).map(g=>`<tr>
-        <td>${fb(g.farm)}</td>
-        <td class="mn">${g.quarter}</td>
+        <td style="position:sticky;left:0;background:var(--panel);z-index:1;font-weight:600">${fb(g.farm)}</td>
+        <td class="mn" style="position:sticky;left:90px;background:var(--panel);z-index:1;font-weight:600;box-shadow:2px 0 4px rgba(0,0,0,.2)">${g.quarter}</td>
         <td class="mn ng">${fmtCell(g.prices['後期用'])}</td>
         <td class="mn nn">${fmtCell(g.prices['子豚用'])}</td>
         <td class="mn" style="color:var(--accent3)">${fmtCell(g.prices['肥育用'])}</td>

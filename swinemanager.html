@@ -4226,23 +4226,31 @@ function calcAccidentOnly(deaths) {
   return deaths.filter(d => d.category !== '廃棄（出荷後）' && d.confirmed !== false).reduce((a,d)=>a+(d.count||0), 0);
 }
 
-// 歩留まり率取得（出荷先名で検索、なければデフォルト値）
+// 歩留まり率取得（出荷先名で検索、なければ農場の直近出荷実績から推定、それも無ければデフォルト値）
 function getYieldRate(farm, slaughterhouse) {
-  // 共通出荷先マスタを優先検索
+  // ①出荷先(slaughterhouse)が指定されていれば、共通出荷先マスタ→農場別歩留り表の順で優先検索
   if(slaughterhouse) {
     for(const [key, val] of Object.entries(COMMON_YIELDS)) {
       if(slaughterhouse.includes(key) || key.includes(slaughterhouse)) return val;
     }
-  }
-  // フォールバック：農場個別設定
-  const f = FARMS[farm];
-  if(!f) return 78;
-  if(slaughterhouse && f.yields) {
-    for(const [key, val] of Object.entries(f.yields)) {
-      if(slaughterhouse.includes(key)) return val;
+    const f = FARMS[farm];
+    if(f?.yields) {
+      for(const [key, val] of Object.entries(f.yields)) {
+        if(slaughterhouse.includes(key)) return val;
+      }
+    }
+  } else {
+    // ②出荷先の指定が無い場合は、農場の直近出荷実績から歩留り先を推定
+    const recentSheet = (DATA.slaughter||[]).filter(s=>s.farm===farm).sort((a,b)=>b.shipped_at?.localeCompare(a.shipped_at||'')).slice(0,5);
+    if(recentSheet.length) {
+      const slh = recentSheet[0].slaughterhouse || '';
+      for(const [key, val] of Object.entries(COMMON_YIELDS)) {
+        if(slh.includes(key) && val) return val;
+      }
     }
   }
-  return f.defaultYield || 78;
+  // ③農場のデフォルト歩留り
+  return FARMS[farm]?.defaultYield || 78;
 }
 
 // 出荷時生体重を枝肉重量から逆算
@@ -5935,18 +5943,6 @@ function rShipPlan() {
   // 月間出荷予定
   initShipMonthSel();
   rShipMonthly();
-}
-
-function getYieldRate(farm) {
-  // 農場の主要出荷先の歩留まりを返す
-  const recentSheet = (DATA.slaughter||[]).filter(s=>s.farm===farm).sort((a,b)=>b.shipped_at?.localeCompare(a.shipped_at||'')).slice(0,5);
-  if(recentSheet.length) {
-    const slh = recentSheet[0].slaughterhouse || '';
-    for(const [key, val] of Object.entries(COMMON_YIELDS)) {
-      if(slh.includes(key) && val) return val;
-    }
-  }
-  return FARMS[farm]?.defaultYield || 65;
 }
 
 // ロットの実績ADGを計算（g/日）
@@ -14875,6 +14871,43 @@ function buildShipLotIndex(farm) {
   return idx;
 }
 
+// 農場の期間FCR（タンク消費量合計 ÷ 推定増体重合計）
+function calcPeriodFcr(farm, from, to) {
+  const farms = farm==='all' ? ['farm1','farm2'] : [farm];
+  let totalFeedT = 0, totalGainT = 0;
+  farms.forEach(f => {
+    const cutoffDate = f==='farm2' ? '2026-02-13' : '2020-01-01';
+    const adg = calcFarmActualAdg(f, cutoffDate);
+    const months = [...new Set(DATA.feedTank.filter(r=>r.farm===f && r.date).map(r=>r.date.slice(0,7)))]
+      .filter(m => (!from || m>=from) && (!to || m<=to));
+    months.forEach(mon => {
+      const usage = calcMonthlyUsage(DATA.feedTank, f, mon);
+      totalFeedT += (usage.piglet||0) + (usage.finisher||0);
+      const headDays = estimateHeadDaysForMonth(f, mon);
+      totalGainT += headDays * adg / 1e6;
+    });
+  });
+  return totalGainT > 0 ? totalFeedT / totalGainT : null;
+}
+
+// 農場の期間内・消費量加重平均の飼料単価（円/kg）＝飼料費＋運賃込み
+function calcBlendedFeedPricePerKg(farm, from, to) {
+  const farms = farm==='all' ? ['farm1','farm2'] : [farm];
+  let totalT = 0, totalCost = 0;
+  farms.forEach(f => {
+    const months = [...new Set(DATA.feedTank.filter(r=>r.farm===f && r.date).map(r=>r.date.slice(0,7)))]
+      .filter(m => (!from || m>=from) && (!to || m<=to));
+    months.forEach(mon => {
+      const usage = calcMonthlyUsage(DATA.feedTank, f, mon);
+      const pigletPrice   = getFeedPrice(f, mon+'-01', '子豚用')   || 0; // 円/t
+      const finisherPrice = getFeedPrice(f, mon+'-01', '肥育用') || 0; // 円/t
+      totalT    += (usage.piglet||0) + (usage.finisher||0);
+      totalCost += (usage.piglet||0)*pigletPrice + (usage.finisher||0)*finisherPrice;
+    });
+  });
+  return totalT > 0 ? (totalCost/totalT)/1000 : 0; // 円/kg
+}
+
 function rWeightProfitAnalysis() {
   const farm = CF==='both' ? 'all' : CF;
   const from = document.getElementById('pa-from')?.value||'';
@@ -14896,7 +14929,7 @@ function rWeightProfitAnalysis() {
     const info = shipLotIdx[r.farm+'|'+r.shipped_at];
     const days = info ? dElBetween(info.startDate, r.shipped_at) : null;
     const lot = info ? DATA.lots.find(l=>l.id===info.lotId) : null;
-    return { ...r, daysOnFarm: days, pigletCost: lot?.price || null };
+    return { ...r, daysOnFarm: days, pigletCost: lot?.price || null, startWeight: lot?.start_weight || null };
   }).filter(r=>r.daysOnFarm && r.daysOnFarm>0);
 
   if(!rows.length) {
@@ -14905,16 +14938,19 @@ function rWeightProfitAnalysis() {
     return;
   }
 
-  // 農場の1頭1日あたり平均飼料費（子豚費は帯ごとに実データから算出するためここでは求めない）
-  const dailyFeedCostPerHead = calcDailyFeedCostPerHead(farm, from, to);
-  const feedCostWarning = !dailyFeedCostPerHead
+  // 農場の期間FCR・飼料単価（円/kg）・歩留り
+  const periodFcr = calcPeriodFcr(farm, from, to);
+  const feedPricePerKg = calcBlendedFeedPricePerKg(farm, from, to);
+  const yieldRate = getYieldRate(farm==='all'?'farm2':farm, null) / 100;
+  const feedCostWarning = (!periodFcr || !feedPricePerKg)
     ? `<div style="grid-column:1/-1;font-size:12px;color:var(--danger);background:rgba(248,113,113,.08);padding:8px 12px;border-radius:8px;margin-bottom:8px">
-        ⚠️ 選択中の期間（${from||'開始'}〜${to||'終了'}）について、タンク消費量×飼料単価設定・飼料購入記録のいずれからも飼料費を算出できなかったため、推定飼料費が¥0になっています。「飼料単価設定」または「飼料購入記録」にこの期間のデータが登録されているかご確認ください。
+        ⚠️ 選択中の期間（${from||'開始'}〜${to||'終了'}）について、タンク消費量・飼料単価設定・FCRのいずれかが算出できなかったため、推定飼料費が¥0になっています。「飼料単価設定」「飼料タンク管理」にこの期間のデータが登録されているかご確認ください。
       </div>` : '';
   // 全体フォールバック用（帯内にpigletCost判明頭が1頭も無い場合のみ使用）
   const fallbackLots = DATA.lots.filter(l=>(farm==='all'||l.farm===farm) && l.price>0 &&
     (!from || (l.start_date||'').slice(0,7)>=from) && (!to || (l.start_date||'').slice(0,7)<=to));
   const fallbackPigletCost = fallbackLots.length ? fallbackLots.reduce((a,l)=>a+(l.price||0),0)/fallbackLots.length : 0;
+  const fallbackStartWeight = fallbackLots.length ? fallbackLots.reduce((a,l)=>a+(l.start_weight||0),0)/fallbackLots.length : 7;
 
   // 枝肉重量帯でビニング（2kg刻み）
   const BIN = 2;
@@ -14937,10 +14973,17 @@ function rWeightProfitAnalysis() {
       const avgPigletCost = withPiglet.length
         ? withPiglet.reduce((a,r)=>a+r.pigletCost,0)/withPiglet.length
         : fallbackPigletCost;
+      const withStartWeight = b.rows.filter(r=>r.startWeight>0);
+      const avgStartWeight = withStartWeight.length
+        ? withStartWeight.reduce((a,r)=>a+r.startWeight,0)/withStartWeight.length
+        : fallbackStartWeight;
+      // 体重増加量(kg) = 生体重換算(枝重÷歩留) − 導入時体重
+      const avgLiveWeight = yieldRate>0 ? avgWeight/yieldRate : avgWeight;
+      const weightGain = Math.max(0, avgLiveWeight - avgStartWeight);
       const revenuePerHead  = avgWeight * avgPrice;
-      const feedCostPerHead = avgDays * dailyFeedCostPerHead;
+      const feedCostPerHead = (periodFcr && feedPricePerKg) ? weightGain * periodFcr * feedPricePerKg : 0;
       const profitPerHead   = revenuePerHead - feedCostPerHead - avgPigletCost;
-      return { weightFrom:b.weightFrom, weightTo:b.weightTo, n, avgPrice, avgWeight, avgDays, avgPigletCost, revenuePerHead, feedCostPerHead, profitPerHead };
+      return { weightFrom:b.weightFrom, weightTo:b.weightTo, n, avgPrice, avgWeight, avgDays, weightGain, avgPigletCost, revenuePerHead, feedCostPerHead, profitPerHead };
     });
 
   if(!binResults.length) {
@@ -14956,7 +14999,7 @@ function rWeightProfitAnalysis() {
     ${feedCostWarning}
     <div class="kcard g"><div class="kl">最も利益/頭が高い重量帯</div><div class="kv">${best.weightFrom}〜${best.weightTo}<span class="ku">kg</span></div></div>
     <div class="kcard c"><div class="kl">その利益/頭</div><div class="kv">¥${Math.round(best.profitPerHead).toLocaleString()}</div></div>
-    <div class="kcard y"><div class="kl">1頭1日あたり飼料費（推定）</div><div class="kv">¥${Math.round(dailyFeedCostPerHead).toLocaleString()}</div></div>
+    <div class="kcard y"><div class="kl">期間FCR / 飼料単価</div><div class="kv" style="font-size:16px">${periodFcr?periodFcr.toFixed(2):'-'} / ¥${feedPricePerKg?feedPricePerKg.toFixed(1):'-'}<span class="ku">円/kg</span></div></div>
     <div class="kcard o"><div class="kl">分析対象頭数</div><div class="kv">${rows.length.toLocaleString()}<span class="ku">頭</span></div></div>`;
 
   const maxAbsProfit = Math.max(...binResults.map(b=>Math.abs(b.profitPerHead)), 1);
@@ -14984,10 +15027,10 @@ function rWeightProfitAnalysis() {
     <td class="tr3 mn" style="font-weight:700;color:${b.profitPerHead>=0?'var(--accent)':'var(--danger)'}">¥${Math.round(b.profitPerHead).toLocaleString()}</td>
   </tr>`).join('');
 
-  rMarginalProfitAnalysis(farm, from, to, dailyFeedCostPerHead);
+  rMarginalProfitAnalysis(farm, from, to, periodFcr, feedPricePerKg, yieldRate);
 }
 
-// 同一ロットの早出し→遅出し（複数回出荷）を比較し、延長日数あたりの限界損益を算出
+// 同一ロットの早出し→遅出し（複数回出荷）を比較し、延長した体重増加分あたりの限界損益を算出
 function buildLotShipmentBatches(farm, from, to) {
   const shipLotIdx = buildShipLotIndex(farm);
   const rows = DATA.slaughterDetail.filter(r=>{
@@ -15008,7 +15051,7 @@ function buildLotShipmentBatches(farm, from, to) {
   return lotMap;
 }
 
-function calcMarginalTransitions(farm, from, to, dailyFeedCostPerHead) {
+function calcMarginalTransitions(farm, from, to, periodFcr, feedPricePerKg, yieldRate) {
   const lotMap = buildLotShipmentBatches(farm, from, to);
   const transitions = [];
   Object.values(lotMap).forEach(info => {
@@ -15026,17 +15069,19 @@ function calcMarginalTransitions(farm, from, to, dailyFeedCostPerHead) {
       const prevP = prevRows.reduce((a,r)=>a+r.unit_price,0)/prevRows.length;
       const currP = currRows.reduce((a,r)=>a+r.unit_price,0)/currRows.length;
       const dRevenue  = (currW*currP) - (prevW*prevP);
-      const dFeedCost = dDays * dailyFeedCostPerHead;
+      // 延長した分の体重増加(生体重換算)×FCR×単価で飼料費増加分を算出
+      const dLiveWeightGain = yieldRate>0 ? Math.max(0,(currW-prevW)/yieldRate) : Math.max(0,currW-prevW);
+      const dFeedCost = (periodFcr && feedPricePerKg) ? dLiveWeightGain * periodFcr * feedPricePerKg : 0;
       transitions.push({ fromWeight:prevW, toWeight:currW, dDays, dRevenue, dFeedCost, marginalProfit: dRevenue-dFeedCost });
     }
   });
   return transitions;
 }
 
-function rMarginalProfitAnalysis(farm, from, to, dailyFeedCostPerHead) {
+function rMarginalProfitAnalysis(farm, from, to, periodFcr, feedPricePerKg, yieldRate) {
   const tbEl = document.getElementById('pa-marginal-tb');
   if(!tbEl) return;
-  const transitions = calcMarginalTransitions(farm, from, to, dailyFeedCostPerHead);
+  const transitions = calcMarginalTransitions(farm, from, to, periodFcr, feedPricePerKg, yieldRate);
   if(!transitions.length) {
     tbEl.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:16px">同一ロットが複数回出荷された実績データが不足しています（早出し・遅出しの比較には最低2回の出荷が必要です）。</td></tr>';
     return;

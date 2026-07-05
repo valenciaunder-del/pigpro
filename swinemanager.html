@@ -14815,10 +14815,18 @@ function rPaDetail() {
   const farmF = CF==='both' ? 'all' : CF;
   const dateF = document.getElementById('pa-det-date')?.value||'all';
   const gradeF = document.getElementById('pa-det-grade')?.value||'all';
+  const from = document.getElementById('pa-from')?.value||'';
+  const to   = document.getElementById('pa-to')?.value||'';
   let rows = DATA.slaughterDetail.filter(r=>r.unit_price>0);
   if(farmF!=='all') rows=rows.filter(r=>r.farm===farmF);
   if(dateF!=='all') rows=rows.filter(r=>r.shipped_at===dateF);
   if(gradeF!=='all') rows=rows.filter(r=>r.grade===gradeF);
+  if(from || to) rows=rows.filter(r=>{
+    const m=(r.shipped_at||'').slice(0,7);
+    if(from && m<from) return false;
+    if(to && m>to) return false;
+    return true;
+  });
   if(PA_DET_WEIGHT) rows=rows.filter(r=>r.carcass_weight>=PA_DET_WEIGHT.from && r.carcass_weight<PA_DET_WEIGHT.to);
 
   const chip = document.getElementById('pa-det-weight-chip');

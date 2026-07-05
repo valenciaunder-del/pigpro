@@ -3333,7 +3333,7 @@ const api = {
 
   // Feed price master
   getFeedMaster: () => sbFetch('feed_price_master?order=quarter.desc'),
-  upsertFeedMaster: (data) => sbFetch('feed_price_master', {
+  upsertFeedMaster: (data) => sbFetch('feed_price_master?on_conflict=farm,feed_type,quarter', {
     method: 'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(data)

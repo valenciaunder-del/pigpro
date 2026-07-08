@@ -3371,19 +3371,39 @@ const api = {
   deleteSlaughter: (id) => sbFetch(`slaughter_sheets?id=eq.${id}`, { method:'DELETE' }),
   deleteSlaughterDetail: (sheetId) => sbFetch(`slaughter_detail?sheet_id=eq.${sheetId}`, { method:'DELETE' }),
   getSlaughterDetail: async (farm) => {
-    // PostgRESTのmax_rows制限(1000件)を回避するためページング取得
+    // 件数を先に取得し、必要なページを並列取得（従来は1000件ずつ逐次待ちで取得しており、
+    // 件数が増えるほど起動時の読み込みが遅くなっていた）
     const farmQ = farm && farm !== 'both' ? `farm=eq.${farm}&` : '';
-    const all = [];
-    let offset = 0;
     const pageSize = 1000;
-    while(true) {
-      const batch = await sbFetch(`slaughter_detail?${farmQ}limit=${pageSize}&offset=${offset}`);
-      if(!batch?.length) break;
-      all.push(...batch);
-      if(batch.length < pageSize) break; // 最終ページ
-      offset += pageSize;
+    try {
+      const token = await getAuthToken();
+      const countRes = await fetch(SUPABASE_URL + '/rest/v1/slaughter_detail?' + farmQ + 'select=id', {
+        headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + token,
+                   'Prefer': 'count=exact', 'Range': '0-0' }
+      });
+      const cr = countRes.headers.get('Content-Range') || '';
+      const total = parseInt(cr.split('/')[1]) || 0;
+      if(!total) return [];
+      const pageCount = Math.ceil(total / pageSize);
+      const pages = await Promise.all(
+        Array.from({ length: pageCount }, (_, i) =>
+          sbFetch(`slaughter_detail?${farmQ}limit=${pageSize}&offset=${i*pageSize}`)
+        )
+      );
+      return pages.flat();
+    } catch(e) {
+      // 件数取得に失敗した場合は従来の逐次ページングにフォールバック
+      const all = [];
+      let offset = 0;
+      while(true) {
+        const batch = await sbFetch(`slaughter_detail?${farmQ}limit=${pageSize}&offset=${offset}`);
+        if(!batch?.length) break;
+        all.push(...batch);
+        if(batch.length < pageSize) break;
+        offset += pageSize;
+      }
+      return all;
     }
-    return all;
   },
   getSlaughterDetailCount: async () => {
     const token = await getAuthToken();
@@ -4030,10 +4050,11 @@ function calcFarmActualAdg(farm, cutoffDate) {
   return FARMS[farm]?.adgT || 750;
 }
 
-function calcFarmFcr(farm, monthStr) {
+function calcFarmFcr(farm, monthStr, precomputedAdg) {
   // monthStr: 'YYYY-MM' → その月のFCR、null → 最新月
   // 消費量：期首タンク残 + 月間入荷 - 期末タンク残（期首・期末方式）
   // ADG：農場設定の基準日以降のロットで出荷実績があるものの加重平均
+  // precomputedAdg: 呼び出し元ですでにcalcFarmActualAdgを計算済みの場合、再計算を避けるために渡せる（任意）
 
   // 対象月を決定
   let mon = monthStr;
@@ -4069,7 +4090,7 @@ function calcFarmFcr(farm, monthStr) {
 
   // ADG：農場設定の基準日（farm2は2026-02-13）以降のロットで出荷実績あるもの
   const cutoffDate = farm === 'farm2' ? '2026-02-13' : '2020-01-01';
-  const adg = calcFarmActualAdg(farm, cutoffDate);
+  const adg = (precomputedAdg !== undefined && precomputedAdg !== null) ? precomputedAdg : calcFarmActualAdg(farm, cutoffDate);
 
   // 日頭数（共通関数で推定）
   const headDays = estimateHeadDaysForMonth(farm, mon);
@@ -4878,12 +4899,15 @@ function rDash() {
     const kpiMonths = window._dashKpiMonths ?? 0;
     const adg = calcRecentAdg(f, kpiMonths) || 0;
     // null指定だと最新月（未完了）が取れてnullになるため、直近3ヶ月で有効値を探索
+    // ADGは農場単位・月に依存しないため、ループの外で1回だけ計算して使い回す（同一計算の重複を回避）
+    const _cutoffDate = f === 'farm2' ? '2026-02-13' : '2020-01-01';
+    const _precomputedAdg = calcFarmActualAdg(f, _cutoffDate);
     const fcrVal = (() => {
       const now = new Date();
       for(let i=0; i<=3; i++) {
         const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
         const mon = d.toISOString().slice(0,7);
-        const v = calcFarmFcr(f, mon);
+        const v = calcFarmFcr(f, mon, _precomputedAdg);
         if(v !== null) return v;
       }
       return null;
@@ -5201,12 +5225,14 @@ function rDashFcr() {
   const months = nMonths===0 ? allMonths : allMonths.slice(-nMonths);
   if(!months.length) return;
 
-  // 農場別月次FCR計算
+  // 農場別月次FCR計算（ADGは農場単位で1回だけ計算し、月ごとのループで使い回す）
   const farmFcrs = {};
   ['farm1','farm2'].forEach(f => {
+    const cutoffDate = f === 'farm2' ? '2026-02-13' : '2020-01-01';
+    const precomputedAdg = calcFarmActualAdg(f, cutoffDate);
     farmFcrs[f] = months.map(m => ({
       month: m,
-      fcr: calcFarmFcr(f, m)
+      fcr: calcFarmFcr(f, m, precomputedAdg)
     }));
   });
 
@@ -16472,10 +16498,18 @@ function rFeedTank() {
     (!fcrFrom || g.month >= fcrFrom) && (!fcrTo || g.month <= fcrTo)
   );
 
-  // 各月のFCRを計算
+  // 各月のFCRを計算（ADGは登場する農場ごとに1回だけ計算してキャッシュし、月ループでの重複計算を避ける）
+  const _adgByFarm = {};
+  const _getAdgFor = (farm) => {
+    if(!(farm in _adgByFarm)) {
+      const cutoffDate = farm === 'farm2' ? '2026-02-13' : '2020-01-01';
+      _adgByFarm[farm] = calcFarmActualAdg(farm, cutoffDate);
+    }
+    return _adgByFarm[farm];
+  };
   const monthFcrs = filteredMonths.map(g => ({
     ...g,
-    fcrVal: calcFarmFcr(g.farm, g.month),
+    fcrVal: calcFarmFcr(g.farm, g.month, _getAdgFor(g.farm)),
     headDays: estimateHeadDaysForMonth(g.farm, g.month),
   }));
 

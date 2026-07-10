@@ -1791,6 +1791,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="tab" onclick="st('pa-t','pa-detail',this)">頭別明細</div>
       <div class="tab" onclick="st('pa-t','pa-compare',this)">出荷日比較</div>
       <div class="tab" onclick="st('pa-t','pa-profit',this)">収益性分析</div>
+      <div class="tab" onclick="st('pa-t','pa-barn',this)">豚舎比較</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <select class="fs" id="pa-from-y" onchange="syncMon('pa-from');rPriceAnalysis()" style="width:72px"></select><select class="fs" id="pa-from-m" onchange="syncMon('pa-from');rPriceAnalysis()" style="width:52px"></select><input type="hidden" id="pa-from">
@@ -1910,6 +1911,22 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <tbody id="pa-marginal-tb"></tbody>
       </table></div>
     </div>
+  </div>
+
+  <!-- 豚舎比較 -->
+  <div class="pa-t-c" id="pa-barn" style="display:none">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">
+      豚舎ごとに使用飼料・主な出荷先が異なる場合の収益性比較です。「飼料単価設定」で豚舎別単価を登録しておくと、飼料費もその豚舎の実際の単価で計算されます。
+    </div>
+    <div class="tw"><table class="pt">
+      <thead><tr>
+        <th>豚舎</th><th>主な出荷先</th><th class="tr3">頭数</th><th class="tr3">平均枝肉重量</th>
+        <th class="tr3">平均単価</th><th class="tr3">上物率</th><th class="tr3">FCR</th>
+        <th class="tr3">売上/頭</th><th class="tr3">飼料費/頭</th><th class="tr3">子豚費/頭</th>
+        <th class="tr3">推定利益/頭</th><th class="tr3">推定利益/kg</th>
+      </tr></thead>
+      <tbody id="pa-barn-tb"></tbody>
+    </table></div>
   </div>
 </div>
 
@@ -4463,6 +4480,7 @@ function st(grp, tid, el) {
   if(tid==='lt-feed') rFdTb();
   if(tid==='lt-list') rLotFull();
   if(tid==='pa-profit') rWeightProfitAnalysis();
+  if(tid==='pa-barn') rBarnCompare();
 }
 
 function om(id) {
@@ -15010,6 +15028,86 @@ function rMarginalProfitAnalysis(farm, from, to, periodFcr, feedPricePerKg, yiel
     <td class="tr3 mn ng">¥${Math.round(r.avgDRevenue).toLocaleString()}</td>
     <td class="tr3 mn nb">¥${Math.round(r.avgDFeedCost).toLocaleString()}</td>
     <td class="tr3 mn" style="font-weight:700;color:${r.avgMarginal>=0?'var(--accent)':'var(--danger)'}">¥${Math.round(r.avgMarginal).toLocaleString()}</td>
+  </tr>`).join('');
+}
+
+// 豚舎別収益性比較（豚舎ごとに使用飼料・主な出荷先が異なる場合の比較用）
+function rBarnCompare() {
+  const farm = CF === 'both' ? 'all' : CF;
+  const from = document.getElementById('pa-from')?.value || '';
+  const to   = document.getElementById('pa-to')?.value || '';
+  const tbEl = document.getElementById('pa-barn-tb');
+  if(!tbEl) return;
+
+  const shipLotIdx = buildShipLotIndex(farm);
+  const rows = DATA.slaughterDetail.filter(r=>{
+    if(farm!=='all' && r.farm!==farm) return false;
+    const m=(r.shipped_at||'').slice(0,7);
+    if(from && m<from) return false;
+    if(to && m>to) return false;
+    return r.unit_price>0 && r.carcass_weight>0;
+  }).map(r=>{
+    const info = shipLotIdx[r.farm+'|'+r.shipped_at];
+    const lot = info ? DATA.lots.find(l=>l.id===info.lotId) : null;
+    const sheet = DATA.slaughter.find(s=>s.farm===r.farm && s.shipped_at===r.shipped_at);
+    return { ...r, lot, barn: lot?.barn || '豚舎未設定', buyer: sheet?.buyer || sheet?.slaughterhouse || '-' };
+  });
+
+  if(!rows.length) {
+    tbEl.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:20px">対象期間に頭別データがありません</td></tr>';
+    return;
+  }
+
+  // 豚舎ごとにグループ化
+  const byBarn = {};
+  rows.forEach(r=>{
+    if(!byBarn[r.barn]) byBarn[r.barn] = { barn:r.barn, rows:[], buyers:{} };
+    byBarn[r.barn].rows.push(r);
+    byBarn[r.barn].buyers[r.buyer] = (byBarn[r.barn].buyers[r.buyer]||0) + 1;
+  });
+
+  const results = Object.values(byBarn).map(g => {
+    const n = g.rows.length;
+    const avgWeight = g.rows.reduce((a,r)=>a+r.carcass_weight,0)/n;
+    const avgPrice  = g.rows.reduce((a,r)=>a+r.unit_price,0)/n;
+    const revenuePerHead = avgWeight * avgPrice;
+    const upperCount = g.rows.filter(r=>r.grade==='上').length;
+    const upperRate = n>0 ? Math.round(upperCount/n*1000)/10 : 0;
+    const mainBuyer = Object.entries(g.buyers).sort((a,b)=>b[1]-a[1])[0]?.[0] || '-';
+
+    // このロット群からFCR・子豚費・飼料費（すでに豚舎別単価対応済みのcalcLotProdCostを使用）を平均
+    const barnLots = [...new Set(g.rows.map(r=>r.lot).filter(Boolean))];
+    let fcrSum=0, fcrCount=0, pigletCostSum=0, pigletCostCount=0, feedCostSum=0, feedCostCount=0;
+    barnLots.forEach(l=>{
+      const fcr = calcLotFcrByBarn(l);
+      if(fcr) { fcrSum += fcr; fcrCount++; }
+      const prod = calcLotProdCost(l);
+      if(prod.pigletCost) { pigletCostSum += prod.pigletCost; pigletCostCount++; }
+      if(prod.feedCost != null) { feedCostSum += prod.feedCost; feedCostCount++; }
+    });
+    const avgFcr = fcrCount>0 ? fcrSum/fcrCount : null;
+    const avgPigletCost = pigletCostCount>0 ? pigletCostSum/pigletCostCount : 0;
+    const avgFeedCost   = feedCostCount>0 ? feedCostSum/feedCostCount : 0;
+    const profitPerHead = revenuePerHead - avgFeedCost - avgPigletCost;
+    const profitPerKg   = avgWeight>0 ? profitPerHead/avgWeight : 0;
+
+    return { barn:g.barn, n, avgWeight, avgPrice, upperRate, mainBuyer, avgFcr, avgPigletCost, avgFeedCost, revenuePerHead, profitPerHead, profitPerKg };
+  }).sort((a,b)=>b.profitPerHead-a.profitPerHead);
+
+  const best = results[0];
+  tbEl.innerHTML = results.map(r=>`<tr${r===best?' style="background:rgba(74,222,128,0.08)"':''}>
+    <td class="mn" style="font-weight:700">${r.barn}${r===best?' <span style="color:var(--accent)">★</span>':''}</td>
+    <td>${r.mainBuyer}</td>
+    <td class="tr3 mn">${r.n}頭</td>
+    <td class="tr3 mn">${r.avgWeight.toFixed(1)}kg</td>
+    <td class="tr3 mn">¥${Math.round(r.avgPrice).toLocaleString()}/kg</td>
+    <td class="tr3 mn">${r.upperRate}%</td>
+    <td class="tr3 mn">${r.avgFcr?r.avgFcr.toFixed(2):'-'}</td>
+    <td class="tr3 mn ng">¥${Math.round(r.revenuePerHead).toLocaleString()}</td>
+    <td class="tr3 mn nb">¥${Math.round(r.avgFeedCost).toLocaleString()}</td>
+    <td class="tr3 mn">¥${Math.round(r.avgPigletCost).toLocaleString()}</td>
+    <td class="tr3 mn" style="font-weight:700;color:${r.profitPerHead>=0?'var(--accent)':'var(--danger)'}">¥${Math.round(r.profitPerHead).toLocaleString()}</td>
+    <td class="tr3 mn">¥${Math.round(r.profitPerKg)}</td>
   </tr>`).join('');
 }
 

@@ -3001,6 +3001,36 @@ function calcMonthlyUsage(feedTankData, farm, monthStr) {
     finisher: Math.round(finisherFeedT*100)/100
   };
 }
+
+// タンクごとの月間使用量を内訳付きで返す（豚舎別単価を適用するために使用）
+function calcMonthlyUsageByTank(feedTankData, farm, monthStr) {
+  const mon = monthStr;
+  const tankRows = feedTankData.filter(r => r.farm===farm && r.date && r.date.startsWith(mon));
+  const results = [];
+  for(const ft of ['piglet', 'finisher']) {
+    const ftRows = tankRows.filter(r => r.feed_type === ft);
+    const tankNames = [...new Set(ftRows.map(r=>r.tank_name).filter(Boolean))];
+    for(const tn of tankNames) {
+      const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+      if(!rows.length) continue;
+      const opening = rows[0].tank_remaining||0;
+      const closing = rows[rows.length-1].tank_remaining||0;
+      const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const usage = Math.max(0, opening + delivery - closing);
+      if(usage > 0) results.push({ tank_name: tn, feed_type: ft, usage: Math.round(usage*100)/100 });
+    }
+  }
+  return results;
+}
+
+// タンク名から、そのタンクが属する豚舎（"A号棟"等、ロットのbarn欄と同じ表記）を逆引きする
+// FARMS設定のtank_piglet_label/tank_hog_labelと突き合わせる。見つからなければnull（＝全豚舎共通単価が使われる）
+function getTankBarn(farm, tankName) {
+  const barns = FARMS[farm]?.barns || [];
+  const b = barns.find(x => x.tank_piglet_label===tankName || x.tank_hog_label===tankName);
+  return b ? `${b.id}号棟` : null;
+}
+
 // ══════════════════════════════════════════════
 // SUPABASE CONFIG & AUTH
 // ══════════════════════════════════════════════
@@ -14758,11 +14788,15 @@ function calcBlendedFeedPricePerKg(farm, from, to) {
     const months = [...new Set(DATA.feedTank.filter(r=>r.farm===f && r.date).map(r=>r.date.slice(0,7)))]
       .filter(m => (!from || m>=from) && (!to || m<=to));
     months.forEach(mon => {
-      const usage = calcMonthlyUsage(DATA.feedTank, f, mon);
-      const pigletPrice   = getFeedPrice(f, mon+'-01', '子豚用')   || 0; // 円/t
-      const finisherPrice = getFeedPrice(f, mon+'-01', '肥育用') || 0; // 円/t
-      totalT    += (usage.piglet||0) + (usage.finisher||0);
-      totalCost += (usage.piglet||0)*pigletPrice + (usage.finisher||0)*finisherPrice;
+      // タンクごとに使用量を集計し、そのタンクが属する豚舎の単価（無ければ全豚舎共通）を個別に適用
+      const usageByTank = calcMonthlyUsageByTank(DATA.feedTank, f, mon);
+      usageByTank.forEach(u => {
+        const feedTypeLabel = u.feed_type === 'piglet' ? '子豚用' : '肥育用';
+        const barn = getTankBarn(f, u.tank_name);
+        const price = getFeedPrice(f, mon+'-01', feedTypeLabel, barn) || 0; // 円/t
+        totalT += u.usage;
+        totalCost += u.usage * price;
+      });
     });
   });
   return totalT > 0 ? (totalCost/totalT)/1000 : 0; // 円/kg
@@ -15056,11 +15090,17 @@ function calcDailyFeedCostPerHead(farm, from, to) {
     const months = [...new Set(DATA.feedTank.filter(r=>r.farm===f && r.date).map(r=>r.date.slice(0,7)))]
       .filter(m => (!from || m>=from) && (!to || m<=to));
     months.forEach(mon => {
-      const usage = calcMonthlyUsage(DATA.feedTank, f, mon); // {piglet, finisher} トン
-      const pigletPrice   = getFeedPrice(f, mon+'-01', '子豚用') || 0; // 円/t
-      const finisherPrice = getFeedPrice(f, mon+'-01', '肥育用') || 0; // 円/t
-      if(pigletPrice || finisherPrice) {
-        totalCost += (usage.piglet||0)*pigletPrice + (usage.finisher||0)*finisherPrice;
+      // タンクごとの使用量に、そのタンクの豚舎単価（無ければ全豚舎共通）を個別適用して合算
+      const usageByTank = calcMonthlyUsageByTank(DATA.feedTank, f, mon);
+      let monthCost = 0, monthHasPrice = false;
+      usageByTank.forEach(u => {
+        const feedTypeLabel = u.feed_type === 'piglet' ? '子豚用' : '肥育用';
+        const barn = getTankBarn(f, u.tank_name);
+        const price = getFeedPrice(f, mon+'-01', feedTypeLabel, barn) || 0; // 円/t
+        if(price) { monthCost += u.usage * price; monthHasPrice = true; }
+      });
+      if(monthHasPrice) {
+        totalCost += monthCost;
         totalHeadDays += estimateHeadDaysForMonth(f, mon);
       }
     });

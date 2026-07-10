@@ -2287,7 +2287,10 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <select class="fs" id="fpm-barn"><option value="">全豚舎共通</option></select>
           </div>
           <div class="fg"><label class="fl">銘柄</label>
-            <input class="fi" id="fpm-brand" placeholder="例: 清水港飼料○○号（空欄=銘柄問わず）">
+            <div style="display:flex;gap:4px">
+              <select class="fs" id="fpm-brand" style="flex:1"><option value="">（銘柄問わず）</option></select>
+              <button type="button" class="btn bs sm" onclick="addNewFeedBrand('fpm-brand')" title="新しい銘柄を追加" style="padding:0 10px">＋</button>
+            </div>
           </div>
           <div class="fg"><label class="fl">四半期</label>
             <select class="fs" id="fpm-quarter">
@@ -3316,6 +3319,14 @@ const api = {
     body: JSON.stringify(data)
   }),
   deleteFeedMaster: (id) => sbFetch(`feed_price_master?id=eq.${id}`, { method:'DELETE' }),
+
+  // Feed brand master（銘柄マスター）。テーブル未作成時でも全体のデータ読み込みを止めないようフォールバックする
+  getFeedBrands: async () => { try { return await sbFetch('feed_brand_master?order=name.asc'); } catch(e) { console.warn('feed_brand_master取得失敗:', e.message); return []; } },
+  insertFeedBrand: (name) => sbFetch('feed_brand_master', {
+    method: 'POST',
+    headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify({ name }),
+  }),
 
   // Feed purchase
   getFeedPurchase: () => sbFetch('feed_purchase?order=purchased_at.desc'),
@@ -4402,14 +4413,14 @@ function setConn(ok, msg) {
 async function loadAll() {
   showLoading('データを読み込み中...');
   try {
-    const [lots, weights, feeds, deaths, ships, costs, sales, ival, balance, feedMaster, feedPurchase, invDaily, slaughter, slaughterDetail, feedTank, confirmations, farmSettings] = await Promise.all([
+    const [lots, weights, feeds, deaths, ships, costs, sales, ival, balance, feedMaster, feedPurchase, invDaily, slaughter, slaughterDetail, feedTank, confirmations, farmSettings, feedBrands] = await Promise.all([
       api.getLots(), api.getWeights(), api.getFeeds(),
       api.getDeaths(), api.getShips(), api.getCosts(), api.getSales(),
       api.getIval(), api.getBalance(), api.getFeedMaster(), api.getFeedPurchase(),
       api.getInvDaily(), api.getSlaughter(), api.getSlaughterDetail(), api.getFeedTank(),
-      api.getConfirmations(), api.getFarmSettings()
+      api.getConfirmations(), api.getFarmSettings(), api.getFeedBrands()
     ]);
-    DATA = { lots, weights, feeds, deaths, ships, costs, sales, ival, balance, feedMaster, feedPurchase, invDaily, slaughter, slaughterDetail, feedTank, confirmations };
+    DATA = { lots, weights, feeds, deaths, ships, costs, sales, ival, balance, feedMaster, feedPurchase, invDaily, slaughter, slaughterDetail, feedTank, confirmations, feedBrands };
     // 農場設定をSupabaseから復元（localStorageより優先）
     if(farmSettings && Object.keys(farmSettings).length > 0) {
       ['farm1','farm2'].forEach(f => {
@@ -15290,6 +15301,7 @@ function rFeedMaster() {
   const ff = document.getElementById('fpm-ff')?.value||'all';
   const items = DATA.feedMaster.filter(r => ff==='all'||r.farm===ff);
   updateFpmBarnOptions();
+  fillFeedBrandSelects();
 
   // 農場+豚舎+銘柄+四半期ごとにグループ化して表示
   const grouped = {};
@@ -15350,6 +15362,38 @@ function updateFpmBarnOptions() {
   barnSel.innerHTML = '<option value="">全豚舎共通</option>' +
     barns.map(b => `<option value="${b.id}号棟">${b.id}号棟</option>`).join('');
   if([...barnSel.options].some(o=>o.value===current)) barnSel.value = current;
+}
+
+// 銘柄マスターの選択肢を、画面上の全ての銘柄セレクトに反映する（飼料単価設定・飼料購入記録で共用）
+function fillFeedBrandSelects() {
+  const brands = (DATA.feedBrands||[]).map(b=>b.name).sort((a,b)=>a.localeCompare(b,'ja'));
+  const selects = [
+    document.getElementById('fpm-brand'),
+    ...document.querySelectorAll('[id^="fp-brand-"]'),
+  ].filter(Boolean);
+  selects.forEach(sel => {
+    const cur = sel.value;
+    const placeholder = sel.id === 'fpm-brand' ? '（銘柄問わず）' : '（未選択）';
+    sel.innerHTML = `<option value="">${placeholder}</option>` +
+      brands.map(b=>`<option value="${b.replace(/"/g,'&quot;')}" ${b===cur?'selected':''}>${b}</option>`).join('');
+  });
+}
+
+// 銘柄マスターに新規登録し、指定セレクトへ即座に反映・選択する
+async function addNewFeedBrand(targetSelectId) {
+  const name = (prompt('新しい銘柄名を入力してください（例: 清水港飼料スター号）')||'').trim();
+  if(!name) return;
+  try {
+    await api.insertFeedBrand(name);
+    DATA.feedBrands = await api.getFeedBrands();
+    fillFeedBrandSelects();
+    const target = document.getElementById(targetSelectId);
+    if(target) {
+      target.value = name;
+      target.dispatchEvent(new Event('change'));
+    }
+    notif(`銘柄「${name}」を追加しました`);
+  } catch(e) { notif('銘柄登録エラー: '+e.message, 'r'); }
 }
 
 // 一覧の「編集」クリックでフォームに値を読み込む
@@ -15455,11 +15499,17 @@ function renderFpTankBoxes() {
     return `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px">
       <div style="font-size:11px;font-weight:600;color:${fg};margin-bottom:8px">${d.label}${d.tankName?`<div style="color:var(--muted);font-weight:400;font-size:10px">タンク: ${d.tankName}</div>`:''}</div>
       <div class="fg mb16"><label class="fl">数量（t）</label><input class="fi" type="number" id="fp-amt-${d.key}" step="0.1" placeholder="0.0" oninput="calcFpTotal()"></div>
-      <div class="fg mb16"><label class="fl">銘柄</label><input class="fi" id="fp-brand-${d.key}" placeholder="例: ○○飼料 △△号" style="font-size:12px" oninput="onFpDateChange()"></div>
+      <div class="fg mb16"><label class="fl">銘柄</label>
+        <div style="display:flex;gap:4px">
+          <select class="fs" id="fp-brand-${d.key}" style="flex:1;font-size:12px" onchange="onFpDateChange()"><option value="">（未選択）</option></select>
+          <button type="button" class="btn bs sm" onclick="addNewFeedBrand('fp-brand-${d.key}')" title="新しい銘柄を追加" style="padding:0 8px;font-size:12px">＋</button>
+        </div>
+      </div>
       <div style="font-size:11px;color:var(--muted2)" id="fp-price-${d.key}-lbl">単価: -</div>
       <div style="font-size:12px;color:${fg};margin-top:4px;font-family:var(--mono)" id="fp-total-${d.key}">-</div>
     </div>`;
   }).join('');
+  fillFeedBrandSelects();
   onFpDateChange();
 }
 

@@ -94,6 +94,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 .pb{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:3px;}
 .pf{height:100%;border-radius:3px;}
 .fg3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.fg4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
 .fg2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
 .fg{display:flex;flex-direction:column;gap:4px;}
 .fl{font-size:11px;color:var(--muted);}
@@ -2250,9 +2251,12 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="ch"><span class="ct">飼料単価設定（四半期）</span></div>
       <div class="cb">
         <div class="alert i" style="margin-bottom:14px">ℹ️ <div>四半期ごとに飼料種類別の単価をトン単位で設定します。購入記録入力時に自動適用されます。</div></div>
-        <div class="fg3 mb16">
+        <div class="fg4 mb16">
           <div class="fg"><label class="fl">農場</label>
-            <select class="fs" id="fpm-farm"><option value="farm1">中田農場</option><option value="farm2">米山農場</option></select>
+            <select class="fs" id="fpm-farm" onchange="updateFpmBarnOptions()"><option value="farm1">中田農場</option><option value="farm2">米山農場</option></select>
+          </div>
+          <div class="fg"><label class="fl">豚舎</label>
+            <select class="fs" id="fpm-barn"><option value="">全豚舎共通</option></select>
           </div>
           <div class="fg"><label class="fl">四半期</label>
             <select class="fs" id="fpm-quarter">
@@ -2272,6 +2276,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           </div>
           <div class="fg"><label class="fl">備考</label><input class="fi" id="fpm-note" placeholder="例: 値上がり対応"></div>
         </div>
+        <div style="font-size:11px;color:var(--muted);margin:-10px 0 14px">※「全豚舎共通」で設定した単価は、豚舎別の単価が無いロット・タンクにフォールバックとして使われます。豚舎ごとに銘柄・単価が異なる場合は豚舎を指定して登録してください。</div>
         <!-- 3種類の単価を横並びで入力 -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
           <div style="background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:14px">
@@ -2309,7 +2314,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <thead><tr>
             <th style="position:sticky;left:0;background:var(--panel2);z-index:2;min-width:90px">農場</th>
             <th style="position:sticky;left:90px;background:var(--panel2);z-index:2;min-width:100px;box-shadow:2px 0 4px rgba(0,0,0,.2)">四半期</th>
-            <th>後期用(飼料費+運賃)</th><th>子豚用(飼料費+運賃)</th><th>肥育用(飼料費+運賃)</th><th>備考</th><th></th>
+            <th>豚舎</th><th>後期用(飼料費+運賃)</th><th>子豚用(飼料費+運賃)</th><th>肥育用(飼料費+運賃)</th><th>備考</th><th></th>
           </tr></thead>
           <tbody id="fpm-tb"></tbody>
         </table>
@@ -3235,7 +3240,7 @@ const api = {
 
   // Feed price master
   getFeedMaster: () => sbFetch('feed_price_master?order=quarter.desc'),
-  upsertFeedMaster: (data) => sbFetch('feed_price_master?on_conflict=farm,feed_type,quarter', {
+  upsertFeedMaster: (data) => sbFetch('feed_price_master?on_conflict=farm,barn,feed_type,quarter', {
     method: 'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(data)
@@ -3822,9 +3827,9 @@ function calcLotProdCost(lot) {
   // ④ 飼料単価（加重平均：子豚用 + 肉豚用）
   // 導入日基準の四半期単価を使用
   const baseDate = lot.start_date || new Date().toISOString().slice(0,10);
-  // feed_price_masterのfeed_typeは日本語（'子豚用'/'肥育用'）
-  const pigletPrice   = getFeedPrice(farm, baseDate, '子豚用')   || 0;
-  const finisherPrice = getFeedPrice(farm, baseDate, '肥育用') || 0;
+  // feed_price_masterのfeed_typeは日本語（'子豚用'/'肥育用'）。豚舎別単価があれば優先
+  const pigletPrice   = getFeedPrice(farm, baseDate, '子豚用', lot.barn)   || 0;
+  const finisherPrice = getFeedPrice(farm, baseDate, '肥育用', lot.barn) || 0;
 
   // 飼料使用比率（飼料タンクデータから、なければ経験則40:60）
   let pigletRatio = 0.4;
@@ -3909,8 +3914,8 @@ function calcCollateralValuePerLot(lot) {
   }
 
   const baseDate = lot.start_date || today;
-  const pigletPrice   = getFeedPrice(farm, baseDate, '子豚用')   || 0;
-  const finisherPrice = getFeedPrice(farm, baseDate, '肥育用') || 0;
+  const pigletPrice   = getFeedPrice(farm, baseDate, '子豚用', lot.barn)   || 0;
+  const finisherPrice = getFeedPrice(farm, baseDate, '肥育用', lot.barn) || 0;
   const avgFeedPricePerT = (pigletPrice && finisherPrice) ? (pigletPrice+finisherPrice)/2 : (pigletPrice || finisherPrice || 0);
   const feedCostPerHead = Math.round(fcr * weightGain * avgFeedPricePerT / 1000);
   const total = Math.round(pigletCostPerHead + feedCostPerHead);
@@ -14995,20 +15000,33 @@ function dateToQuarter(dateStr) {
 }
 
 // 農場・四半期・飼料種類で単価を取得（円/t）＝飼料費＋運賃の合計
-function getFeedPrice(farm, dateStr, feedType) {
+// 農場・四半期・飼料種類（・豚舎）で単価を取得（円/t）＝飼料費＋運賃の合計
+// barnを指定した場合、その豚舎専用の単価があれば優先し、無ければ「全豚舎共通」設定にフォールバックする
+function getFeedPrice(farm, dateStr, feedType, barn) {
   const q = dateToQuarter(dateStr);
-  const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType);
+  if(barn) {
+    const barnRec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.barn===barn);
+    if(barnRec) {
+      const total = (barnRec.price_per_ton||0) + (barnRec.freight_per_ton||0);
+      if(total) return total;
+    }
+  }
+  const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && !r.barn);
   if(!rec) return null;
   const total = (rec.price_per_ton||0) + (rec.freight_per_ton||0);
   return total || null;
 }
 
-// 飼料費と運賃を内訳付きで取得（表示用）
-function getFeedPriceDetail(farm, dateStr, feedType) {
+// 飼料費と運賃を内訳付きで取得（表示用、barn対応は上記getFeedPriceと同じ優先順位）
+function getFeedPriceDetail(farm, dateStr, feedType, barn) {
   const q = dateToQuarter(dateStr);
-  const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType);
+  if(barn) {
+    const barnRec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.barn===barn);
+    if(barnRec) return { price: barnRec.price_per_ton||0, freight: barnRec.freight_per_ton||0, total: (barnRec.price_per_ton||0)+(barnRec.freight_per_ton||0), barn };
+  }
+  const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && !r.barn);
   if(!rec) return null;
-  return { price: rec.price_per_ton||0, freight: rec.freight_per_ton||0, total: (rec.price_per_ton||0)+(rec.freight_per_ton||0) };
+  return { price: rec.price_per_ton||0, freight: rec.freight_per_ton||0, total: (rec.price_per_ton||0)+(rec.freight_per_ton||0), barn: null };
 }
 
 // 購入記録から日次飼料費を集計
@@ -15068,12 +15086,13 @@ function calcDailyFeedCostPerHead(farm, from, to) {
 function rFeedMaster() {
   const ff = document.getElementById('fpm-ff')?.value||'all';
   const items = DATA.feedMaster.filter(r => ff==='all'||r.farm===ff);
+  updateFpmBarnOptions();
 
-  // 四半期ごとにグループ化して表示
+  // 農場+豚舎+四半期ごとにグループ化して表示
   const grouped = {};
   items.forEach(r => {
-    const key = r.farm+'|'+r.quarter;
-    if(!grouped[key]) grouped[key] = { farm:r.farm, quarter:r.quarter, note:r.note, prices:{} };
+    const key = r.farm+'|'+(r.barn||'')+'|'+r.quarter;
+    if(!grouped[key]) grouped[key] = { farm:r.farm, barn:r.barn||'', quarter:r.quarter, note:r.note, prices:{} };
     grouped[key].prices[r.feed_type] = { price:r.price_per_ton||0, freight:r.freight_per_ton||0 };
   });
 
@@ -15084,19 +15103,20 @@ function rFeedMaster() {
   };
 
   document.getElementById('fpm-tb').innerHTML = Object.values(grouped).length
-    ? Object.values(grouped).sort((a,b)=>b.quarter.localeCompare(a.quarter)).map(g=>`<tr>
+    ? Object.values(grouped).sort((a,b)=> b.quarter.localeCompare(a.quarter) || a.barn.localeCompare(b.barn)).map(g=>`<tr>
         <td style="position:sticky;left:0;background:var(--panel);z-index:1;font-weight:600">${fb(g.farm)}</td>
         <td class="mn" style="position:sticky;left:90px;background:var(--panel);z-index:1;font-weight:600;box-shadow:2px 0 4px rgba(0,0,0,.2)">${g.quarter}</td>
+        <td>${g.barn?`<span class="bdg">${g.barn}</span>`:'<span style="color:var(--muted)">全豚舎共通</span>'}</td>
         <td class="mn ng">${fmtCell(g.prices['後期用'])}</td>
         <td class="mn nn">${fmtCell(g.prices['子豚用'])}</td>
         <td class="mn" style="color:var(--accent3)">${fmtCell(g.prices['肥育用'])}</td>
         <td style="color:var(--muted)">${g.note||'-'}</td>
         <td style="white-space:nowrap">
           <button class="btn bs sm" onclick='editFeedMasterGroup(${JSON.stringify(g).replace(/'/g,"&apos;")})'>編集</button>
-          <button class="btn bd sm" onclick="delFeedMasterGroup('${g.farm}','${g.quarter}')">削除</button>
+          <button class="btn bd sm" onclick="delFeedMasterGroup('${g.farm}','${g.barn}','${g.quarter}')">削除</button>
         </td>
       </tr>`).join('')
-    : '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">単価が登録されていません</td></tr>';
+    : '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">単価が登録されていません</td></tr>';
 
   // 合計 円/kg表示更新（飼料費・運賃どちらの変更でも再計算）
   ['1','2','3'].forEach(n => {
@@ -15114,9 +15134,25 @@ function rFeedMaster() {
   });
 }
 
+// 選択中の農場に応じて豚舎セレクトの選択肢を更新
+// ロット側のbarn表記（例:"A号棟"）と一致させることで、ロットの豚舎から単価を直接引けるようにする
+function updateFpmBarnOptions() {
+  const farmSel = document.getElementById('fpm-farm');
+  const barnSel = document.getElementById('fpm-barn');
+  if(!farmSel || !barnSel) return;
+  const farm = farmSel.value;
+  const barns = FARMS[farm]?.barns || [];
+  const current = barnSel.value;
+  barnSel.innerHTML = '<option value="">全豚舎共通</option>' +
+    barns.map(b => `<option value="${b.id}号棟">${b.id}号棟</option>`).join('');
+  if([...barnSel.options].some(o=>o.value===current)) barnSel.value = current;
+}
+
 // 一覧の「編集」クリックでフォームに値を読み込む
 function editFeedMasterGroup(g) {
   document.getElementById('fpm-farm').value = g.farm;
+  updateFpmBarnOptions();
+  document.getElementById('fpm-barn').value = g.barn||'';
   document.getElementById('fpm-quarter').value = g.quarter;
   document.getElementById('fpm-note').value = g.note||'';
   const map = { '後期用':'1', '子豚用':'2', '肥育用':'3' };
@@ -15128,7 +15164,7 @@ function editFeedMasterGroup(g) {
     if(fEl) fEl.value = p.freight || '';
     if(pEl) pEl.dispatchEvent(new Event('input'));
   });
-  notif(`${g.farm==='farm1'?'中田農場':'米山農場'} / ${g.quarter} を編集モードで読み込みました`);
+  notif(`${g.farm==='farm1'?'中田農場':'米山農場'} / ${g.barn||'全豚舎共通'} / ${g.quarter} を編集モードで読み込みました`);
 }
 
 function clearFeedMasterForm() {
@@ -15139,6 +15175,7 @@ function clearFeedMasterForm() {
 
 async function saveFeedMaster() {
   const farm = document.getElementById('fpm-farm').value;
+  const barn = document.getElementById('fpm-barn')?.value || '';
   const quarter = document.getElementById('fpm-quarter').value;
   const note = document.getElementById('fpm-note').value||null;
   const prices = [
@@ -15155,21 +15192,22 @@ async function saveFeedMaster() {
       const priceVal = parseInt(document.getElementById(p.pEl).value)||0;
       const freightVal = parseInt(document.getElementById(p.fEl).value)||0;
       if(!priceVal && !freightVal) continue;
-      await api.upsertFeedMaster({ farm, feed_type:p.feed_type, quarter, price_per_ton:priceVal, freight_per_ton:freightVal, note });
+      await api.upsertFeedMaster({ farm, barn, feed_type:p.feed_type, quarter, price_per_ton:priceVal, freight_per_ton:freightVal, note });
     }
     DATA.feedMaster = await api.getFeedMaster();
-    rFeedMaster(); notif('飼料単価を保存しました');
+    rFeedMaster(); notif(`飼料単価を保存しました（${barn||'全豚舎共通'}）`);
     clearFeedMasterForm();
   } catch(e) { notif('保存エラー: '+e.message,'r'); }
   finally { hideLoading(); }
 }
 
-async function delFeedMasterGroup(farm, quarter) {
-  if(!confirm(`${farm} / ${quarter} の単価設定を削除しますか？`)) return;
+async function delFeedMasterGroup(farm, barn, quarter) {
+  const barnLabel = barn||'全豚舎共通';
+  if(!confirm(`${farm} / ${barnLabel} / ${quarter} の単価設定を削除しますか？`)) return;
   showLoading('削除中...');
   try {
-    // 該当farm+quarterのレコードを全削除
-    const targets = DATA.feedMaster.filter(r=>r.farm===farm&&r.quarter===quarter);
+    // 該当farm+barn+quarterのレコードを全削除
+    const targets = DATA.feedMaster.filter(r=>r.farm===farm && (r.barn||'')===barn && r.quarter===quarter);
     for(const r of targets) await api.deleteFeedMaster(r.id);
     DATA.feedMaster = await api.getFeedMaster();
     rFeedMaster(); notif('削除しました');

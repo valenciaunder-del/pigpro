@@ -18,6 +18,7 @@
 body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;min-height:100vh;display:flex;}
 #sb{width:228px;min-width:228px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;}
 .sb-logo{padding:17px 17px 13px;border-bottom:1px solid var(--border);}
+.sb-fixed-top{position:sticky;top:0;z-index:10;background:var(--panel);}
 .sb-logo .mark{font-family:var(--disp);font-size:24px;font-weight:800;color:var(--accent);line-height:1;}
 .sb-logo .sub{font-size:10px;color:var(--muted);margin-top:3px;}
 .farm-sw{padding:11px 13px;border-bottom:1px solid var(--border);}
@@ -233,12 +234,14 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 
 <!-- SIDEBAR -->
 <nav id="sb">
-  <div class="sb-logo"><div class="mark">🐷 PigPro</div><div class="sub">MULTI-FARM v3 · Cloud</div></div>
-  <div class="farm-sw">
-    <div class="farm-sw-lbl">農場切替</div>
-    <button class="fbtn f1 active" onclick="switchFarm('farm1',this)"><span class="fdot"></span><span>中田農場</span></button>
-    <button class="fbtn f2" onclick="switchFarm('farm2',this)"><span class="fdot"></span><span>米山農場</span></button>
-    <button class="fbtn bo" onclick="switchFarm('both',this)"><span class="fdot"></span><span>全農場 合算</span></button>
+  <div class="sb-fixed-top">
+    <div class="sb-logo"><div class="mark">🐷 PigPro</div><div class="sub">MULTI-FARM v3 · Cloud</div></div>
+    <div class="farm-sw">
+      <div class="farm-sw-lbl">農場切替</div>
+      <button class="fbtn f1 active" onclick="switchFarm('farm1',this)"><span class="fdot"></span><span>中田農場</span></button>
+      <button class="fbtn f2" onclick="switchFarm('farm2',this)"><span class="fdot"></span><span>米山農場</span></button>
+      <button class="fbtn bo" onclick="switchFarm('both',this)"><span class="fdot"></span><span>全農場 合算</span></button>
+    </div>
   </div>
   <div class="sb-sec">メイン</div>
   <div class="nv active" onclick="gp('dashboard',this)"><span class="ic">📊</span><span>ダッシュボード</span></div>
@@ -895,14 +898,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div class="sep"></div>
         <!-- 死亡記録フィルタ -->
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
-          <div class="fg" style="min-width:100px">
-            <label class="fl">農場</label>
-            <select class="fs" id="dth-f-farm" onchange="rDthTb()">
-              <option value="">全農場</option>
-              <option value="farm1">中田農場</option>
-              <option value="farm2">米山農場</option>
-            </select>
-          </div>
           <div class="fg" style="min-width:110px">
             <label class="fl">ロット</label>
             <select class="fs" id="dth-f-lot" onchange="rDthTb()">
@@ -1500,9 +1495,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <div class="card" style="margin-top:16px">
     <div class="ch">
       <span class="ct">保存済み仕切書</span>
-      <select class="fs" style="width:auto;padding:4px 9px;font-size:12px" id="sl-saved-ff" onchange="rSlaughterSaved()">
-        <option value="all">全農場</option><option value="farm1">中田農場</option><option value="farm2">米山農場</option>
-      </select>
     </div>
     <div class="kgrid mb16" style="grid-template-columns:repeat(4,1fr);margin:16px 16px 0" id="sl-saved-kpi"></div>
     <div class="tw"><table>
@@ -1522,14 +1514,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <div class="card mb18">
     <div class="cb" style="padding:14px 16px">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div class="fg" style="min-width:110px">
-          <label class="fl">農場</label>
-          <select class="fs" id="slh-farm" onchange="rSlHistory()">
-            <option value="all">全農場</option>
-            <option value="farm1">中田農場</option>
-            <option value="farm2">米山農場</option>
-          </select>
-        </div>
         <div class="fg" style="min-width:80px">
           <label class="fl">出荷日（from）</label>
           <input class="fi" type="date" id="slh-from" onchange="rSlHistory()">
@@ -2055,11 +2039,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 <div class="page" id="page-monthly-sales">
   <div class="card mb18">
     <div class="cb" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <select class="fs" id="msd-farm" onchange="rMonthlySales()" style="width:120px">
-        <option value="both">全農場</option>
-        <option value="farm1">中田農場</option>
-        <option value="farm2">米山農場</option>
-      </select>
       <button class="btn bs sm" onclick="msdMove(-1)">◀ 前月</button>
       <select class="fs" id="msd-year" onchange="rMonthlySales()" style="width:80px"></select>
       <select class="fs" id="msd-month" onchange="rMonthlySales()" style="width:64px">
@@ -2089,9 +2068,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <div class="g2 mb18">
     <div class="card" style="margin-bottom:0;border-top:3px solid var(--danger)">
       <div class="ch"><span class="ct" style="color:var(--danger)">事故損失 登録一覧</span>
-        <select class="fs" style="width:auto;padding:4px 9px;font-size:12px" id="acc-ff" onchange="rAccident()">
-          <option value="all">全農場</option><option value="farm1">中田農場</option><option value="farm2">米山農場</option>
-        </select>
       </div>
       <div class="tw"><table>
         <thead><tr><th>農場</th><th>発生日</th><th>ロット</th><th>頭数</th><th>素豚代/頭</th><th>飼料費/頭</th><th>自動計算額</th><th>確定評価損</th><th>備考</th><th></th></tr></thead>
@@ -2345,9 +2321,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     <!-- 設定済み単価一覧 -->
     <div class="card" style="margin-bottom:0">
       <div class="ch"><span class="ct">設定済み単価一覧</span>
-        <select class="fs" style="width:auto;padding:4px 9px;font-size:12px" id="fpm-ff" onchange="rFeedMaster()">
-          <option value="all">全農場</option><option value="farm1">中田農場</option><option value="farm2">米山農場</option>
-        </select>
       </div>
       <div class="tw">
         <table>
@@ -2430,9 +2403,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     <!-- 購入記録一覧 -->
     <div class="card" style="margin-bottom:0">
       <div class="ch"><span class="ct">購入記録一覧</span>
-        <select class="fs" style="width:auto;padding:4px 9px;font-size:12px" id="fp-ff" onchange="rFeedPurchase()">
-          <option value="all">全農場</option><option value="farm1">中田農場</option><option value="farm2">米山農場</option>
-        </select>
       </div>
       <div class="tw">
         <table>
@@ -2800,7 +2770,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     <div class="card" style="margin-bottom:0">
       <div class="ch"><span class="ct">レポート出力</span></div>
       <div class="cb">
-        <div class="fg mb16"><label class="fl">対象農場</label><select class="fs"><option>中田農場</option><option>米山農場</option><option>全農場合算</option></select></div>
         <div class="fg mb16"><label class="fl">対象年月</label><select class="fs" id="rpt-mon-y" onchange="syncMon('rpt-mon')" style="width:78px"></select><select class="fs" id="rpt-mon-m" onchange="syncMon('rpt-mon')" style="width:58px"></select><input type="hidden" id="rpt-mon"></div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
           <label style="display:flex;align-items:center;gap:8px;color:var(--muted2);cursor:pointer"><input type="checkbox" checked> 成績サマリ（ADG・FCR・死廃率）</label>
@@ -4509,7 +4478,7 @@ function switchFarm(f, el) {
   pill.className = 'fpill ' + (f==='both'?'bo':f==='farm1'?'f1':'f2');
   document.getElementById('fpill-txt').textContent = f==='both'?'全農場 合算':FARMS[f].name;
   // 入力フォームの農場セレクトをCFに同期（登録フォーム用）
-  ['co-farm','sa-farm','fl-farm','fp-farm','fpm-farm','inv-farm','s-farm'].forEach(id=>{
+  ['co-farm','sa-farm','fl-farm','fp-farm','fpm-farm','fbg-farm','inv-farm','s-farm'].forEach(id=>{
     const el2 = document.getElementById(id);
     if(!el2) return;
     const hasOpt = [...el2.options].some(o=>o.value===f);
@@ -8139,9 +8108,6 @@ function initMsdSelectors() {
     const now = new Date();
     moEl.value = String(now.getMonth()+1).padStart(2,'0');
   }
-  // 農場セレクタをCFに合わせる
-  const farmEl = document.getElementById('msd-farm');
-  if(farmEl && CF!=='both') farmEl.value = CF;
 }
 
 function msdMove(delta) {
@@ -8160,11 +8126,10 @@ function msdMove(delta) {
 function rMonthlySales() {
   const yrEl  = document.getElementById('msd-year');
   const moEl  = document.getElementById('msd-month');
-  const fmEl  = document.getElementById('msd-farm');
   if(!yrEl?.value || !moEl?.value) return;
   const yr   = yrEl.value;
   const mo   = moEl.value;
-  const farm = fmEl?.value || 'both';
+  const farm = CF;
   const mon  = `${yr}-${mo}`;
 
   const sheets = DATA.slaughter.filter(s => {
@@ -8344,7 +8309,7 @@ function rMonthlySales() {
 function exportMonthlySalesCsv() {
   const yr  = document.getElementById('msd-year')?.value  || '';
   const mo  = document.getElementById('msd-month')?.value || '';
-  const farm= document.getElementById('msd-farm')?.value  || 'both';
+  const farm= CF;
   const mon = `${yr}-${mo}`;
 
   const sheets = DATA.slaughter.filter(s => {
@@ -9665,7 +9630,7 @@ function rFdTb() {
 }
 
 function clearDthFilter() {
-  ['dth-f-farm','dth-f-lot','dth-f-type','dth-f-from','dth-f-to'].forEach(id=>{
+  ['dth-f-lot','dth-f-type','dth-f-from','dth-f-to'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.value = '';
   });
@@ -9675,7 +9640,6 @@ function clearDthFilter() {
 function rDthTb() {
   const tb = document.getElementById('dth-tb'); if(!tb) return;
   // フィルタ値取得
-  const fFarm = document.getElementById('dth-f-farm')?.value || '';
   const fLot  = document.getElementById('dth-f-lot')?.value  || '';
   const fType = document.getElementById('dth-f-type')?.value || '';
   const fFrom = document.getElementById('dth-f-from')?.value || '';
@@ -9691,7 +9655,6 @@ function rDthTb() {
   }
 
   let items = CF==='both' ? DATA.deaths : DATA.deaths.filter(d=>d.farm===CF);
-  if(fFarm) items = items.filter(d=>d.farm===fFarm);
   if(fLot)  items = items.filter(d=>d.lot_id===fLot);
   if(fType) items = items.filter(d=>d.category===fType);
   if(fFrom) items = items.filter(d=>(d.occurred_at||'')>=fFrom);
@@ -13567,15 +13530,15 @@ function slhSort(key) {
 }
 
 function slhClearFilter() {
-  ['slh-farm','slh-from','slh-to','slh-place','slh-fname'].forEach(id => {
+  ['slh-from','slh-to','slh-place','slh-fname'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.value = id === 'slh-farm' ? 'all' : '';
+    if (el) el.value = '';
   });
   rSlHistory();
 }
 
 function rSlHistory() {
-  const farm  = document.getElementById('slh-farm')?.value || 'all';
+  const farm  = CF==='both' ? 'all' : CF;
   const from  = document.getElementById('slh-from')?.value || '';
   const to    = document.getElementById('slh-to')?.value || '';
   const place = (document.getElementById('slh-place')?.value || '').trim().toLowerCase();
@@ -13717,7 +13680,7 @@ async function rebuildSlaughterDetails() {
 
 function exportSlaughterCsv() {
   // フィルタ後の表示データを取得（rSlHistoryと同じフィルタ条件）
-  const farm  = document.getElementById('slh-farm')?.value || 'all';
+  const farm  = CF==='both' ? 'all' : CF;
   const from  = document.getElementById('slh-from')?.value || '';
   const to    = document.getElementById('slh-to')?.value || '';
   const place = (document.getElementById('slh-place')?.value || '').trim().toLowerCase();
@@ -13808,7 +13771,7 @@ function exportSlaughterCsv() {
 // FM用1頭1行CSVエクスポート
 async function exportSlaughterDetailCsv() {
   // 仕切書履歴ページと同じフィルタ条件
-  const farm  = document.getElementById('slh-farm')?.value || 'all';
+  const farm  = CF==='both' ? 'all' : CF;
   const from  = document.getElementById('slh-from')?.value || '';
   const to    = document.getElementById('slh-to')?.value || '';
   const place = (document.getElementById('slh-place')?.value || '').trim().toLowerCase();
@@ -13982,7 +13945,7 @@ async function toggleSlLog() {
 }
 
 function rSlaughterSaved() {
-  const ff = document.getElementById('sl-saved-ff')?.value||'all';
+  const ff = CF==='both' ? 'all' : CF;
   const items = DATA.slaughter.filter(s=>ff==='all'||s.farm===ff);
   const totalHead = items.reduce((a,s)=>a+(s.head_count||0),0);
   const totalSales = items.reduce((a,s)=>a+(s.total_amount||0),0);
@@ -15342,7 +15305,7 @@ function calcDailyFeedCostPerHead(farm, from, to) {
 // FEED PRICE MASTER
 // ══════════════════════════════════════════════
 function rFeedMaster() {
-  const ff = document.getElementById('fpm-ff')?.value||'all';
+  const ff = CF==='both' ? 'all' : CF;
   const items = DATA.feedMaster.filter(r => ff==='all'||r.farm===ff);
   updateFpmBarnOptions();
   fillFeedBrandSelects();
@@ -15700,7 +15663,7 @@ function calcFpTotal() {
 }
 
 function rFeedPurchase() {
-  const ff = document.getElementById('fp-ff')?.value||'all';
+  const ff = CF==='both' ? 'all' : CF;
   const items = DATA.feedPurchase.filter(p=>ff==='all'||p.farm===ff);
 
   // KPI
@@ -16480,9 +16443,9 @@ function rFeedTank() {
 }
 
 function rAccident() {
-  const ff = document.getElementById('acc-ff')?.value||'all';
+  const ff = CF==='both' ? 'all' : CF;
   const items = DATA.ival.filter(v=>ff==='all'||v.farm===ff);
-  const fk = ff==='all'?'both':ff;
+  const fk = CF;
 
   // KPI
   const totalLoss = items.reduce((a,v)=>a+v.adjusted_amount,0);

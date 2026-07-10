@@ -8980,9 +8980,17 @@ function onDthLotChange() {
   const lot_id = document.getElementById('dth-lot').value;
   const l = DATA.lots.find(x=>x.id===lot_id);
   if(l && l.price) document.getElementById('acc-price').value = l.price;
-  // 豚舎表示
+  // 豚舎・在場頭数表示
   const barnEl = document.getElementById('dth-lot-barn');
-  if(barnEl) barnEl.textContent = l?.barn ? `🏠 ${l.barn}` : '';
+  const cntEl = document.getElementById('dth-cnt');
+  if(l) {
+    const currentHead = calcCurrentHead(l);
+    if(barnEl) barnEl.textContent = `${l.barn?'🏠 '+l.barn+'　':''}在場${currentHead}頭`;
+    if(cntEl) cntEl.max = currentHead;
+  } else {
+    if(barnEl) barnEl.textContent = '';
+    if(cntEl) cntEl.removeAttribute('max');
+  }
 }
 
 function calcAccidentVal() {

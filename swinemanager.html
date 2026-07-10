@@ -9017,6 +9017,15 @@ async function addDeath() {
   const cnt = parseInt(document.getElementById('dth-cnt').value)||1;
   const type = document.getElementById('dth-type').value;
   const l = DATA.lots.find(x=>x.id===lot_id);
+
+  // 在場頭数を超える登録の警告（廃棄（出荷後）は出荷済み分の扱いのため対象外）
+  if(l && type !== '廃棄（出荷後）') {
+    const currentHead = calcCurrentHead(l);
+    if(cnt > currentHead) {
+      if(!confirm(`このロット（${l.id}）の在場頭数は${currentHead}頭ですが、${cnt}頭が入力されています。\n\n頭数が導入頭数を超えてしまう可能性があります。このまま登録しますか？`)) return;
+    }
+  }
+
   const data = {
     farm: l?.farm||CF, lot_id,
     occurred_at: document.getElementById('dth-date').value||null,
@@ -12459,9 +12468,12 @@ function closeLotBreakdown() {
 function confirmLotBreakdown() {
   const inputs = document.querySelectorAll('#lb-lot-list input[data-lot-id]');
   const breakdown = [];
+  const overStock = [];
   inputs.forEach(i => {
     const cnt = parseInt(i.value)||0;
     if(cnt > 0) breakdown.push({ lot_id: i.dataset.lotId, count: cnt });
+    const inStock = parseInt(i.max);
+    if(!isNaN(inStock) && cnt > inStock) overStock.push({ lot_id: i.dataset.lotId, cnt, inStock });
   });
   const total = breakdown.reduce((a,b)=>a+b.count, 0);
   const target = SL_DATA?.sheet?.head_count || 0;
@@ -12470,6 +12482,10 @@ function confirmLotBreakdown() {
     errEl.textContent = `合計頭数（${total}頭）が仕切書頭数（${target}頭）と一致しません`;
     errEl.style.display = '';
     return;
+  }
+  if(overStock.length) {
+    const msg = overStock.map(o=>`${o.lot_id}: 在場${o.inStock}頭に対して${o.cnt}頭`).join('\n');
+    if(!confirm(`以下のロットで、在場頭数を超える頭数が入力されています。\n\n${msg}\n\n頭数が導入頭数を超えてしまう可能性があります。このまま保存しますか？`)) return;
   }
   errEl.style.display = 'none';
   SL_DATA.lotBreakdown = breakdown;

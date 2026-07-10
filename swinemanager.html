@@ -965,6 +965,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <input class="fi" type="date" id="id-f-to" onchange="rInvDeathList()">
         </div>
         <button class="btn bp sm" onclick="confirmAllInvDeaths()" style="height:32px">✓ 表示中を一括確定</button>
+        <button class="btn bd sm" onclick="deleteAllInvDeaths()" style="height:32px">🗑 表示中を一括削除</button>
         <span id="id-f-count" style="font-size:12px;color:var(--muted);align-self:center"></span>
       </div>
       <!-- 一覧テーブル -->
@@ -9737,6 +9738,31 @@ async function deleteInvDeath(id) {
     DATA.deaths = await api.getDeaths();
     rInvDeathList();
     notif('削除しました');
+  } catch(e) { notif('エラー: '+e.message,'r'); }
+  finally { hideLoading(); }
+}
+
+async function deleteAllInvDeaths() {
+  const rows = [...document.querySelectorAll('#inv-death-tb tr[id^="id-row-"]')];
+  if(!rows.length) { notif('削除するデータがありません','r'); return; }
+  const totalHead = rows.reduce((a,row)=>{
+    const id = row.id.replace('id-row-','');
+    const d = DATA.deaths.find(x=>x.id===id);
+    return a + (d?.count||0);
+  }, 0);
+  if(!confirm(`表示中の棚卸自動登録データ ${rows.length}件（${totalHead}頭）を一括削除します。\n\nすでに手入力で登録済みのデータと重複している場合にのみ実行してください。この操作は取り消せません。`)) return;
+
+  showLoading('一括削除中...');
+  let deleted = 0;
+  try {
+    for(const row of rows) {
+      const id = row.id.replace('id-row-','');
+      try { await api.deleteDeath(id); deleted++; } catch(e) { /* 個別失敗は継続 */ }
+    }
+    DATA.deaths = await api.getDeaths();
+    rInvDeathList();
+    rDthTb();
+    notif(`${deleted}件を一括削除しました`);
   } catch(e) { notif('エラー: '+e.message,'r'); }
   finally { hideLoading(); }
 }

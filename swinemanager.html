@@ -2273,6 +2273,12 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 
 <!-- FEED PRICE MASTER -->
 <div class="page" id="page-feed-master">
+  <div class="tabs mb18">
+    <div class="tab active" onclick="st('fm','fm-entry',this)">単価登録</div>
+    <div class="tab" onclick="st('fm','fm-brands',this)">銘柄一覧</div>
+  </div>
+
+  <div class="fm-c" id="fm-entry">
   <div class="g2 mb18">
     <!-- 単価設定フォーム -->
     <div class="card" style="margin-bottom:0;border-top:3px solid var(--accent)">
@@ -2352,6 +2358,42 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           </tr></thead>
           <tbody id="fpm-tb"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- 銘柄一覧タブ -->
+  <div class="fm-c" id="fm-brands" style="display:none">
+    <div class="card mb18">
+      <div class="ch"><span class="ct">銘柄マスター</span></div>
+      <div class="cb">
+        <button class="btn bp sm mb16" onclick="addNewFeedBrand(null)">＋ 新しい銘柄を追加</button>
+        <div id="fbg-brand-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ch"><span class="ct">銘柄別 単価一覧（四半期横並び）</span></div>
+      <div class="cb">
+        <div class="alert i mb16">ℹ️ <div>農場・豚舎・銘柄を選ぶと、四半期ごとの単価をまとめて確認・編集できます。セルを編集すると即座に保存されます（空欄にすると削除されます）。</div></div>
+        <div class="fg3 mb16">
+          <div class="fg"><label class="fl">農場</label>
+            <select class="fs" id="fbg-farm" onchange="onFbgFarmChange()">
+              <option value="farm1">中田農場</option><option value="farm2">米山農場</option>
+            </select>
+          </div>
+          <div class="fg"><label class="fl">豚舎</label>
+            <select class="fs" id="fbg-barn" onchange="rFeedBrandGrid()"><option value="">全豚舎共通</option></select>
+          </div>
+          <div class="fg"><label class="fl">銘柄</label>
+            <select class="fs" id="fbg-brand" onchange="rFeedBrandGrid()"><option value="">（銘柄問わず）</option></select>
+          </div>
+        </div>
+        <div class="tw"><table class="pt">
+          <thead><tr id="fbg-thead"></tr></thead>
+          <tbody id="fbg-tbody"></tbody>
+        </table></div>
       </div>
     </div>
   </div>
@@ -3327,6 +3369,7 @@ const api = {
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify({ name }),
   }),
+  deleteFeedBrand: (id) => sbFetch(`feed_brand_master?id=eq.${id}`, { method:'DELETE' }),
 
   // Feed purchase
   getFeedPurchase: () => sbFetch('feed_purchase?order=purchased_at.desc'),
@@ -4515,6 +4558,7 @@ function st(grp, tid, el) {
   if(tid==='lt-list') rLotFull();
   if(tid==='pa-profit') rWeightProfitAnalysis();
   if(tid==='pa-barn') rBarnCompare();
+  if(tid==='fm-brands') { onFbgFarmChange(); }
 }
 
 function om(id) {
@@ -15369,11 +15413,12 @@ function fillFeedBrandSelects() {
   const brands = (DATA.feedBrands||[]).map(b=>b.name).sort((a,b)=>a.localeCompare(b,'ja'));
   const selects = [
     document.getElementById('fpm-brand'),
+    document.getElementById('fbg-brand'),
     ...document.querySelectorAll('[id^="fp-brand-"]'),
   ].filter(Boolean);
   selects.forEach(sel => {
     const cur = sel.value;
-    const placeholder = sel.id === 'fpm-brand' ? '（銘柄問わず）' : '（未選択）';
+    const placeholder = (sel.id === 'fpm-brand' || sel.id === 'fbg-brand') ? '（銘柄問わず）' : '（未選択）';
     sel.innerHTML = `<option value="">${placeholder}</option>` +
       brands.map(b=>`<option value="${b.replace(/"/g,'&quot;')}" ${b===cur?'selected':''}>${b}</option>`).join('');
   });
@@ -15387,6 +15432,7 @@ async function addNewFeedBrand(targetSelectId) {
     await api.insertFeedBrand(name);
     DATA.feedBrands = await api.getFeedBrands();
     fillFeedBrandSelects();
+    renderFbgBrandList();
     const target = document.getElementById(targetSelectId);
     if(target) {
       target.value = name;
@@ -15394,6 +15440,111 @@ async function addNewFeedBrand(targetSelectId) {
     }
     notif(`銘柄「${name}」を追加しました`);
   } catch(e) { notif('銘柄登録エラー: '+e.message, 'r'); }
+}
+
+// ══════════════════════════════════════════════
+// 銘柄一覧タブ（銘柄マスター管理 + 四半期横並び単価グリッド）
+// ══════════════════════════════════════════════
+const FBG_QUARTERS = ['2024-Q1','2024-Q2','2024-Q3','2024-Q4','2025-Q1','2025-Q2','2025-Q3','2025-Q4','2026-Q1','2026-Q2','2026-Q3','2026-Q4'];
+
+// 銘柄マスターのカード一覧（削除ボタン付き）
+function renderFbgBrandList() {
+  const listEl = document.getElementById('fbg-brand-list');
+  if(!listEl) return;
+  const brands = [...(DATA.feedBrands||[])].sort((a,b)=>a.name.localeCompare(b.name,'ja'));
+  listEl.innerHTML = brands.length
+    ? brands.map(b=>`
+      <div style="display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px">
+        <span>${b.name}</span>
+        <button class="btn bd sm" style="padding:0 6px;font-size:11px" onclick="deleteFeedBrandMaster('${b.id}','${b.name.replace(/'/g,"&apos;")}')">✕</button>
+      </div>`).join('')
+    : '<div style="color:var(--muted);font-size:12px">銘柄が登録されていません。上の「＋ 新しい銘柄を追加」から登録してください。</div>';
+}
+
+async function deleteFeedBrandMaster(id, name) {
+  const inUse = DATA.feedMaster.some(r => r.brand === name);
+  const msg = inUse
+    ? `「${name}」は単価設定で使用中です。マスターから削除しても既存の単価設定はそのまま残りますが、購入記録での選択肢からは消えます。削除しますか？`
+    : `銘柄「${name}」をマスターから削除しますか？`;
+  if(!confirm(msg)) return;
+  try {
+    await api.deleteFeedBrand(id);
+    DATA.feedBrands = await api.getFeedBrands();
+    fillFeedBrandSelects();
+    renderFbgBrandList();
+    rFeedBrandGrid();
+    notif('削除しました');
+  } catch(e) { notif('削除エラー: '+e.message, 'r'); }
+}
+
+// 農場変更時に豚舎選択肢を更新してグリッドを再描画
+function onFbgFarmChange() {
+  const farm = document.getElementById('fbg-farm')?.value || 'farm1';
+  const barnSel = document.getElementById('fbg-barn');
+  if(barnSel) {
+    const barns = FARMS[farm]?.barns || [];
+    const cur = barnSel.value;
+    barnSel.innerHTML = '<option value="">全豚舎共通</option>' +
+      barns.map(b => `<option value="${b.id}号棟">${b.id}号棟</option>`).join('');
+    if([...barnSel.options].some(o=>o.value===cur)) barnSel.value = cur;
+  }
+  renderFbgBrandList();
+  fillFeedBrandSelects();
+  rFeedBrandGrid();
+}
+
+// 農場・豚舎・銘柄を選んだ状態で、四半期を列に、飼料種類×飼料費/運賃を行にしたグリッドを描画
+function rFeedBrandGrid() {
+  const theadEl = document.getElementById('fbg-thead');
+  const tbodyEl = document.getElementById('fbg-tbody');
+  if(!theadEl || !tbodyEl) return;
+
+  const farm = document.getElementById('fbg-farm')?.value || 'farm1';
+  const barn = document.getElementById('fbg-barn')?.value || '';
+  const brand = document.getElementById('fbg-brand')?.value || '';
+
+  theadEl.innerHTML = '<th style="min-width:110px">項目</th>' + FBG_QUARTERS.map(q=>`<th class="tr3" style="min-width:80px">${q}</th>`).join('');
+
+  const rows = [
+    { label:'後期用 飼料費', feedType:'後期用', field:'price_per_ton' },
+    { label:'後期用 運賃',   feedType:'後期用', field:'freight_per_ton' },
+    { label:'子豚用 飼料費', feedType:'子豚用', field:'price_per_ton' },
+    { label:'子豚用 運賃',   feedType:'子豚用', field:'freight_per_ton' },
+    { label:'肥育用 飼料費', feedType:'肥育用', field:'price_per_ton' },
+    { label:'肥育用 運賃',   feedType:'肥育用', field:'freight_per_ton' },
+  ];
+
+  tbodyEl.innerHTML = rows.map(r => {
+    const cells = FBG_QUARTERS.map(q => {
+      const rec = DATA.feedMaster.find(x=>x.farm===farm && (x.barn||'')===barn && (x.brand||'')===brand && x.feed_type===r.feedType && x.quarter===q);
+      const val = rec ? (rec[r.field]||'') : '';
+      const cellId = `fbg-cell-${r.feedType}-${r.field}-${q}`;
+      return `<td class="tr3"><input class="fi" type="number" id="${cellId}" value="${val}" placeholder="-" style="width:76px;font-size:11px;padding:4px 6px" onchange="saveFbgCell('${r.feedType}','${r.field}','${q}')"></td>`;
+    }).join('');
+    return `<tr><td style="font-size:12px;white-space:nowrap;color:var(--muted2)">${r.label}</td>${cells}</tr>`;
+  }).join('');
+}
+
+// グリッドの1セル編集を即座に保存（price/freightのもう片方は既存値を保持。両方0/空なら削除）
+async function saveFbgCell(feedType, field, quarter) {
+  const farm  = document.getElementById('fbg-farm')?.value || 'farm1';
+  const barn  = document.getElementById('fbg-barn')?.value || '';
+  const brand = document.getElementById('fbg-brand')?.value || '';
+  const cellId = `fbg-cell-${feedType}-${field}-${quarter}`;
+  const val = parseInt(document.getElementById(cellId)?.value) || 0;
+
+  const existing = DATA.feedMaster.find(x=>x.farm===farm && (x.barn||'')===barn && (x.brand||'')===brand && x.feed_type===feedType && x.quarter===quarter);
+  const price   = field==='price_per_ton'   ? val : (existing?.price_per_ton||0);
+  const freight = field==='freight_per_ton' ? val : (existing?.freight_per_ton||0);
+
+  try {
+    if(!price && !freight) {
+      if(existing) await api.deleteFeedMaster(existing.id);
+    } else {
+      await api.upsertFeedMaster({ farm, barn, brand, feed_type:feedType, quarter, price_per_ton:price, freight_per_ton:freight, note: existing?.note||null });
+    }
+    DATA.feedMaster = await api.getFeedMaster();
+  } catch(e) { notif('保存エラー: '+e.message, 'r'); }
 }
 
 // 一覧の「編集」クリックでフォームに値を読み込む

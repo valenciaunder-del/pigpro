@@ -262,6 +262,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   <div class="nv" onclick="gp('feed-tank',this)"><span class="ic">🛢️</span><span>飼料タンク管理</span></div>
   <div class="sb-sec">レポート</div>
   <div class="nv" onclick="gp('report',this)"><span class="ic">📋</span><span>月次レポート</span></div>
+  <div class="nv" onclick="gp('abl',this)"><span class="ic">🏦</span><span>融資資料（ABL）</span></div>
   <div class="nv" onclick="gp('mf-import',this)"><span class="ic">📥</span><span>MF取込</span></div>
   <div class="nv" onclick="gp('confirm',this)"><span class="ic">✅</span><span>月次確定</span></div>
   <div class="sb-bot" id="sb-info">読み込み中...</div>
@@ -2754,6 +2755,29 @@ tbody td{padding:8px 10px;white-space:nowrap;}
   </div>
 </div>
 
+<div class="page" id="page-abl">
+  <div class="alert i mb18">ℹ️ <div>公庫等へのABL（動産担保融資）申請・定期報告に必要な在庫・出荷データをまとめて表示します。評価額はPigProの記録に基づく社内推定値であり、鑑定評価ではありません。</div></div>
+
+  <div class="kgrid mb18" style="grid-template-columns:repeat(4,1fr)" id="abl-kpi"></div>
+
+  <div class="card mb18">
+    <div class="ch"><span class="ct">月次推移（直近12ヶ月）</span></div>
+    <div style="font-size:11px;color:var(--muted);padding:0 16px 8px">※推定在庫評価額は「月末在場頭数 × 現在の平均評価単価」による簡易推定です</div>
+    <div class="tw"><table>
+      <thead><tr><th>年月</th><th class="tr3">月末在場頭数</th><th class="tr3">推定在庫評価額</th><th class="tr3">月間出荷頭数</th><th class="tr3">月間売上（枝肉金額）</th><th class="tr3">月間事故頭数</th></tr></thead>
+      <tbody id="abl-trend-tb"></tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <div class="ch"><span class="ct">在場中ロット一覧（担保明細）</span></div>
+    <div class="tw"><table>
+      <thead><tr><th>農場</th><th>ロット</th><th>豚舎</th><th>導入日</th><th class="tr3">日齢</th><th class="tr3">頭数</th><th class="tr3">推定体重</th><th class="tr3">評価単価/頭</th><th class="tr3">評価額</th></tr></thead>
+      <tbody id="abl-lots-tb"></tbody>
+    </table></div>
+  </div>
+</div>
+
   </div>
 </div>
 
@@ -3854,6 +3878,55 @@ function calcLotProdCost(lot) {
   };
 }
 
+// 在庫評価（担保評価）用：calcLotProdCostが体重不明で計算不能な場合に、
+// 農場実績ADGから現在の推定体重を逆算してフォールバック計算する
+// ABL（動産担保融資）など、在場中の全ロットに評価額が必要な場面で使用
+function calcCollateralValuePerLot(lot) {
+  const base = calcLotProdCost(lot);
+  if(base.feedCost != null) return base;
+
+  const farm = lot.farm;
+  const cutoffDate = farm === 'farm2' ? '2026-02-13' : '2020-01-01';
+  const adg = calcFarmActualAdg(farm, cutoffDate);
+  const today = new Date().toISOString().slice(0,10);
+  const daysOnFarm = Math.max(0, dElBetween(lot.start_date, today));
+  const startWeight = lot.start_weight || 30;
+  const estWeight = startWeight + (adg * daysOnFarm / 1000);
+  const weightGain = estWeight - startWeight;
+
+  let fcr = calcLotFcrByBarn(lot);
+  if(!fcr) {
+    for(let i=0; i<=3; i++) {
+      const d = new Date(); d.setMonth(d.getMonth()-i);
+      fcr = calcFarmFcr(farm, d.toISOString().slice(0,7));
+      if(fcr) break;
+    }
+  }
+
+  const pigletCostPerHead = lot.price || 0;
+  if(!fcr || weightGain <= 0) {
+    return { pigletCost: pigletCostPerHead, feedCost: 0, total: Math.round(pigletCostPerHead), perCw: null, estimated: true, estWeight: Math.round(estWeight*10)/10 };
+  }
+
+  const baseDate = lot.start_date || today;
+  const pigletPrice   = getFeedPrice(farm, baseDate, '子豚用')   || 0;
+  const finisherPrice = getFeedPrice(farm, baseDate, '肥育用') || 0;
+  const avgFeedPricePerT = (pigletPrice && finisherPrice) ? (pigletPrice+finisherPrice)/2 : (pigletPrice || finisherPrice || 0);
+  const feedCostPerHead = Math.round(fcr * weightGain * avgFeedPricePerT / 1000);
+  const total = Math.round(pigletCostPerHead + feedCostPerHead);
+
+  return {
+    pigletCost: Math.round(pigletCostPerHead),
+    feedCost: feedCostPerHead,
+    total,
+    perCw: null,
+    fcr,
+    weightGain: Math.round(weightGain*10)/10,
+    estimated: true,
+    estWeight: Math.round(estWeight*10)/10,
+  };
+}
+
 
 // ══════════════════════════════════════════════
 // FCR計算（農場全体・月次）
@@ -4333,7 +4406,7 @@ function updateSBInfo() {
 // ══════════════════════════════════════════════
 // NAVIGATION
 // ══════════════════════════════════════════════
-const PTL = { dashboard:'ダッシュボード',lot:'ロット管理',performance:'成績分析',shipping:'出荷管理',slaughter:'仕切書取込（FAX）','sl-history':'仕切書履歴','carcass-analysis':'枝肉分析','price-analysis':'枝肉単価分析','production-cost':'生産コスト',pnl:'収支比較',cost:'コスト管理',sales:'売上・利益','monthly-sales':'月次売上明細',accident:'事故損失・在庫評価',daily:'日次表','feed-master':'飼料単価設定','feed-purchase':'飼料購入記録','feed-tank':'飼料タンク管理',inventory:'在庫・飼料管理',report:'月次レポート','mf-import':'MF取込（マネーフォワード）',confirm:'月次確定' };
+const PTL = { dashboard:'ダッシュボード',lot:'ロット管理',performance:'成績分析',shipping:'出荷管理',slaughter:'仕切書取込（FAX）','sl-history':'仕切書履歴','carcass-analysis':'枝肉分析','price-analysis':'枝肉単価分析','production-cost':'生産コスト',pnl:'収支比較',cost:'コスト管理',sales:'売上・利益','monthly-sales':'月次売上明細',accident:'事故損失・在庫評価',daily:'日次表','feed-master':'飼料単価設定','feed-purchase':'飼料購入記録','feed-tank':'飼料タンク管理',inventory:'在庫・飼料管理',report:'月次レポート',abl:'融資資料（ABL）','mf-import':'MF取込（マネーフォワード）',confirm:'月次確定' };
 
 function gp(id, el) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -4536,6 +4609,7 @@ function renderPage(id) {
   if(id==='feed-purchase') rFeedPurchase();
   if(id==='feed-tank')     rFeedTank();
   if(id==='report')     rReport();
+  if(id==='abl')        rAbl();
   if(id==='mf-import')  rMfHistory();
   if(id==='confirm')    rConfirm();
 }
@@ -8352,6 +8426,90 @@ function rReport() {
     <div class="sr"><span class="sl">売上（合算）</span><span class="sv">${sB?fM(sB):'-'}</span></div>
     <div class="sr"><span class="sl">総コスト（合算）</span><span class="sv">${cB?fM(cB):'-'}</span></div>
     <div class="sr"><span class="sl">粗利（合算）</span><span class="sv ng">${sB?fM(sB-cB)+' ('+pct(sB-cB,sB)+')':'-'}</span></div>`;
+}
+
+// ══════════════════════════════════════════════
+// ABL資料（動産担保融資向け 在庫・出荷サマリー）
+// ══════════════════════════════════════════════
+function rAbl() {
+  const farm = CF === 'both' ? 'all' : CF;
+  const farms = farm === 'all' ? ['farm1','farm2'] : [farm];
+  const today = new Date().toISOString().slice(0,10);
+
+  // 在場中ロットの担保評価
+  const activeLots = DATA.lots.filter(l => farms.includes(l.farm) && calcCurrentHead(l) > 0);
+  let totalHead = 0, totalValue = 0, totalAgeWeighted = 0;
+  const lotRows = activeLots.map(l => {
+    const head = calcCurrentHead(l);
+    const val = calcCollateralValuePerLot(l);
+    const days = Math.max(0, dElBetween(l.start_date, today));
+    totalHead += head;
+    totalValue += (val.total||0) * head;
+    totalAgeWeighted += days * head;
+    return { lot: l, head, val, days };
+  }).sort((a,b)=> (a.lot.farm+a.lot.start_date).localeCompare(b.lot.farm+b.lot.start_date));
+
+  const avgAge = totalHead > 0 ? Math.round(totalAgeWeighted/totalHead) : 0;
+  const avgUnitValue = totalHead > 0 ? totalValue/totalHead : 0;
+
+  // 直近12ヶ月の月次データ
+  const months12 = [];
+  for(let i=11; i>=0; i--) {
+    const d = new Date(); d.setMonth(d.getMonth()-i);
+    months12.push(d.toISOString().slice(0,7));
+  }
+  const trendRows = months12.map(mon => {
+    const [y,m] = mon.split('-').map(Number);
+    const monEnd = new Date(y, m, 0).toISOString().slice(0,10);
+    let headEnd = 0, shipHead = 0, shipRev = 0, accHead = 0;
+    farms.forEach(f=>{
+      const farmLots = DATA.lots.filter(l=>l.farm===f);
+      headEnd += farmLots.reduce((a,l)=>a+calcLotHeadAsOf(l, monEnd),0);
+      const sheets = DATA.slaughter.filter(s=>s.farm===f && (s.shipped_at||'').startsWith(mon));
+      sheets.forEach(s=>{
+        shipHead += s.head_count||0;
+        const amt = calcCarcassAmountEx(s);
+        if(amt) shipRev += amt;
+      });
+      accHead += calcAccidentOnly(DATA.deaths.filter(d=>d.farm===f && (d.occurred_at||'').startsWith(mon)));
+    });
+    return { mon, headEnd, estValue: headEnd*avgUnitValue, shipHead, shipRev, accHead };
+  });
+  const ship12Head = trendRows.reduce((a,r)=>a+r.shipHead,0);
+  const ship12Rev  = trendRows.reduce((a,r)=>a+r.shipRev,0);
+
+  // KPI
+  const kpiEl = document.getElementById('abl-kpi');
+  if(kpiEl) kpiEl.innerHTML = `
+    <div class="kcard g"><div class="kl">現在在場頭数（合計）</div><div class="kv">${totalHead.toLocaleString()}<span class="ku">頭</span></div></div>
+    <div class="kcard c"><div class="kl">推定在庫評価額（合計）</div><div class="kv">¥${Math.round(totalValue/10000).toLocaleString()}<span class="ku">万円</span></div></div>
+    <div class="kcard y"><div class="kl">平均日齢（在場中）</div><div class="kv">${avgAge}<span class="ku">日</span></div></div>
+    <div class="kcard o"><div class="kl">直近12ヶ月出荷実績</div><div class="kv" style="font-size:17px">${ship12Head.toLocaleString()}頭<span class="ku">／¥${Math.round(ship12Rev/10000).toLocaleString()}万円</span></div></div>`;
+
+  // 月次推移
+  const trendTb = document.getElementById('abl-trend-tb');
+  if(trendTb) trendTb.innerHTML = trendRows.map(r=>`<tr>
+    <td class="mn">${r.mon}</td>
+    <td class="tr3 mn">${r.headEnd.toLocaleString()}頭</td>
+    <td class="tr3 mn">¥${Math.round(r.estValue/10000).toLocaleString()}万円</td>
+    <td class="tr3 mn ng">${r.shipHead.toLocaleString()}頭</td>
+    <td class="tr3 mn ng">¥${Math.round(r.shipRev/10000).toLocaleString()}万円</td>
+    <td class="tr3 mn ${r.accHead>0?'nb':''}">${r.accHead}頭</td>
+  </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">データがありません</td></tr>';
+
+  // 在場ロット明細
+  const lotsTb = document.getElementById('abl-lots-tb');
+  if(lotsTb) lotsTb.innerHTML = lotRows.map(r=>`<tr>
+    <td>${fb(r.lot.farm)}</td>
+    <td class="mn">${r.lot.id}</td>
+    <td>${r.lot.barn||'-'}</td>
+    <td class="mn">${r.lot.start_date||'-'}</td>
+    <td class="tr3 mn">${r.days}日</td>
+    <td class="tr3 mn">${r.head}頭</td>
+    <td class="tr3 mn">${r.val.estWeight?r.val.estWeight+'kg':'-'}${r.val.estimated?'<span style="color:var(--muted);font-size:10px"> 推定</span>':''}</td>
+    <td class="tr3 mn">¥${(r.val.total||0).toLocaleString()}</td>
+    <td class="tr3 mn" style="font-weight:700;color:var(--accent)">¥${Math.round((r.val.total||0)*r.head).toLocaleString()}</td>
+  </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">在場中のロットがありません</td></tr>';
 }
 
 // ══════════════════════════════════════════════

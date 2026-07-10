@@ -856,7 +856,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
               <input class="fi" type="date" id="dth-date" onchange="onDthDateChange()" style="flex:1">
             </div>
           </div>
-          <div class="fg"><label class="fl">区分</label><select class="fs" id="dth-type" onchange="toggleAccidentFields()"><option>死亡</option><option>廃用（疾病）</option><option>廃用（発育不良）</option><option>廃用（事故）</option><option>廃棄（出荷後）</option></select></div>
+          <div class="fg"><label class="fl">区分</label><select class="fs" id="dth-type" onchange="toggleAccidentFields();updateDthCntMax()"><option>死亡</option><option>廃用（疾病）</option><option>廃用（発育不良）</option><option>廃用（事故）</option><option value="廃棄（出荷後）">廃棄（出荷後）</option></select></div>
           <div class="fg"><label class="fl">頭数 *</label><input class="fi" type="number" id="dth-cnt" value="1" onchange="calcAccidentVal()"></div>
           <div class="fg"><label class="fl">体重(kg)</label><input class="fi" type="number" id="dth-wt"></div>
           <div class="fg"><label class="fl">原因</label><input class="fi" id="dth-cause"></div>
@@ -8980,16 +8980,32 @@ function onDthLotChange() {
   const lot_id = document.getElementById('dth-lot').value;
   const l = DATA.lots.find(x=>x.id===lot_id);
   if(l && l.price) document.getElementById('acc-price').value = l.price;
-  // 豚舎・在場頭数表示
+  // 豚舎表示
   const barnEl = document.getElementById('dth-lot-barn');
+  if(barnEl) barnEl.textContent = l?.barn ? `🏠 ${l.barn}` : '';
+  updateDthCntMax();
+}
+
+// 頭数入力欄のmax属性・ヒント表示を、選択中のロット×区分に応じて更新
+// 「廃棄（出荷後）」はすでに出荷実績としてカウント済みの頭数を対象とするため、
+// 在場頭数（＝出荷済みなら0になり得る）ではなく導入頭数を上限にする
+function updateDthCntMax() {
+  const lot_id = document.getElementById('dth-lot')?.value;
+  const type = document.getElementById('dth-type')?.value;
+  const l = DATA.lots.find(x=>x.id===lot_id);
   const cntEl = document.getElementById('dth-cnt');
-  if(l) {
-    const currentHead = calcCurrentHead(l);
-    if(barnEl) barnEl.textContent = `${l.barn?'🏠 '+l.barn+'　':''}在場${currentHead}頭`;
-    if(cntEl) cntEl.max = currentHead;
-  } else {
-    if(barnEl) barnEl.textContent = '';
+  const barnEl = document.getElementById('dth-lot-barn');
+  if(!l) {
     if(cntEl) cntEl.removeAttribute('max');
+    return;
+  }
+  if(type === '廃棄（出荷後）') {
+    if(cntEl) cntEl.max = l.count || 9999;
+    if(barnEl) barnEl.textContent = `${l.barn?'🏠 '+l.barn+'　':''}導入${l.count||0}頭（廃棄（出荷後）は出荷済み分が対象）`;
+  } else {
+    const currentHead = calcCurrentHead(l);
+    if(cntEl) cntEl.max = currentHead;
+    if(barnEl) barnEl.textContent = `${l.barn?'🏠 '+l.barn+'　':''}在場${currentHead}頭`;
   }
 }
 
@@ -9564,6 +9580,7 @@ function editDeath(id) {
   document.getElementById('dth-cnt').value = d.count||'';
   document.getElementById('dth-cause').value = d.cause||'';
   toggleAccidentFields();
+  updateDthCntMax();
   // 登録ボタンを「更新」に変更
   const btn = document.querySelector('[onclick="addDeath()"]');
   if(btn) {

@@ -2377,7 +2377,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       </div>
       <div class="tw">
         <table>
-          <thead><tr><th>農場</th><th>購入日</th><th>飼料種類</th><th>タンク</th><th>数量(t)</th><th>単価(円/t)</th><th>金額</th><th>備考</th><th></th></tr></thead>
+          <thead><tr><th>農場</th><th>購入日</th><th>飼料種類</th><th>タンク</th><th>銘柄</th><th>数量(t)</th><th>単価(円/t)</th><th>金額</th><th>備考</th><th></th></tr></thead>
           <tbody id="fp-tb"></tbody>
         </table>
       </div>
@@ -2969,15 +2969,24 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 </div>
 
 <script>
-// タンク×月の入荷量を取得（ハイブリッド方式）
-// 飼料購入記録（tank_name一致）があればそちらを優先し、無い場合のみタンクCSV(ミルフィー等)のdelivery_tonにフォールバックする
-function getMonthlyDeliveryForTank(farm, tankName, monthStr, fallbackTon) {
-  if(!tankName) return fallbackTon;
-  const purchases = (DATA.feedPurchase||[]).filter(p =>
-    p.farm===farm && p.tank_name===tankName && (p.purchased_at||'').startsWith(monthStr)
+// タンク×月の入荷量を取得（購入記録のみを正とする。タンクCSV(ミルフィー等)のdelivery_tonは在庫残量の把握にのみ使い、入荷量としては使用しない）
+// tankName一致の購入記録を優先し、無ければ同農場・同飼料種類・同月の「タンク未指定（旧運用）」購入記録を按分せず全量含める
+function getMonthlyDeliveryForTank(farm, tankName, feedTypeLabel, monthStr) {
+  const all = (DATA.feedPurchase||[]).filter(p =>
+    p.farm===farm && p.feed_type===feedTypeLabel && (p.purchased_at||'').startsWith(monthStr)
   );
-  if(purchases.length) return purchases.reduce((a,p)=>a+(p.amount_ton||0), 0);
-  return fallbackTon;
+  const tankMatched = all.filter(p => p.tank_name===tankName);
+  if(tankMatched.length) return tankMatched.reduce((a,p)=>a+(p.amount_ton||0), 0);
+  // タンク指定なしの旧運用データは、このタンクの分として按分できないため0として扱う
+  // （farm+feed_type単位の合計はcalcMonthlyUsageの別ロジックでタンク未指定分も含めて計算する）
+  return 0;
+}
+
+// 農場・飼料種類・月の購入量合計（タンク指定の有無を問わず全件、farm単位のFCR計算用）
+function getMonthlyPurchaseTotal(farm, feedTypeLabel, monthStr) {
+  return (DATA.feedPurchase||[]).filter(p =>
+    p.farm===farm && p.feed_type===feedTypeLabel && (p.purchased_at||'').startsWith(monthStr)
+  ).reduce((a,p)=>a+(p.amount_ton||0), 0);
 }
 
 function calcMonthlyUsage(feedTankData, farm, monthStr) {
@@ -2985,26 +2994,29 @@ function calcMonthlyUsage(feedTankData, farm, monthStr) {
   const tankRows = feedTankData.filter(r=>
     r.farm===farm && r.date && r.date.startsWith(mon)
   );
-  
+
   let pigletFeedT = 0;
   let finisherFeedT = 0;
-  
+
   for(const ft of ['piglet', 'finisher']) {
+    const feedTypeLabel = ft === 'piglet' ? '子豚用' : '肥育用';
     const ftRows = tankRows.filter(r => r.feed_type === ft);
     const tankNames = [...new Set(ftRows.map(r=>r.tank_name).filter(Boolean))];
+    if(!tankNames.length) continue;
 
-    for(const tn of tankNames) {
+    // 在庫残量（期首・期末）はタンクごとに合算、入荷量は農場×飼料種類の購入記録合計（タンク指定の有無を問わず）を使う
+    let openingSum = 0, closingSum = 0;
+    tankNames.forEach(tn => {
       const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
-      if(!rows.length) continue;
-      const opening = rows[0].tank_remaining||0;
-      const closing = rows[rows.length-1].tank_remaining||0;  
-      const deliveryFromCsv = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
-      const delivery = getMonthlyDeliveryForTank(farm, tn, mon, deliveryFromCsv);
-      const usage = opening + delivery - closing;
-      
-      if(ft === 'piglet' && usage > 0) pigletFeedT += usage;
-      if(ft === 'finisher' && usage > 0) finisherFeedT += usage;
-    }
+      if(!rows.length) return;
+      openingSum += rows[0].tank_remaining||0;
+      closingSum += rows[rows.length-1].tank_remaining||0;
+    });
+    const delivery = getMonthlyPurchaseTotal(farm, feedTypeLabel, mon);
+    const usage = openingSum + delivery - closingSum;
+
+    if(ft === 'piglet' && usage > 0) pigletFeedT += usage;
+    if(ft === 'finisher' && usage > 0) finisherFeedT += usage;
   }
 
   return {
@@ -3014,11 +3026,14 @@ function calcMonthlyUsage(feedTankData, farm, monthStr) {
 }
 
 // タンクごとの月間使用量を内訳付きで返す（豚舎別単価を適用するために使用）
+// タンク単位の入荷量は「タンク指定ありの購入記録」のみを使うため、タンクを指定せず購入記録を入力していた期間は
+// このタンク別内訳では過少（0扱い）になる。今後はタンクを必ず指定して入力する運用とする。
 function calcMonthlyUsageByTank(feedTankData, farm, monthStr) {
   const mon = monthStr;
   const tankRows = feedTankData.filter(r => r.farm===farm && r.date && r.date.startsWith(mon));
   const results = [];
   for(const ft of ['piglet', 'finisher']) {
+    const feedTypeLabel = ft === 'piglet' ? '子豚用' : '肥育用';
     const ftRows = tankRows.filter(r => r.feed_type === ft);
     const tankNames = [...new Set(ftRows.map(r=>r.tank_name).filter(Boolean))];
     for(const tn of tankNames) {
@@ -3026,8 +3041,7 @@ function calcMonthlyUsageByTank(feedTankData, farm, monthStr) {
       if(!rows.length) continue;
       const opening = rows[0].tank_remaining||0;
       const closing = rows[rows.length-1].tank_remaining||0;
-      const deliveryFromCsv = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
-      const delivery = getMonthlyDeliveryForTank(farm, tn, mon, deliveryFromCsv);
+      const delivery = getMonthlyDeliveryForTank(farm, tn, feedTypeLabel, mon);
       const usage = Math.max(0, opening + delivery - closing);
       if(usage > 0) results.push({ tank_name: tn, feed_type: ft, usage: Math.round(usage*100)/100 });
     }
@@ -15380,6 +15394,7 @@ function renderFpTankBoxes() {
     return `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px">
       <div style="font-size:11px;font-weight:600;color:${fg};margin-bottom:8px">${d.label}${d.tankName?`<div style="color:var(--muted);font-weight:400;font-size:10px">タンク: ${d.tankName}</div>`:''}</div>
       <div class="fg mb16"><label class="fl">数量（t）</label><input class="fi" type="number" id="fp-amt-${d.key}" step="0.1" placeholder="0.0" oninput="calcFpTotal()"></div>
+      <div class="fg mb16"><label class="fl">銘柄</label><input class="fi" id="fp-brand-${d.key}" placeholder="例: ○○飼料 △△号" style="font-size:12px"></div>
       <div style="font-size:11px;color:var(--muted2)" id="fp-price-${d.key}-lbl">単価: -</div>
       <div style="font-size:12px;color:${fg};margin-top:4px;font-family:var(--mono)" id="fp-total-${d.key}">-</div>
     </div>`;
@@ -15440,14 +15455,15 @@ function rFeedPurchase() {
         <td>${fb(p.farm)}</td>
         <td class="mn">${p.purchased_at||'-'}</td>
         <td><span class="bdg ${p.feed_type==='後期用'?'g':p.feed_type==='子豚用'?'c':'o'}">${p.feed_type}</span></td>
-        <td style="color:var(--muted2);font-size:12px">${p.tank_name||'-'}</td>
+        <td style="color:var(--muted2);font-size:12px">${p.tank_name||'<span style="color:var(--warn)">未指定</span>'}</td>
+        <td style="color:var(--muted2);font-size:12px">${p.feed_name||'-'}</td>
         <td class="mn">${p.amount_ton}t</td>
         <td class="mn" style="color:var(--muted2)">${p.price_per_ton?fM(p.price_per_ton)+'/t':'-'}</td>
         <td class="mn ng">${p.total_amount?fM(p.total_amount):'-'}</td>
         <td style="color:var(--muted)">${p.note||'-'}</td>
         <td><button class="btn bd sm" onclick="delFeedPurchase('${p.id}')">削除</button></td>
       </tr>`).join('')
-    : '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">購入記録がありません</td></tr>';
+    : '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">購入記録がありません</td></tr>';
 }
 
 async function saveFeedPurchase() {
@@ -15460,9 +15476,13 @@ async function saveFeedPurchase() {
     tankName: d.tankName,
     barn: d.barn,
     amt: parseFloat(document.getElementById(`fp-amt-${d.key}`)?.value)||0,
+    brand: document.getElementById(`fp-brand-${d.key}`)?.value || null,
     price: getFeedPrice(farm, dateStr, d.feedType, d.barn),
   })).filter(r=>r.amt>0);
   if(!records.length) { notif('数量を1つ以上入力してください','r'); return; }
+  if(records.some(r=>r.tankName && !r.brand)) {
+    if(!confirm('銘柄が未入力の項目があります。このまま登録しますか？（今後の運用では銘柄の入力を推奨します）')) return;
+  }
   const note = document.getElementById('fp-note').value||null;
 
   showLoading('登録中...');
@@ -15473,6 +15493,7 @@ async function saveFeedPurchase() {
         farm, purchased_at: dateStr,
         feed_type: r.type,
         tank_name: r.tankName || null,
+        feed_name: r.brand || null,
         amount_ton: r.amt,
         price_per_ton: r.price||null,
         total_amount: total,

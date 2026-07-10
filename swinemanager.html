@@ -953,16 +953,33 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <option value="farm1">中田農場</option>
           <option value="farm2">米山農場</option>
         </select>
-        <!-- 年月クイック選択 -->
+        <!-- 表示モード -->
+        <div class="fg" style="min-width:100px">
+          <label class="fl">表示モード</label>
+          <select class="fs" id="pf-view-mode" onchange="onPfModeChange()">
+            <option value="month">月次</option>
+            <option value="year">年間</option>
+            <option value="range">期間指定</option>
+          </select>
+        </div>
+        <!-- 基準日 -->
         <div class="fg" style="min-width:90px">
+          <label class="fl">基準日</label>
+          <select class="fs" id="pf-basis" onchange="onPfModeChange()">
+            <option value="out">出荷日</option>
+            <option value="in">導入日</option>
+          </select>
+        </div>
+        <!-- 年月クイック選択（月次・年間モードで表示） -->
+        <div class="fg" id="pf-ym-year-wrap" style="min-width:90px">
           <label class="fl">年</label>
-          <select class="fs" id="pf-f-year" onchange="setPfMonth()">
+          <select class="fs" id="pf-f-year" onchange="onPfModeChange()">
             <option value="">--</option>
           </select>
         </div>
-        <div class="fg" style="min-width:80px">
+        <div class="fg" id="pf-ym-month-wrap" style="min-width:80px">
           <label class="fl">月</label>
-          <select class="fs" id="pf-f-month" onchange="setPfMonth()">
+          <select class="fs" id="pf-f-month" onchange="onPfModeChange()">
             <option value="">--</option>
             <option value="01">1月</option>
             <option value="02">2月</option>
@@ -977,6 +994,15 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <option value="11">11月</option>
             <option value="12">12月</option>
           </select>
+        </div>
+        <!-- 期間指定（期間指定モードでのみ表示） -->
+        <div class="fg" id="pf-range-from-wrap" style="min-width:120px;display:none">
+          <label class="fl">期間（from）</label>
+          <input class="fi" type="date" id="pf-range-from" onchange="onPfModeChange()">
+        </div>
+        <div class="fg" id="pf-range-to-wrap" style="min-width:120px;display:none">
+          <label class="fl">期間（to）</label>
+          <input class="fi" type="date" id="pf-range-to" onchange="onPfModeChange()">
         </div>
         <!-- 豚舎 -->
         <div class="fg" style="min-width:100px">
@@ -1002,25 +1028,9 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <option value="">全て</option>
           </select>
         </div>
-        <!-- 導入期間 -->
-        <div class="fg" style="min-width:120px">
-          <label class="fl">導入日（from）</label>
-          <input class="fi" type="date" id="pf-f-in-from" onchange="rPerfFull()">
-        </div>
-        <div class="fg" style="min-width:120px">
-          <label class="fl">導入日（to）</label>
-          <input class="fi" type="date" id="pf-f-in-to" onchange="rPerfFull()">
-        </div>
-        <!-- 出荷期間 -->
-        <div class="fg" style="min-width:120px">
-          <label class="fl">出荷日（from）</label>
-          <input class="fi" type="date" id="pf-f-out-from" onchange="clearPfMonth();rPerfFull()">
-        </div>
-        <div class="fg" style="min-width:120px">
-          <label class="fl">出荷日（to）</label>
-          <input class="fi" type="date" id="pf-f-out-to" onchange="clearPfMonth();rPerfFull()">
-        </div>
-      </div>
+        <!-- 内部保持用（表示モードから自動反映され、直接は編集しない） -->
+        <input type="hidden" id="pf-f-in-from"><input type="hidden" id="pf-f-in-to">
+        <input type="hidden" id="pf-f-out-from"><input type="hidden" id="pf-f-out-to">
       <!-- 対象ロット数 -->
       <div style="margin-top:10px;font-size:12px;color:var(--muted)">
         対象ロット: <span id="pf-lot-count" style="color:var(--accent2);font-weight:700">-</span>ロット・
@@ -4651,6 +4661,7 @@ function renderPage(id) {
   if(id==='lot')        { rLotFull(); fillSelects(); rDthTb(); rWtTb(); rFdTb(); }
   if(id==='performance') {
     initPfYearSelect(); // 年選択肢を最新データで更新
+    onPfModeChange(); // 表示モード（月次/年間/期間指定）の表示切替を初期化
     // Chart.jsをロード
     if(!window.Chart) {
       const s=document.createElement('script');
@@ -5660,33 +5671,65 @@ function resetPfFilter() {
   ['pf-f-farm','pf-f-barn','pf-f-source','pf-f-buyer'].forEach(id=>{
     const el = document.getElementById(id); if(el) el.value='';
   });
-  ['pf-f-in-from','pf-f-in-to','pf-f-out-from','pf-f-out-to'].forEach(id=>{
+  ['pf-range-from','pf-range-to'].forEach(id=>{
     const el = document.getElementById(id); if(el) el.value='';
   });
   const yr = document.getElementById('pf-f-year');   if(yr) yr.value='';
   const mo = document.getElementById('pf-f-month');  if(mo) mo.value='';
-  rPerfFull();
+  const mode = document.getElementById('pf-view-mode'); if(mode) mode.value='month';
+  const basis = document.getElementById('pf-basis'); if(basis) basis.value='out';
+  onPfModeChange();
 }
 
-// 年月クイック選択 → 出荷日from/toにセット
-function setPfMonth() {
-  const yr = document.getElementById('pf-f-year')?.value  || '';
+// 表示モード（月次／年間／期間指定）×基準日（導入日／出荷日）の組み合わせから
+// 内部の導入日/出荷日フィルター欄（pf-f-in-from等）へ反映する。基準日で選ばれなかった方は必ずクリアする
+function onPfModeChange() {
+  const mode  = document.getElementById('pf-view-mode')?.value || 'month';
+  const basis = document.getElementById('pf-basis')?.value || 'out';
+  const yr = document.getElementById('pf-f-year')?.value || '';
   const mo = document.getElementById('pf-f-month')?.value || '';
-  if(!yr || !mo) { rPerfFull(); return; }
-  const lastDay = new Date(parseInt(yr), parseInt(mo), 0).getDate();
-  const from = `${yr}-${mo}-01`;
-  const to   = `${yr}-${mo}-${String(lastDay).padStart(2,'0')}`;
-  const fEl = document.getElementById('pf-f-out-from');
-  const tEl = document.getElementById('pf-f-out-to');
-  if(fEl) fEl.value = from;
-  if(tEl) tEl.value = to;
-  rPerfFull();
-}
+  const rangeFrom = document.getElementById('pf-range-from')?.value || '';
+  const rangeTo   = document.getElementById('pf-range-to')?.value || '';
 
-// 出荷日を手動変更したとき年月選択をクリア
-function clearPfMonth() {
-  const yr = document.getElementById('pf-f-year');   if(yr) yr.value='';
-  const mo = document.getElementById('pf-f-month');  if(mo) mo.value='';
+  // 表示切替
+  const yWrap = document.getElementById('pf-ym-year-wrap');
+  const mWrap = document.getElementById('pf-ym-month-wrap');
+  const rfWrap = document.getElementById('pf-range-from-wrap');
+  const rtWrap = document.getElementById('pf-range-to-wrap');
+  if(yWrap) yWrap.style.display = (mode==='month'||mode==='year') ? '' : 'none';
+  if(mWrap) mWrap.style.display = (mode==='month') ? '' : 'none';
+  if(rfWrap) rfWrap.style.display = (mode==='range') ? '' : 'none';
+  if(rtWrap) rtWrap.style.display = (mode==='range') ? '' : 'none';
+
+  let from = '', to = '';
+  if(mode === 'month' && yr && mo) {
+    const lastDay = new Date(parseInt(yr), parseInt(mo), 0).getDate();
+    from = `${yr}-${mo}-01`;
+    to   = `${yr}-${mo}-${String(lastDay).padStart(2,'0')}`;
+  } else if(mode === 'year' && yr) {
+    from = `${yr}-01-01`;
+    to   = `${yr}-12-31`;
+  } else if(mode === 'range') {
+    from = rangeFrom; to = rangeTo;
+  }
+
+  // 基準日で選ばれた方に反映し、選ばれなかった方は必ずクリアする（両方が同時に効く旧仕様の混乱を解消）
+  const inFromEl  = document.getElementById('pf-f-in-from');
+  const inToEl    = document.getElementById('pf-f-in-to');
+  const outFromEl = document.getElementById('pf-f-out-from');
+  const outToEl   = document.getElementById('pf-f-out-to');
+  if(basis === 'in') {
+    if(inFromEl)  inFromEl.value  = from;
+    if(inToEl)    inToEl.value    = to;
+    if(outFromEl) outFromEl.value = '';
+    if(outToEl)   outToEl.value   = '';
+  } else {
+    if(outFromEl) outFromEl.value = from;
+    if(outToEl)   outToEl.value   = to;
+    if(inFromEl)  inFromEl.value  = '';
+    if(inToEl)    inToEl.value    = '';
+  }
+  rPerfFull();
 }
 
 // 年選択肢をデータから動的生成

@@ -342,7 +342,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <button onclick="closeEditBreakdown()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="be-info"></div>
-    <div style="font-size:12px;color:var(--warn);margin-bottom:10px">※ 金額・格付けは変更されません。ロット紐付けと頭数のみ変更します。</div>
+    <div style="font-size:12px;color:var(--warn);margin-bottom:10px">※ 金額・格付けは変更されません。ロット紐付け・頭数・廃棄頭数を変更します。「うち廃棄」を入力すると、そのロットに「廃棄（出荷後）」の事故記録が自動登録されます。</div>
     <div id="be-rows" style="display:flex;flex-direction:column;gap:8px"></div>
     <button class="btn bs sm" style="margin-top:10px;width:100%" onclick="addBreakdownRow()">＋ ロットを追加</button>
     <div style="font-size:12px;margin-top:10px">
@@ -13779,45 +13779,65 @@ async function openEditBreakdown(sheetId) {
      s.slaughtered_at===(sheet.slaughtered_at||sheet.shipped_at))
   );
 
+  // このシート経由で既に登録済みの「廃棄（出荷後）」をロット別に復元
+  const discardMarker = `仕切書内訳(${sheet.id})より登録`;
+  const discardByLot = {};
+  DATA.deaths.filter(d => d.farm===sheet.farm && d.category==='廃棄（出荷後）' && d.cause===discardMarker)
+    .forEach(d => { discardByLot[d.lot_id||''] = (discardByLot[d.lot_id||'']||0) + (d.count||0); });
+
   const rowsEl = document.getElementById('be-rows');
   rowsEl.innerHTML = '';
   if(ships.length > 0) {
     for(const s of ships) {
-      addBreakdownRow(s.lot_id, s.count);
+      addBreakdownRow(s.lot_id, s.count, discardByLot[s.lot_id||'']||0);
     }
   } else {
-    addBreakdownRow(null, sheet.head_count);
+    addBreakdownRow(null, sheet.head_count, 0);
   }
   updateBreakdownTotal();
   document.getElementById('breakdown-edit-modal').style.display = 'flex';
 }
 
-function addBreakdownRow(lotId=null, count=0) {
+function addBreakdownRow(lotId=null, count=0, discardCnt=0) {
   const farm = BE_FARM;
   const lots = DATA.lots.filter(l=>l.farm===farm).sort((a,b)=>a.start_date.localeCompare(b.start_date));
   const rowsEl = document.getElementById('be-rows');
   const div = document.createElement('div');
   div.className = 'be-row';
-  div.style.cssText = 'display:flex;gap:8px;align-items:center';
+  div.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap';
   const barnLabel = l => l.barn ? ` [${l.barn}]` : '';
   div.innerHTML = `
-    <select class="fs be-lot-sel" style="flex:1;font-size:12px" onchange="updateBreakdownTotal()">
+    <select class="fs be-lot-sel" style="flex:1;min-width:160px;font-size:12px" onchange="updateBreakdownTotal()">
       <option value="">ロット未設定</option>
       ${lots.map(l=>`<option value="${l.id}" ${l.id===lotId?'selected':''}>${l.id}${barnLabel(l)} (${l.start_date||''})</option>`).join('')}
     </select>
-    <input type="number" class="fi be-cnt" min="0" value="${count}" style="width:70px;font-size:13px" oninput="updateBreakdownTotal()" placeholder="0">
-    <span style="font-size:12px;color:var(--muted)">頭</span>
+    <input type="number" class="fi be-cnt" min="0" value="${count}" style="width:64px;font-size:13px" oninput="updateBreakdownTotal()" placeholder="0">
+    <span style="font-size:11px;color:var(--muted)">頭</span>
+    <span style="font-size:11px;color:var(--danger);margin-left:2px">うち廃棄</span>
+    <input type="number" class="fi be-discard" min="0" value="${discardCnt||0}" style="width:52px;font-size:12px;border-color:rgba(248,113,113,.4)" oninput="updateBreakdownTotal()">
+    <span style="font-size:11px;color:var(--muted)">頭</span>
     <button onclick="this.closest('.be-row').remove();updateBreakdownTotal()" style="background:none;border:none;color:var(--danger);font-size:16px;cursor:pointer">✕</button>`;
   rowsEl.appendChild(div);
 }
 
 function updateBreakdownTotal() {
-  const cnts = [...document.querySelectorAll('.be-cnt')].map(el=>parseInt(el.value)||0);
+  const rows = [...document.querySelectorAll('.be-row')];
+  const cnts = rows.map(r=>parseInt(r.querySelector('.be-cnt').value)||0);
   const total = cnts.reduce((a,v)=>a+v,0);
   document.getElementById('be-total').textContent = total;
   const warn = document.getElementById('be-total-warn');
+  const msgs = [];
   if(total !== BE_TOTAL_HEAD) {
-    warn.textContent = `⚠️ 仕切書の頭数(${BE_TOTAL_HEAD}頭)と一致しません`;
+    msgs.push(`⚠️ 仕切書の頭数(${BE_TOTAL_HEAD}頭)と一致しません`);
+  }
+  const overDiscard = rows.some(r => {
+    const cnt = parseInt(r.querySelector('.be-cnt').value)||0;
+    const disc = parseInt(r.querySelector('.be-discard')?.value)||0;
+    return disc > cnt;
+  });
+  if(overDiscard) msgs.push('⚠️ 廃棄頭数がロットの頭数を超えている行があります');
+  if(msgs.length) {
+    warn.textContent = msgs.join('　');
     warn.style.display = '';
   } else {
     warn.style.display = 'none';
@@ -13834,12 +13854,17 @@ async function saveEditBreakdown() {
   const breakdown = rows.map(r=>({
     lot_id: r.querySelector('.be-lot-sel').value || null,
     count:  parseInt(r.querySelector('.be-cnt').value)||0,
+    discard: parseInt(r.querySelector('.be-discard')?.value)||0,
   })).filter(b=>b.count>0);
 
   if(!breakdown.length) { notif('頭数を入力してください','r'); return; }
   const total = breakdown.reduce((a,b)=>a+b.count,0);
   if(total !== BE_TOTAL_HEAD) {
     if(!confirm(`合計頭数(${total}頭)が仕切書(${BE_TOTAL_HEAD}頭)と異なります。このまま保存しますか？`)) return;
+  }
+  if(breakdown.some(b=>b.discard > b.count)) {
+    notif('廃棄頭数が該当ロットの頭数を超えている行があります。修正してください。','r');
+    return;
   }
 
   const sheet = DATA.slaughter.find(s=>s.id===BE_SHEET_ID);
@@ -13872,8 +13897,36 @@ async function saveEditBreakdown() {
       });
     }
     DATA.ships = await api.getShips();
+
+    // このシート経由で登録済みの「廃棄（出荷後）」を洗い替え（削除してから入力内容で作り直す）
+    const discardMarker = `仕切書内訳(${sheet.id})より登録`;
+    const oldDiscards = DATA.deaths.filter(d =>
+      d.farm===sheet.farm && d.category==='廃棄（出荷後）' && d.cause===discardMarker
+    );
+    for(const d of oldDiscards) { await api.deleteDeath(d.id); }
+
+    let discardTotal = 0;
+    for(const b of breakdown) {
+      if(b.discard > 0) {
+        await api.insertDeath({
+          farm: sheet.farm,
+          lot_id: b.lot_id || null,
+          occurred_at: sheet.shipped_at,
+          category: '廃棄（出荷後）',
+          count: b.discard,
+          cause: discardMarker,
+          confirmed: true,
+        });
+        discardTotal += b.discard;
+      }
+    }
+    if(oldDiscards.length || discardTotal > 0) {
+      DATA.deaths = await api.getDeaths();
+      rDthTb();
+    }
+
     closeEditBreakdown();
-    notif(`ロット内訳を更新しました（${breakdown.length}ロット・合計${total}頭）`);
+    notif(`ロット内訳を更新しました（${breakdown.length}ロット・合計${total}頭${discardTotal>0?`／うち廃棄${discardTotal}頭`:''}）`);
   } catch(e) {
     notif('更新エラー: '+e.message,'r');
   } finally {

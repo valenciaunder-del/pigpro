@@ -2357,27 +2357,9 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div class="fg"><label class="fl">購入日 *</label><input class="fi" type="date" id="fp-date" onchange="onFpDateChange()"></div>
           <div class="fg"><label class="fl">適用四半期</label><input class="fi" id="fp-quarter" readonly style="background:var(--panel2);color:var(--muted2)"></div>
         </div>
-        <!-- 3種類を横並びで入力 -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
-          <div style="background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:14px">
-            <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:10px">🐷 後期用</div>
-            <div class="fg mb16"><label class="fl">数量（t）</label><input class="fi" type="number" id="fp-amt1" step="0.1" placeholder="0.0" oninput="calcFpTotal()"></div>
-            <div style="font-size:11px;color:var(--muted2)" id="fp-price1-lbl">単価: -</div>
-            <div style="font-size:12px;color:var(--accent);margin-top:4px;font-family:var(--mono)" id="fp-total1">-</div>
-          </div>
-          <div style="background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.2);border-radius:8px;padding:14px">
-            <div style="font-size:12px;font-weight:600;color:var(--accent2);margin-bottom:10px">🐣 子豚用</div>
-            <div class="fg mb16"><label class="fl">数量（t）</label><input class="fi" type="number" id="fp-amt2" step="0.1" placeholder="0.0" oninput="calcFpTotal()"></div>
-            <div style="font-size:11px;color:var(--muted2)" id="fp-price2-lbl">単価: -</div>
-            <div style="font-size:12px;color:var(--accent2);margin-top:4px;font-family:var(--mono)" id="fp-total2">-</div>
-          </div>
-          <div style="background:rgba(251,146,60,.06);border:1px solid rgba(251,146,60,.2);border-radius:8px;padding:14px">
-            <div style="font-size:12px;font-weight:600;color:var(--accent3);margin-bottom:10px">🥩 肥育用</div>
-            <div class="fg mb16"><label class="fl">数量（t）</label><input class="fi" type="number" id="fp-amt3" step="0.1" placeholder="0.0" oninput="calcFpTotal()"></div>
-            <div style="font-size:11px;color:var(--muted2)" id="fp-price3-lbl">単価: -</div>
-            <div style="font-size:12px;color:var(--accent3);margin-top:4px;font-family:var(--mono)" id="fp-total3">-</div>
-          </div>
-        </div>
+        <div style="font-size:11px;color:var(--muted);margin:-8px 0 12px">※タンクごとに購入量を入力します。使用量計算は「タンク残量（ミルフィー等の実測）＋当月購入量－タンク残量」のハイブリッド方式で、タンクの実際の入荷を正確に反映します。</div>
+        <!-- タンクごとに動的生成 -->
+        <div id="fp-tank-boxes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px"></div>
         <div style="background:var(--panel2);border-radius:8px;padding:12px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:13px;color:var(--muted2)">合計金額</span>
           <span class="mn ng" style="font-size:20px;font-weight:700" id="fp-grand-total">-</span>
@@ -2395,7 +2377,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       </div>
       <div class="tw">
         <table>
-          <thead><tr><th>農場</th><th>購入日</th><th>飼料種類</th><th>数量(t)</th><th>単価(円/t)</th><th>金額</th><th>備考</th><th></th></tr></thead>
+          <thead><tr><th>農場</th><th>購入日</th><th>飼料種類</th><th>タンク</th><th>数量(t)</th><th>単価(円/t)</th><th>金額</th><th>備考</th><th></th></tr></thead>
           <tbody id="fp-tb"></tbody>
         </table>
       </div>
@@ -2987,6 +2969,17 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 </div>
 
 <script>
+// タンク×月の入荷量を取得（ハイブリッド方式）
+// 飼料購入記録（tank_name一致）があればそちらを優先し、無い場合のみタンクCSV(ミルフィー等)のdelivery_tonにフォールバックする
+function getMonthlyDeliveryForTank(farm, tankName, monthStr, fallbackTon) {
+  if(!tankName) return fallbackTon;
+  const purchases = (DATA.feedPurchase||[]).filter(p =>
+    p.farm===farm && p.tank_name===tankName && (p.purchased_at||'').startsWith(monthStr)
+  );
+  if(purchases.length) return purchases.reduce((a,p)=>a+(p.amount_ton||0), 0);
+  return fallbackTon;
+}
+
 function calcMonthlyUsage(feedTankData, farm, monthStr) {
   const mon = monthStr;
   const tankRows = feedTankData.filter(r=>
@@ -3005,7 +2998,8 @@ function calcMonthlyUsage(feedTankData, farm, monthStr) {
       if(!rows.length) continue;
       const opening = rows[0].tank_remaining||0;
       const closing = rows[rows.length-1].tank_remaining||0;  
-      const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const deliveryFromCsv = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const delivery = getMonthlyDeliveryForTank(farm, tn, mon, deliveryFromCsv);
       const usage = opening + delivery - closing;
       
       if(ft === 'piglet' && usage > 0) pigletFeedT += usage;
@@ -3032,7 +3026,8 @@ function calcMonthlyUsageByTank(feedTankData, farm, monthStr) {
       if(!rows.length) continue;
       const opening = rows[0].tank_remaining||0;
       const closing = rows[rows.length-1].tank_remaining||0;
-      const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const deliveryFromCsv = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const delivery = getMonthlyDeliveryForTank(farm, tn, mon, deliveryFromCsv);
       const usage = Math.max(0, opening + delivery - closing);
       if(usage > 0) results.push({ tank_name: tn, feed_type: ft, usage: Math.round(usage*100)/100 });
     }
@@ -4659,7 +4654,7 @@ function renderPage(id) {
   if(id==='production-cost') rProdCost();
   if(id==='daily')      rDaily();
   if(id==='feed-master')   rFeedMaster();
-  if(id==='feed-purchase') rFeedPurchase();
+  if(id==='feed-purchase') { rFeedPurchase(); renderFpTankBoxes(); }
   if(id==='feed-tank')     rFeedTank();
   if(id==='report')     rReport();
   if(id==='abl')        rAbl();
@@ -15356,7 +15351,43 @@ async function delFeedMasterGroup(farm, barn, quarter) {
 // ══════════════════════════════════════════════
 // FEED PURCHASE
 // ══════════════════════════════════════════════
-function onFpFarmChange() { onFpDateChange(); }
+// 農場のタンク構成（豚舎×子豚用・肥育用）＋後期用（全体）の入力ボックス定義を生成
+function getFpTankBoxDefs(farm) {
+  const barns = FARMS[farm]?.barns || [];
+  const defs = [];
+  barns.forEach(b => {
+    defs.push({ key:`piglet-${b.id}`, label:`${b.name} 子豚用`, tankName:b.tank_piglet_label||null, feedType:'子豚用', barn:`${b.id}号棟`, color:'c' });
+    defs.push({ key:`hog-${b.id}`,    label:`${b.name} 肥育用`, tankName:b.tank_hog_label||null,    feedType:'肥育用', barn:`${b.id}号棟`, color:'o' });
+  });
+  defs.push({ key:'late', label:'後期用（全体）', tankName:null, feedType:'後期用', barn:null, color:'g' });
+  return defs;
+}
+
+const FP_BOX_COLORS = {
+  g: ['rgba(74,222,128,.06)','rgba(74,222,128,.2)','var(--accent)'],
+  c: ['rgba(34,211,238,.06)','rgba(34,211,238,.2)','var(--accent2)'],
+  o: ['rgba(251,146,60,.06)','rgba(251,146,60,.2)','var(--accent3)'],
+};
+
+// 選択中の農場のタンク構成に合わせて入力ボックスを動的生成
+function renderFpTankBoxes() {
+  const farm = document.getElementById('fp-farm')?.value || 'farm1';
+  const defs = getFpTankBoxDefs(farm);
+  const box = document.getElementById('fp-tank-boxes');
+  if(!box) return;
+  box.innerHTML = defs.map(d => {
+    const [bg,border,fg] = FP_BOX_COLORS[d.color];
+    return `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px">
+      <div style="font-size:11px;font-weight:600;color:${fg};margin-bottom:8px">${d.label}${d.tankName?`<div style="color:var(--muted);font-weight:400;font-size:10px">タンク: ${d.tankName}</div>`:''}</div>
+      <div class="fg mb16"><label class="fl">数量（t）</label><input class="fi" type="number" id="fp-amt-${d.key}" step="0.1" placeholder="0.0" oninput="calcFpTotal()"></div>
+      <div style="font-size:11px;color:var(--muted2)" id="fp-price-${d.key}-lbl">単価: -</div>
+      <div style="font-size:12px;color:${fg};margin-top:4px;font-family:var(--mono)" id="fp-total-${d.key}">-</div>
+    </div>`;
+  }).join('');
+  onFpDateChange();
+}
+
+function onFpFarmChange() { renderFpTankBoxes(); }
 
 function onFpDateChange() {
   const farm = document.getElementById('fp-farm')?.value||'farm1';
@@ -15364,12 +15395,11 @@ function onFpDateChange() {
   const q = dateToQuarter(dateStr);
   document.getElementById('fp-quarter').value = q||'-';
 
-  // 単価ラベル更新
-  const types = ['後期用','子豚用','肥育用'];
-  ['1','2','3'].forEach((n,i)=>{
-    const price = getFeedPrice(farm, dateStr, types[i-1]||types[parseInt(n)-1]);
-    document.getElementById(`fp-price${n}-lbl`).textContent =
-      price ? `単価: ${fM(price)}/t` : '単価: 未設定（先に単価設定してください）';
+  // 単価ラベル更新（タンクの豚舎に応じた単価を優先、無ければ全豚舎共通）
+  getFpTankBoxDefs(farm).forEach(d => {
+    const price = getFeedPrice(farm, dateStr, d.feedType, d.barn);
+    const lbl = document.getElementById(`fp-price-${d.key}-lbl`);
+    if(lbl) lbl.textContent = price ? `単価: ${fM(price)}/t` : '単価: 未設定（先に単価設定してください）';
   });
   calcFpTotal();
 }
@@ -15377,16 +15407,17 @@ function onFpDateChange() {
 function calcFpTotal() {
   const farm = document.getElementById('fp-farm')?.value||'farm1';
   const dateStr = document.getElementById('fp-date')?.value;
-  const types = ['後期用','子豚用','肥育用'];
   let grand = 0;
-  ['1','2','3'].forEach((n,i)=>{
-    const amt = parseFloat(document.getElementById(`fp-amt${n}`)?.value)||0;
-    const price = getFeedPrice(farm, dateStr, types[i]);
+  getFpTankBoxDefs(farm).forEach(d => {
+    const amt = parseFloat(document.getElementById(`fp-amt-${d.key}`)?.value)||0;
+    const price = getFeedPrice(farm, dateStr, d.feedType, d.barn);
     const total = price ? Math.round(amt * price) : 0;
-    document.getElementById(`fp-total${n}`).textContent = amt&&price ? fM(total) : amt&&!price ? '単価未設定' : '-';
+    const totalEl = document.getElementById(`fp-total-${d.key}`);
+    if(totalEl) totalEl.textContent = amt&&price ? fM(total) : amt&&!price ? '単価未設定' : '-';
     grand += total;
   });
-  document.getElementById('fp-grand-total').textContent = grand ? fM(grand) : '-';
+  const grandEl = document.getElementById('fp-grand-total');
+  if(grandEl) grandEl.textContent = grand ? fM(grand) : '-';
 }
 
 function rFeedPurchase() {
@@ -15409,26 +15440,29 @@ function rFeedPurchase() {
         <td>${fb(p.farm)}</td>
         <td class="mn">${p.purchased_at||'-'}</td>
         <td><span class="bdg ${p.feed_type==='後期用'?'g':p.feed_type==='子豚用'?'c':'o'}">${p.feed_type}</span></td>
+        <td style="color:var(--muted2);font-size:12px">${p.tank_name||'-'}</td>
         <td class="mn">${p.amount_ton}t</td>
         <td class="mn" style="color:var(--muted2)">${p.price_per_ton?fM(p.price_per_ton)+'/t':'-'}</td>
         <td class="mn ng">${p.total_amount?fM(p.total_amount):'-'}</td>
         <td style="color:var(--muted)">${p.note||'-'}</td>
         <td><button class="btn bd sm" onclick="delFeedPurchase('${p.id}')">削除</button></td>
       </tr>`).join('')
-    : '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">購入記録がありません</td></tr>';
+    : '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">購入記録がありません</td></tr>';
 }
 
 async function saveFeedPurchase() {
   const farm = document.getElementById('fp-farm').value;
   const dateStr = document.getElementById('fp-date').value;
   if(!dateStr) { notif('購入日を入力してください','r'); return; }
-  const types = ['後期用','子豚用','肥育用'];
-  const records = ['1','2','3'].map((n,i)=>({
-    type: types[i],
-    amt: parseFloat(document.getElementById(`fp-amt${n}`).value)||0,
-    price: getFeedPrice(farm, dateStr, types[i]),
+  const defs = getFpTankBoxDefs(farm);
+  const records = defs.map(d => ({
+    type: d.feedType,
+    tankName: d.tankName,
+    barn: d.barn,
+    amt: parseFloat(document.getElementById(`fp-amt-${d.key}`)?.value)||0,
+    price: getFeedPrice(farm, dateStr, d.feedType, d.barn),
   })).filter(r=>r.amt>0);
-  if(!records.length) { notif('数量を1種類以上入力してください','r'); return; }
+  if(!records.length) { notif('数量を1つ以上入力してください','r'); return; }
   const note = document.getElementById('fp-note').value||null;
 
   showLoading('登録中...');
@@ -15438,6 +15472,7 @@ async function saveFeedPurchase() {
       await api.insertFeedPurchase({
         farm, purchased_at: dateStr,
         feed_type: r.type,
+        tank_name: r.tankName || null,
         amount_ton: r.amt,
         price_per_ton: r.price||null,
         total_amount: total,
@@ -15446,10 +15481,9 @@ async function saveFeedPurchase() {
     }
     DATA.feedPurchase = await api.getFeedPurchase();
     rFeedPurchase();
-    // クリア
-    ['fp-amt1','fp-amt2','fp-amt3','fp-note'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    ['fp-total1','fp-total2','fp-total3'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='-';});
-    document.getElementById('fp-grand-total').textContent='-';
+    renderFpTankBoxes();
+    document.getElementById('fp-note').value = '';
+    document.getElementById('fp-grand-total').textContent = '-';
     notif('飼料購入記録を登録しました');
   } catch(e) { notif('登録エラー: '+e.message,'r'); }
   finally { hideLoading(); }

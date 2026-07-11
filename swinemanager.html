@@ -2416,7 +2416,14 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     </div>
     <!-- 購入記録一覧 -->
     <div class="card" style="margin-bottom:0">
-      <div class="ch"><span class="ct">購入記録一覧</span>
+      <div class="ch" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <span class="ct">購入記録一覧</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select class="fs" id="fp-mon-y" onchange="syncMon('fp-mon');rFeedPurchase()" style="width:74px;font-size:12px"></select>
+          <select class="fs" id="fp-mon-m" onchange="syncMon('fp-mon');rFeedPurchase()" style="width:56px;font-size:12px"></select>
+          <input type="hidden" id="fp-mon">
+          <button class="btn bs sm" onclick="clearFpMonFilter()">全期間</button>
+        </div>
       </div>
       <div class="tw">
         <table>
@@ -15651,6 +15658,13 @@ function getFpTankOptionsForBrand(farm, brandName) {
 
 function onFpFarmChange() { onFpBrandChange(); rFeedPurchase(); }
 
+// 購入記録一覧の年月フィルターを解除し全期間表示に戻す
+function clearFpMonFilter() {
+  const hidden = document.getElementById('fp-mon');
+  if(hidden) hidden.value = '';
+  rFeedPurchase();
+}
+
 // 銘柄が変わったら、その銘柄のステージに応じたタンク候補を再生成する
 function onFpBrandChange() {
   const farm = document.getElementById('fp-farm')?.value || 'farm1';
@@ -15712,7 +15726,11 @@ function rFeedPurchase() {
   // 左サイドバー（CF）ではなく、このページの入力フォームで選択中の農場に一覧を連動させる
   // （フォームで別農場を選んで登録した直後に、一覧に反映されないという混乱を防ぐため）
   const ff = document.getElementById('fp-farm')?.value || (CF==='both' ? 'all' : CF);
-  const items = DATA.feedPurchase.filter(p=>ff==='all'||p.farm===ff);
+  const mon = document.getElementById('fp-mon')?.value || '';
+  const items = DATA.feedPurchase
+    .filter(p=>ff==='all'||p.farm===ff)
+    .filter(p=>!mon || (p.purchased_at||'').startsWith(mon))
+    .sort((a,b)=>(b.purchased_at||'').localeCompare(a.purchased_at||''));
 
   // KPI
   const thisMonth = new Date().toISOString().slice(0,7);

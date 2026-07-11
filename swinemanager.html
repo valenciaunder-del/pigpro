@@ -2271,7 +2271,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div class="fg"><label class="fl">銘柄</label>
             <div style="display:flex;gap:4px">
               <select class="fs" id="fpm-brand" style="flex:1"><option value="">（銘柄問わず）</option></select>
-              <button type="button" class="btn bs sm" onclick="addNewFeedBrand('fpm-brand')" title="新しい銘柄を追加" style="padding:0 10px">＋</button>
+              <button type="button" class="btn bs sm" onclick="openAddBrandModal('fpm-brand')" title="新しい銘柄を追加" style="padding:0 10px">＋</button>
             </div>
           </div>
           <div class="fg"><label class="fl">四半期</label>
@@ -2341,7 +2341,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     <div class="card mb18">
       <div class="ch"><span class="ct">銘柄マスター</span></div>
       <div class="cb">
-        <button class="btn bp sm mb16" onclick="addNewFeedBrand(null)">＋ 新しい銘柄を追加</button>
+        <button class="btn bp sm mb16" onclick="openAddBrandModal(null)">＋ 新しい銘柄を追加</button>
         <div id="fbg-brand-list" style="display:flex;flex-wrap:wrap;gap:8px"></div>
       </div>
     </div>
@@ -3333,10 +3333,10 @@ const api = {
 
   // Feed brand master（銘柄マスター）。テーブル未作成時でも全体のデータ読み込みを止めないようフォールバックする
   getFeedBrands: async () => { try { return await sbFetch('feed_brand_master?order=name.asc'); } catch(e) { console.warn('feed_brand_master取得失敗:', e.message); return []; } },
-  insertFeedBrand: (name) => sbFetch('feed_brand_master', {
+  insertFeedBrand: (data) => sbFetch('feed_brand_master', {
     method: 'POST',
     headers: { 'Prefer': 'resolution=merge-duplicates,return=representation' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(data),
   }),
   deleteFeedBrand: (id) => sbFetch(`feed_brand_master?id=eq.${id}`, { method:'DELETE' }),
 
@@ -15388,18 +15388,57 @@ function fillFeedBrandSelects() {
 }
 
 // 銘柄マスターに新規登録し、指定セレクトへ即座に反映・選択する
-async function addNewFeedBrand(targetSelectId) {
-  const name = (prompt('新しい銘柄名を入力してください（例: 清水港飼料スター号）')||'').trim();
-  if(!name) return;
+// 新規銘柄登録モーダル（メーカー・ステージ・銘柄名の3項目）
+function openAddBrandModal(targetSelectId) {
+  const existing = document.getElementById('brand-add-modal');
+  if(existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'brand-add-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:2000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;width:380px;max-width:92vw">
+      <div style="font-size:16px;font-weight:700;margin-bottom:16px">新しい銘柄を追加</div>
+      <div class="fg mb16"><label class="fl">メーカー</label><input class="fi" id="nb-maker" placeholder="例: 清水港飼料"></div>
+      <div class="fg mb16"><label class="fl">ステージ</label>
+        <select class="fs" id="nb-stage">
+          <option value="">指定なし</option>
+          <option value="後期用">後期用</option>
+          <option value="子豚用">子豚用</option>
+          <option value="肥育用">肥育用</option>
+        </select>
+      </div>
+      <div class="fg mb16"><label class="fl">銘柄名</label><input class="fi" id="nb-product" placeholder="例: スター号"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn bp" style="flex:1" onclick="submitNewBrand('${targetSelectId||''}')">✓ 追加</button>
+        <button class="btn bs" onclick="document.getElementById('brand-add-modal').remove()">キャンセル</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.onclick = e => { if(e.target===modal) modal.remove(); };
+  setTimeout(()=>document.getElementById('nb-maker')?.focus(), 50);
+}
+
+async function submitNewBrand(targetSelectId) {
+  const maker   = document.getElementById('nb-maker')?.value.trim()   || '';
+  const stage   = document.getElementById('nb-stage')?.value          || '';
+  const product = document.getElementById('nb-product')?.value.trim() || '';
+  if(!maker && !product) { notif('メーカーまたは銘柄名を入力してください','r'); return; }
+
+  const base = [maker, product].filter(Boolean).join(' ');
+  const name = stage ? `${base}（${stage}）` : base;
+
   try {
-    await api.insertFeedBrand(name);
+    await api.insertFeedBrand({ name, maker: maker||null, stage: stage||null, product_name: product||null });
     DATA.feedBrands = await api.getFeedBrands();
     fillFeedBrandSelects();
     renderFbgBrandList();
-    const target = document.getElementById(targetSelectId);
-    if(target) {
-      target.value = name;
-      target.dispatchEvent(new Event('change'));
+    document.getElementById('brand-add-modal')?.remove();
+    if(targetSelectId) {
+      const target = document.getElementById(targetSelectId);
+      if(target) {
+        target.value = name;
+        target.dispatchEvent(new Event('change'));
+      }
     }
     notif(`銘柄「${name}」を追加しました`);
   } catch(e) { notif('銘柄登録エラー: '+e.message, 'r'); }
@@ -15417,8 +15456,11 @@ function renderFbgBrandList() {
   const brands = [...(DATA.feedBrands||[])].sort((a,b)=>a.name.localeCompare(b.name,'ja'));
   listEl.innerHTML = brands.length
     ? brands.map(b=>`
-      <div style="display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px">
-        <span>${b.name}</span>
+      <div style="display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px">
+        <div>
+          <div style="font-weight:600">${b.name}</div>
+          ${(b.maker||b.stage)?`<div style="color:var(--muted);font-size:10px;margin-top:2px">${[b.maker,b.stage].filter(Boolean).join(' ・ ')}</div>`:''}
+        </div>
         <button class="btn bd sm" style="padding:0 6px;font-size:11px" onclick="deleteFeedBrandMaster('${b.id}','${b.name.replace(/'/g,"&apos;")}')">✕</button>
       </div>`).join('')
     : '<div style="color:var(--muted);font-size:12px">銘柄が登録されていません。上の「＋ 新しい銘柄を追加」から登録してください。</div>';
@@ -15616,7 +15658,7 @@ function renderFpTankBoxes() {
       <div class="fg mb16"><label class="fl">銘柄</label>
         <div style="display:flex;gap:4px">
           <select class="fs" id="fp-brand-${d.key}" style="flex:1;font-size:12px" onchange="onFpDateChange()"><option value="">（未選択）</option></select>
-          <button type="button" class="btn bs sm" onclick="addNewFeedBrand('fp-brand-${d.key}')" title="新しい銘柄を追加" style="padding:0 8px;font-size:12px">＋</button>
+          <button type="button" class="btn bs sm" onclick="openAddBrandModal('fp-brand-${d.key}')" title="新しい銘柄を追加" style="padding:0 8px;font-size:12px">＋</button>
         </div>
       </div>
       <div style="font-size:11px;color:var(--muted2)" id="fp-price-${d.key}-lbl">単価: -</div>

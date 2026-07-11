@@ -2349,18 +2349,18 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     <div class="card">
       <div class="ch"><span class="ct">銘柄別 単価一覧（四半期横並び）</span></div>
       <div class="cb">
-        <div class="alert i mb16">ℹ️ <div>農場・豚舎・銘柄を選ぶと、四半期ごとの単価をまとめて確認・編集できます。セルを編集すると即座に保存されます（空欄にすると削除されます）。</div></div>
+        <div class="alert i mb16">ℹ️ <div>銘柄を選ぶと、そのステージ（子豚用/肥育用等）の飼料費・運賃だけが表示されます。銘柄を選ばない場合は、豚舎ごとの共通単価（フォールバック用）として全ステージを設定できます。</div></div>
         <div class="fg3 mb16">
           <div class="fg"><label class="fl">農場</label>
             <select class="fs" id="fbg-farm" onchange="onFbgFarmChange()">
               <option value="farm1">中田農場</option><option value="farm2">米山農場</option>
             </select>
           </div>
-          <div class="fg"><label class="fl">豚舎</label>
+          <div class="fg" id="fbg-barn-wrap"><label class="fl">豚舎</label>
             <select class="fs" id="fbg-barn" onchange="rFeedBrandGrid()"><option value="">全豚舎共通</option></select>
           </div>
           <div class="fg"><label class="fl">銘柄</label>
-            <select class="fs" id="fbg-brand" onchange="rFeedBrandGrid()"><option value="">（銘柄問わず）</option></select>
+            <select class="fs" id="fbg-brand" onchange="rFeedBrandGrid()"><option value="">（銘柄問わず＝豚舎別の共通単価）</option></select>
           </div>
         </div>
         <div class="tw"><table class="pt">
@@ -15209,13 +15209,13 @@ function dateToQuarter(dateStr) {
 // 農場・四半期・飼料種類（・豚舎）で単価を取得（円/t）＝飼料費＋運賃の合計
 // barnを指定した場合、その豚舎専用の単価があれば優先し、無ければ「全豚舎共通」設定にフォールバックする
 // 農場・四半期・飼料種類（・豚舎・銘柄）で単価を取得（円/t）＝飼料費＋運賃の合計
-// 優先順位: ①豚舎+銘柄が一致 → ②豚舎のみ一致（銘柄問わず設定） → ③全豚舎共通（銘柄問わず）
+// 優先順位: ①銘柄が一致（豚舎問わず。銘柄自体が製品を特定するため） → ②豚舎のみ一致（銘柄問わずの豚舎別設定） → ③全豚舎共通
 function getFeedPrice(farm, dateStr, feedType, barn, brand) {
   const q = dateToQuarter(dateStr);
   const findTotal = (rec) => rec ? ((rec.price_per_ton||0)+(rec.freight_per_ton||0)) || null : null;
 
-  if(barn && brand) {
-    const t = findTotal(DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.barn===barn && r.brand===brand));
+  if(brand) {
+    const t = findTotal(DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.brand===brand));
     if(t) return t;
   }
   if(barn) {
@@ -15232,9 +15232,9 @@ function getFeedPriceDetail(farm, dateStr, feedType, barn, brand) {
     ? { price: rec.price_per_ton||0, freight: rec.freight_per_ton||0, total: (rec.price_per_ton||0)+(rec.freight_per_ton||0), barn: matchedBarn, brand: matchedBrand }
     : null;
 
-  if(barn && brand) {
-    const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.barn===barn && r.brand===brand);
-    if(rec) return toDetail(rec, barn, brand);
+  if(brand) {
+    const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.brand===brand);
+    if(rec) return toDetail(rec, rec.barn||null, brand);
   }
   if(barn) {
     const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.barn===barn && !r.brand);
@@ -15504,20 +15504,33 @@ function rFeedBrandGrid() {
   const tbodyEl = document.getElementById('fbg-tbody');
   if(!theadEl || !tbodyEl) return;
 
-  const farm = document.getElementById('fbg-farm')?.value || 'farm1';
-  const barn = document.getElementById('fbg-barn')?.value || '';
+  const farm  = document.getElementById('fbg-farm')?.value || 'farm1';
   const brand = document.getElementById('fbg-brand')?.value || '';
+
+  // 銘柄を選んだ場合：銘柄が製品を特定するため豚舎は不要。豚舎欄を隠し、barnは常に空（銘柄問わずの豚舎別設定と区別）にする
+  // 銘柄を選ばない場合：豚舎別の共通単価（フォールバック）を設定するモードなので豚舎欄を表示する
+  const barnWrap = document.getElementById('fbg-barn-wrap');
+  const barnSel  = document.getElementById('fbg-barn');
+  if(barnWrap) barnWrap.style.display = brand ? 'none' : '';
+  const barn = brand ? '' : (barnSel?.value || '');
 
   theadEl.innerHTML = '<th style="min-width:110px">項目</th>' + FBG_QUARTERS.map(q=>`<th class="tr3" style="min-width:80px">${q}</th>`).join('');
 
-  const rows = [
-    { label:'後期用 飼料費', feedType:'後期用', field:'price_per_ton' },
-    { label:'後期用 運賃',   feedType:'後期用', field:'freight_per_ton' },
-    { label:'子豚用 飼料費', feedType:'子豚用', field:'price_per_ton' },
-    { label:'子豚用 運賃',   feedType:'子豚用', field:'freight_per_ton' },
-    { label:'肥育用 飼料費', feedType:'肥育用', field:'price_per_ton' },
-    { label:'肥育用 運賃',   feedType:'肥育用', field:'freight_per_ton' },
-  ];
+  // 銘柄にステージ（子豚用/肥育用/後期用）が設定されていれば、そのステージの2行（飼料費・運賃）だけを表示
+  const brandInfo = brand ? (DATA.feedBrands||[]).find(b=>b.name===brand) : null;
+  const rows = (brandInfo && brandInfo.stage)
+    ? [
+        { label:`${brandInfo.stage} 飼料費`, feedType:brandInfo.stage, field:'price_per_ton' },
+        { label:`${brandInfo.stage} 運賃`,   feedType:brandInfo.stage, field:'freight_per_ton' },
+      ]
+    : [
+        { label:'後期用 飼料費', feedType:'後期用', field:'price_per_ton' },
+        { label:'後期用 運賃',   feedType:'後期用', field:'freight_per_ton' },
+        { label:'子豚用 飼料費', feedType:'子豚用', field:'price_per_ton' },
+        { label:'子豚用 運賃',   feedType:'子豚用', field:'freight_per_ton' },
+        { label:'肥育用 飼料費', feedType:'肥育用', field:'price_per_ton' },
+        { label:'肥育用 運賃',   feedType:'肥育用', field:'freight_per_ton' },
+      ];
 
   tbodyEl.innerHTML = rows.map(r => {
     const cells = FBG_QUARTERS.map(q => {
@@ -15533,8 +15546,8 @@ function rFeedBrandGrid() {
 // グリッドの1セル編集を即座に保存（price/freightのもう片方は既存値を保持。両方0/空なら削除）
 async function saveFbgCell(feedType, field, quarter) {
   const farm  = document.getElementById('fbg-farm')?.value || 'farm1';
-  const barn  = document.getElementById('fbg-barn')?.value || '';
   const brand = document.getElementById('fbg-brand')?.value || '';
+  const barn  = brand ? '' : (document.getElementById('fbg-barn')?.value || '');
   const cellId = `fbg-cell-${feedType}-${field}-${quarter}`;
   const val = parseInt(document.getElementById(cellId)?.value) || 0;
 

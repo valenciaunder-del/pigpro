@@ -15649,7 +15649,7 @@ function getFpTankOptionsForBrand(farm, brandName) {
   return [{ tankName:null, label:'全体（タンク指定なし）', feedType: stage || '後期用', barn:null }];
 }
 
-function onFpFarmChange() { onFpBrandChange(); }
+function onFpFarmChange() { onFpBrandChange(); rFeedPurchase(); }
 
 // 銘柄が変わったら、その銘柄のステージに応じたタンク候補を再生成する
 function onFpBrandChange() {
@@ -15709,7 +15709,9 @@ function calcFpTotal() {
 }
 
 function rFeedPurchase() {
-  const ff = CF==='both' ? 'all' : CF;
+  // 左サイドバー（CF）ではなく、このページの入力フォームで選択中の農場に一覧を連動させる
+  // （フォームで別農場を選んで登録した直後に、一覧に反映されないという混乱を防ぐため）
+  const ff = document.getElementById('fp-farm')?.value || (CF==='both' ? 'all' : CF);
   const items = DATA.feedPurchase.filter(p=>ff==='all'||p.farm===ff);
 
   // KPI

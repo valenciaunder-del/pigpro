@@ -15634,10 +15634,16 @@ function getFpTankOptionsForBrand(farm, brandName) {
   const barns = FARMS[farm]?.barns || [];
 
   if(stage === '子豚用') {
-    return barns.map(b => ({ tankName:b.tank_piglet_label||null, label:`${b.name} 子豚用（${b.tank_piglet_label||'タンク未設定'}）`, feedType:'子豚用', barn:`${b.id}号棟` }));
+    return [
+      ...barns.map(b => ({ tankName:b.tank_piglet_label||null, label:`${b.name} 子豚用（${b.tank_piglet_label||'タンク未設定'}）`, feedType:'子豚用', barn:`${b.id}号棟` })),
+      { tankName:null, label:'不明（豚舎を特定できない・タンク指定なし）', feedType:'子豚用', barn:null },
+    ];
   }
   if(stage === '肥育用') {
-    return barns.map(b => ({ tankName:b.tank_hog_label||null, label:`${b.name} 肥育用（${b.tank_hog_label||'タンク未設定'}）`, feedType:'肥育用', barn:`${b.id}号棟` }));
+    return [
+      ...barns.map(b => ({ tankName:b.tank_hog_label||null, label:`${b.name} 肥育用（${b.tank_hog_label||'タンク未設定'}）`, feedType:'肥育用', barn:`${b.id}号棟` })),
+      { tankName:null, label:'不明（豚舎を特定できない・タンク指定なし）', feedType:'肥育用', barn:null },
+    ];
   }
   // 後期用、またはステージ指定なしの銘柄 → タンク指定なし（全体）
   return [{ tankName:null, label:'全体（タンク指定なし）', feedType: stage || '後期用', barn:null }];

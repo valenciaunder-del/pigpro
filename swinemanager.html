@@ -2261,16 +2261,13 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="ch"><span class="ct">飼料単価設定（四半期）</span></div>
       <div class="cb">
         <div class="alert i" style="margin-bottom:14px">ℹ️ <div>四半期ごとに飼料種類別の単価をトン単位で設定します。購入記録入力時に自動適用されます。</div></div>
-        <div class="fg5 mb16">
+        <div class="fg4 mb16">
           <div class="fg"><label class="fl">農場</label>
-            <select class="fs" id="fpm-farm" onchange="updateFpmBarnOptions()"><option value="farm1">中田農場</option><option value="farm2">米山農場</option></select>
-          </div>
-          <div class="fg"><label class="fl">豚舎</label>
-            <select class="fs" id="fpm-barn"><option value="">全豚舎共通</option></select>
+            <select class="fs" id="fpm-farm"><option value="farm1">中田農場</option><option value="farm2">米山農場</option></select>
           </div>
           <div class="fg"><label class="fl">銘柄</label>
             <div style="display:flex;gap:4px">
-              <select class="fs" id="fpm-brand" style="flex:1"><option value="">（銘柄問わず）</option></select>
+              <select class="fs" id="fpm-brand" style="flex:1"></select>
               <button type="button" class="btn bs sm" onclick="openAddBrandModal('fpm-brand')" title="新しい銘柄を追加" style="padding:0 10px">＋</button>
             </div>
           </div>
@@ -2292,7 +2289,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           </div>
           <div class="fg"><label class="fl">備考</label><input class="fi" id="fpm-note" placeholder="例: 値上がり対応"></div>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin:-10px 0 14px">※「全豚舎共通」で設定した単価は、豚舎別の単価が無いロット・タンクにフォールバックとして使われます。「銘柄」を空欄にすると、その豚舎で銘柄を問わず使われる単価になります。同じ豚舎・同じステージで複数銘柄を同時に使う場合は、銘柄ごとに登録してください（購入記録の銘柄と自動的に紐付きます）。</div>
+        <div style="font-size:11px;color:var(--muted);margin:-10px 0 14px">※単価は必ず銘柄を指定して登録してください。同じステージ（子豚用/肥育用等）で複数銘柄を同時に使う場合は、銘柄ごとに登録してください（購入記録の銘柄と自動的に紐付きます）。</div>
         <!-- 3種類の単価を横並びで入力 -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
           <div style="background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:14px">
@@ -15304,7 +15301,6 @@ function calcDailyFeedCostPerHead(farm, from, to) {
 function rFeedMaster() {
   const ff = CF==='both' ? 'all' : CF;
   const items = DATA.feedMaster.filter(r => ff==='all'||r.farm===ff);
-  updateFpmBarnOptions();
   fillFeedBrandSelects();
 
   // 農場+豚舎+銘柄+四半期ごとにグループ化して表示
@@ -15354,43 +15350,25 @@ function rFeedMaster() {
   });
 }
 
-// 選択中の農場に応じて豚舎セレクトの選択肢を更新
-// ロット側のbarn表記（例:"A号棟"）と一致させることで、ロットの豚舎から単価を直接引けるようにする
-function updateFpmBarnOptions() {
-  const farmSel = document.getElementById('fpm-farm');
-  const barnSel = document.getElementById('fpm-barn');
-  if(!farmSel || !barnSel) return;
-  const farm = farmSel.value;
-  const barns = FARMS[farm]?.barns || [];
-  const current = barnSel.value;
-  barnSel.innerHTML = '<option value="">全豚舎共通</option>' +
-    barns.map(b => `<option value="${b.id}号棟">${b.id}号棟</option>`).join('');
-  if([...barnSel.options].some(o=>o.value===current)) barnSel.value = current;
-}
-
 // 銘柄マスターの選択肢を、画面上の全ての銘柄セレクトに反映する（飼料単価設定・飼料購入記録で共用）
 function fillFeedBrandSelects() {
   const brands = (DATA.feedBrands||[]).map(b=>b.name).sort((a,b)=>a.localeCompare(b,'ja'));
-  const selects = [
-    document.getElementById('fpm-brand'),
-    ...document.querySelectorAll('[id^="fp-brand-"]'),
-  ].filter(Boolean);
-  selects.forEach(sel => {
+
+  // 購入記録のタンク別銘柄欄は「未選択」を許容する（購入記録自体は都度の実績入力のため）
+  document.querySelectorAll('[id^="fp-brand-"]').forEach(sel => {
     const cur = sel.value;
-    const placeholder = sel.id === 'fpm-brand' ? '（銘柄問わず）' : '（未選択）';
-    sel.innerHTML = `<option value="">${placeholder}</option>` +
+    sel.innerHTML = '<option value="">（未選択）</option>' +
       brands.map(b=>`<option value="${b.replace(/"/g,'&quot;')}" ${b===cur?'selected':''}>${b}</option>`).join('');
   });
 
-  // 銘柄一覧グリッドの銘柄セレクトは、銘柄問わずの選択肢を持たず必ず銘柄を指定する
-  const fbgSel = document.getElementById('fbg-brand');
-  if(fbgSel) {
-    const cur = fbgSel.value;
-    fbgSel.innerHTML = brands.length
+  // 単価登録フォーム・銘柄一覧グリッドの銘柄セレクトは、銘柄問わずの選択肢を持たず必ず銘柄を指定する
+  [document.getElementById('fpm-brand'), document.getElementById('fbg-brand')].filter(Boolean).forEach(sel => {
+    const cur = sel.value;
+    sel.innerHTML = brands.length
       ? brands.map(b=>`<option value="${b.replace(/"/g,'&quot;')}" ${b===cur?'selected':''}>${b}</option>`).join('')
       : '<option value="">銘柄が未登録です</option>';
-    if(!brands.includes(cur) && brands.length) fbgSel.value = brands[0];
-  }
+    if(!brands.includes(cur) && brands.length) sel.value = brands[0];
+  });
 }
 
 // 銘柄マスターに新規登録し、指定セレクトへ即座に反映・選択する
@@ -15559,8 +15537,6 @@ async function saveFbgCell(feedType, field, quarter) {
 // 一覧の「編集」クリックでフォームに値を読み込む
 function editFeedMasterGroup(g) {
   document.getElementById('fpm-farm').value = g.farm;
-  updateFpmBarnOptions();
-  document.getElementById('fpm-barn').value = g.barn||'';
   document.getElementById('fpm-brand').value = g.brand||'';
   document.getElementById('fpm-quarter').value = g.quarter;
   document.getElementById('fpm-note').value = g.note||'';
@@ -15573,18 +15549,17 @@ function editFeedMasterGroup(g) {
     if(fEl) fEl.value = p.freight || '';
     if(pEl) pEl.dispatchEvent(new Event('input'));
   });
-  notif(`${g.farm==='farm1'?'中田農場':'米山農場'} / ${g.barn||'全豚舎共通'} / ${g.brand||'銘柄問わず'} / ${g.quarter} を編集モードで読み込みました`);
+  notif(`${g.farm==='farm1'?'中田農場':'米山農場'} / ${g.brand||'（未設定）'} / ${g.quarter} を編集モードで読み込みました`);
 }
 
 function clearFeedMasterForm() {
-  ['fpm-p1','fpm-f1','fpm-p2','fpm-f2','fpm-p3','fpm-f3','fpm-note','fpm-brand'].forEach(id=>{
+  ['fpm-p1','fpm-f1','fpm-p2','fpm-f2','fpm-p3','fpm-f3','fpm-note'].forEach(id=>{
     const el=document.getElementById(id); if(el){ el.value=''; el.dispatchEvent(new Event('input')); }
   });
 }
 
 async function saveFeedMaster() {
   const farm = document.getElementById('fpm-farm').value;
-  const barn = document.getElementById('fpm-barn')?.value || '';
   const brand = document.getElementById('fpm-brand')?.value || '';
   const quarter = document.getElementById('fpm-quarter').value;
   const note = document.getElementById('fpm-note').value||null;
@@ -15595,7 +15570,7 @@ async function saveFeedMaster() {
   ];
   const hasAny = prices.some(p => document.getElementById(p.pEl).value || document.getElementById(p.fEl).value);
   if(!hasAny) { notif('飼料費または運賃を1つ以上入力してください','r'); return; }
-  if(brand && !barn) { notif('銘柄を指定する場合は豚舎も指定してください','r'); return; }
+  if(!brand) { notif('銘柄を選択してください','r'); return; }
 
   showLoading('保存中...');
   try {
@@ -15603,10 +15578,10 @@ async function saveFeedMaster() {
       const priceVal = parseInt(document.getElementById(p.pEl).value)||0;
       const freightVal = parseInt(document.getElementById(p.fEl).value)||0;
       if(!priceVal && !freightVal) continue;
-      await api.upsertFeedMaster({ farm, barn, brand, feed_type:p.feed_type, quarter, price_per_ton:priceVal, freight_per_ton:freightVal, note });
+      await api.upsertFeedMaster({ farm, barn:'', brand, feed_type:p.feed_type, quarter, price_per_ton:priceVal, freight_per_ton:freightVal, note });
     }
     DATA.feedMaster = await api.getFeedMaster();
-    rFeedMaster(); notif(`飼料単価を保存しました（${barn||'全豚舎共通'} / ${brand||'銘柄問わず'}）`);
+    rFeedMaster(); notif(`飼料単価を保存しました（${brand}）`);
     clearFeedMasterForm();
   } catch(e) { notif('保存エラー: '+e.message,'r'); }
   finally { hideLoading(); }

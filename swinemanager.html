@@ -2455,6 +2455,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="tab active" onclick="st('ft-t','ft-overview',this)">タンク残量</div>
       <div class="tab" onclick="st('ft-t','ft-usage',this)">使用量・FCR</div>
       <div class="tab" onclick="st('ft-t','ft-history',this)">月次履歴</div>
+      <div class="tab" onclick="st('ft-t','ft-inv-check',this)">棚卸確認</div>
       <div class="tab" onclick="st('ft-t','ft-csv-import',this)">📥 CSV取込</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -2602,6 +2603,32 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <th class="tr3">対目標</th>
         </tr></thead>
         <tbody id="ft-hist-tb"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- 棚卸確認タブ -->
+  <div class="ft-t-c" id="ft-inv-check" style="display:none">
+    <div class="alert i mb18">ℹ️ <div>タンクごとに「期首残量（ミルフィー等の実測）＋当月購入量－期末残量＝使用量」の内訳を確認できます。数字が想定と違う場合は、タンク残量CSVの取込漏れや購入記録の入力ミスがないか確認してください。</div></div>
+    <div class="card mb18">
+      <div class="cb" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <select class="fs" id="ftic-mon-y" onchange="syncMon('ftic-mon');rInvCheck()" style="width:80px"></select>
+        <select class="fs" id="ftic-mon-m" onchange="syncMon('ftic-mon');rInvCheck()" style="width:60px"></select>
+        <input type="hidden" id="ftic-mon">
+      </div>
+    </div>
+    <div class="card">
+      <div class="ch"><span class="ct">タンク別 棚卸内訳</span></div>
+      <div class="tw"><table class="pt">
+        <thead><tr>
+          <th>タンク</th><th>ステージ</th>
+          <th class="tr3">期首残量(t)</th>
+          <th class="tr3 ng">＋当月購入量(t)</th>
+          <th class="tr3">－期末残量(t)</th>
+          <th class="tr3 nb">＝使用量(t)</th>
+          <th class="tr3">タンク読取回数</th>
+        </tr></thead>
+        <tbody id="ftic-tb"></tbody>
       </table></div>
     </div>
   </div>
@@ -3109,6 +3136,38 @@ function calcMonthlyUsageByTank(feedTankData, farm, monthStr) {
     }
   }
   return results;
+}
+
+// タンク別の月次内訳（期首残・購入量・期末残・使用量）を全て返す（棚卸計算の確認画面用）
+// calcMonthlyUsageByTankと違い、使用量が0以下の行も含め、全ての値をそのまま返す
+function calcMonthlyUsageDetailByTank(feedTankData, farm, monthStr) {
+  const mon = monthStr;
+  const tankRows = feedTankData.filter(r => r.farm===farm && r.date && r.date.startsWith(mon));
+  const results = [];
+  for(const ft of ['piglet', 'finisher']) {
+    const feedTypeLabel = ft === 'piglet' ? '子豚用' : '肥育用';
+    const ftRows = tankRows.filter(r => r.feed_type === ft);
+    const tankNames = [...new Set(ftRows.map(r=>r.tank_name).filter(Boolean))];
+    for(const tn of tankNames) {
+      const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+      if(!rows.length) continue;
+      const opening = rows[0].tank_remaining||0;
+      const closing = rows[rows.length-1].tank_remaining||0;
+      const delivery = getMonthlyDeliveryForTank(farm, tn, feedTypeLabel, mon);
+      const usage = opening + delivery - closing;
+      results.push({
+        tank_name: tn,
+        feed_type: ft,
+        feed_type_label: feedTypeLabel,
+        opening: Math.round(opening*100)/100,
+        delivery: Math.round(delivery*100)/100,
+        closing: Math.round(closing*100)/100,
+        usage: Math.round(usage*100)/100,
+        readingDays: rows.length,
+      });
+    }
+  }
+  return results.sort((a,b)=> a.tank_name.localeCompare(b.tank_name,'ja'));
 }
 
 // タンク名から、そのタンクが属する豚舎（"A号棟"等、ロットのbarn欄と同じ表記）を逆引きする
@@ -4578,6 +4637,7 @@ function st(grp, tid, el) {
   if(tid==='pa-profit') rWeightProfitAnalysis();
   if(tid==='pa-barn') rBarnCompare();
   if(tid==='fm-brands') { onFbgFarmChange(); }
+  if(tid==='ft-inv-check') rInvCheck();
 }
 
 function om(id) {
@@ -16228,6 +16288,30 @@ function renderFtInvTable(farm, mon, items, allTankRows) {
   const finisherStage= stageData.find(d=>d.stage==='肉豚用') || {consumption:0};
   const tankConsumption = Object.fromEntries(tankData.map(d=>[d.tn, d.consumption]));
   return { pigletUseInv: pigletStage.consumption, finisherUseInv: finisherStage.consumption, tankConsumption };
+}
+
+// 棚卸確認タブ：タンク別に期首残量・購入量・期末残量・使用量の内訳を月ごとに表示する
+function rInvCheck() {
+  const tbEl = document.getElementById('ftic-tb');
+  if(!tbEl) return;
+  const farm = CF==='both' ? 'farm1' : CF;
+  const mon = document.getElementById('ftic-mon')?.value || new Date().toISOString().slice(0,7);
+  if(!document.getElementById('ftic-mon').value) setMonthSelect('ftic-mon', mon);
+
+  const farms = CF==='both' ? ['farm1','farm2'] : [farm];
+  const rows = farms.flatMap(f => calcMonthlyUsageDetailByTank(DATA.feedTank, f, mon).map(r=>({...r, farm:f})));
+
+  tbEl.innerHTML = rows.length
+    ? rows.map(r => `<tr>
+        <td style="font-weight:600">${CF==='both'?fb(r.farm)+' ':''}${r.tank_name}</td>
+        <td><span class="bdg ${r.feed_type==='piglet'?'c':'o'}">${r.feed_type_label}</span></td>
+        <td class="tr3 mn">${r.opening.toLocaleString()}</td>
+        <td class="tr3 mn ng">${r.delivery.toLocaleString()}</td>
+        <td class="tr3 mn">${r.closing.toLocaleString()}</td>
+        <td class="tr3 mn" style="font-weight:700;color:${r.usage>=0?'var(--accent2)':'var(--danger)'}">${r.usage.toLocaleString()}${r.usage<0?' ⚠️':''}</td>
+        <td class="tr3 mn" style="color:var(--muted)">${r.readingDays}回</td>
+      </tr>`).join('')
+    : '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">この月のタンク残量データがありません</td></tr>';
 }
 
 function rFeedTank() {

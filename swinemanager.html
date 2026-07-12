@@ -2411,7 +2411,10 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <span class="mn ng" style="font-size:20px;font-weight:700" id="fp-grand-total">-</span>
         </div>
         <div class="fg mb16"><label class="fl">備考</label><input class="fi" id="fp-note" placeholder="例: ○○飼料 請求書No.123"></div>
-        <button class="btn bp" onclick="saveFeedPurchase()">✓ 購入記録を登録</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn bp" id="fp-save-btn" onclick="saveFeedPurchase()">✓ 購入記録を登録</button>
+          <button class="btn bs" id="fp-edit-cancel-btn" onclick="cancelEditFeedPurchase()" style="display:none">キャンセル</button>
+        </div>
       </div>
     </div>
     <!-- 購入記録一覧 -->
@@ -2427,7 +2430,17 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       </div>
       <div class="tw">
         <table>
-          <thead><tr><th>農場</th><th>購入日</th><th>飼料種類</th><th>タンク</th><th>銘柄</th><th>数量(t)</th><th>単価(円/t)</th><th>金額</th><th>備考</th><th></th></tr></thead>
+          <thead><tr>
+            <th style="cursor:pointer" onclick="sortFpTable('farm')">農場<span id="fp-sort-farm"></span></th>
+            <th style="cursor:pointer" onclick="sortFpTable('purchased_at')">購入日<span id="fp-sort-purchased_at"></span></th>
+            <th style="cursor:pointer" onclick="sortFpTable('feed_type')">飼料種類<span id="fp-sort-feed_type"></span></th>
+            <th style="cursor:pointer" onclick="sortFpTable('tank_name')">タンク<span id="fp-sort-tank_name"></span></th>
+            <th style="cursor:pointer" onclick="sortFpTable('feed_name')">銘柄<span id="fp-sort-feed_name"></span></th>
+            <th style="cursor:pointer" onclick="sortFpTable('amount_ton')">数量(t)<span id="fp-sort-amount_ton"></span></th>
+            <th style="cursor:pointer" onclick="sortFpTable('price_per_ton')">単価(円/t)<span id="fp-sort-price_per_ton"></span></th>
+            <th style="cursor:pointer" onclick="sortFpTable('total_amount')">金額<span id="fp-sort-total_amount"></span></th>
+            <th>備考</th><th></th>
+          </tr></thead>
           <tbody id="fp-tb"></tbody>
         </table>
       </div>
@@ -3364,6 +3377,7 @@ const api = {
   // Feed purchase
   getFeedPurchase: () => sbFetch('feed_purchase?order=purchased_at.desc'),
   insertFeedPurchase: (data) => sbFetch('feed_purchase', { method:'POST', body: JSON.stringify(data) }),
+  updateFeedPurchase: (id, data) => sbFetch(`feed_purchase?id=eq.${id}`, { method:'PATCH', body: JSON.stringify(data) }),
   deleteFeedPurchase: (id) => sbFetch(`feed_purchase?id=eq.${id}`, { method:'DELETE' }),
 
   // Slaughter sheets
@@ -15737,15 +15751,41 @@ function calcFpTotal() {
   if(grandEl) grandEl.textContent = price ? fM(Math.round(amt*price)) : '単価未設定';
 }
 
+// 購入記録一覧のソート状態（列クリックで切り替え）
+let FP_SORT = { col: 'purchased_at', dir: 'desc' };
+
+function sortFpTable(col) {
+  if(FP_SORT.col === col) {
+    FP_SORT.dir = FP_SORT.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    FP_SORT.col = col;
+    FP_SORT.dir = (col === 'purchased_at') ? 'desc' : 'asc';
+  }
+  rFeedPurchase();
+}
+
 function rFeedPurchase() {
   // 左サイドバー（CF）ではなく、このページの入力フォームで選択中の農場に一覧を連動させる
   // （フォームで別農場を選んで登録した直後に、一覧に反映されないという混乱を防ぐため）
   const ff = document.getElementById('fp-farm')?.value || (CF==='both' ? 'all' : CF);
   const mon = document.getElementById('fp-mon')?.value || '';
+  const { col, dir } = FP_SORT;
   const items = DATA.feedPurchase
     .filter(p=>ff==='all'||p.farm===ff)
     .filter(p=>!mon || (p.purchased_at||'').startsWith(mon))
-    .sort((a,b)=>(b.purchased_at||'').localeCompare(a.purchased_at||''));
+    .sort((a,b) => {
+      const av = a[col], bv = b[col];
+      let cmp;
+      if(typeof av === 'number' || typeof bv === 'number') cmp = (av||0) - (bv||0);
+      else cmp = String(av||'').localeCompare(String(bv||''));
+      return dir === 'asc' ? cmp : -cmp;
+    });
+
+  // ソート矢印の表示更新
+  ['farm','purchased_at','feed_type','tank_name','feed_name','amount_ton','price_per_ton','total_amount'].forEach(c => {
+    const el = document.getElementById(`fp-sort-${c}`);
+    if(el) el.textContent = c===col ? (dir==='asc' ? ' ▲' : ' ▼') : '';
+  });
 
   // KPI
   const thisMonth = new Date().toISOString().slice(0,7);
@@ -15769,38 +15809,48 @@ function rFeedPurchase() {
         <td class="mn" style="color:var(--muted2)">${p.price_per_ton?fM(p.price_per_ton)+'/t':'-'}</td>
         <td class="mn ng">${p.total_amount?fM(p.total_amount):'-'}</td>
         <td style="color:var(--muted)">${p.note||'-'}</td>
-        <td><button class="btn bd sm" onclick="delFeedPurchase('${p.id}')">削除</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn bs sm" onclick="editFeedPurchase('${p.id}')">編集</button>
+          <button class="btn bd sm" onclick="delFeedPurchase('${p.id}')">削除</button>
+        </td>
       </tr>`).join('')
     : '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">購入記録がありません</td></tr>';
 }
 
-async function saveFeedPurchase() {
+// フォームの入力内容を検証し、保存用のペイロードを組み立てる（新規登録・更新の両方で共用）
+function getFpFormPayload() {
   const farm = document.getElementById('fp-farm').value;
   const dateStr = document.getElementById('fp-date').value;
-  if(!dateStr) { notif('購入日を入力してください','r'); return; }
+  if(!dateStr) { notif('購入日を入力してください','r'); return null; }
   const brand = document.getElementById('fp-brand-select')?.value || '';
-  if(!brand) { notif('銘柄を選択してください','r'); return; }
+  if(!brand) { notif('銘柄を選択してください','r'); return null; }
   const opt = getFpSelectedTankOpt();
-  if(!opt) { notif('タンクを選択してください','r'); return; }
+  if(!opt) { notif('タンクを選択してください','r'); return null; }
   const amt = parseFloat(document.getElementById('fp-amount')?.value) || 0;
-  if(!amt) { notif('数量を入力してください','r'); return; }
+  if(!amt) { notif('数量を入力してください','r'); return null; }
 
   const price = getFeedPrice(farm, dateStr, opt.feedType, opt.barn, brand);
   const total = price ? Math.round(amt * price) : null;
   const note = document.getElementById('fp-note').value||null;
+  return {
+    farm, purchased_at: dateStr,
+    feed_type: opt.feedType,
+    tank_name: opt.tankName || null,
+    feed_name: brand,
+    amount_ton: amt,
+    price_per_ton: price||null,
+    total_amount: total,
+    note,
+  };
+}
+
+async function saveFeedPurchase() {
+  const payload = getFpFormPayload();
+  if(!payload) return;
 
   showLoading('登録中...');
   try {
-    await api.insertFeedPurchase({
-      farm, purchased_at: dateStr,
-      feed_type: opt.feedType,
-      tank_name: opt.tankName || null,
-      feed_name: brand,
-      amount_ton: amt,
-      price_per_ton: price||null,
-      total_amount: total,
-      note,
-    });
+    await api.insertFeedPurchase(payload);
     DATA.feedPurchase = await api.getFeedPurchase();
     rFeedPurchase();
     document.getElementById('fp-amount').value = '';
@@ -15809,6 +15859,65 @@ async function saveFeedPurchase() {
     notif('飼料購入記録を登録しました');
   } catch(e) { notif('登録エラー: '+e.message,'r'); }
   finally { hideLoading(); }
+}
+
+// 一覧の「編集」クリックで、その購入記録の内容をフォームに読み込む
+let FP_EDIT_ID = null;
+function editFeedPurchase(id) {
+  const p = DATA.feedPurchase.find(x=>x.id===id);
+  if(!p) return;
+  FP_EDIT_ID = id;
+
+  document.getElementById('fp-farm').value = p.farm;
+  document.getElementById('fp-date').value = p.purchased_at || '';
+
+  const brandSel = document.getElementById('fp-brand-select');
+  if(brandSel) brandSel.value = p.feed_name || '';
+  onFpBrandChange(); // タンク候補を再生成（内部でonFpDateChangeも呼ばれる）
+
+  // 記録と一致するタンクの選択肢を探して選択する
+  const tankSel = document.getElementById('fp-tank-select');
+  if(tankSel && tankSel._opts) {
+    const idx = tankSel._opts.findIndex(o => (o.tankName||null)===(p.tank_name||null) && o.feedType===p.feed_type);
+    if(idx >= 0) tankSel.value = idx;
+  }
+
+  document.getElementById('fp-amount').value = p.amount_ton || '';
+  document.getElementById('fp-note').value = p.note || '';
+  onFpDateChange();
+
+  const btn = document.getElementById('fp-save-btn');
+  if(btn) { btn.textContent = '✓ 更新'; btn.setAttribute('onclick', 'updateFeedPurchaseSave()'); }
+  const cancelBtn = document.getElementById('fp-edit-cancel-btn');
+  if(cancelBtn) cancelBtn.style.display = '';
+  notif('編集モード：内容を修正して「更新」を押してください');
+}
+
+async function updateFeedPurchaseSave() {
+  if(!FP_EDIT_ID) return;
+  const payload = getFpFormPayload();
+  if(!payload) return;
+
+  showLoading('更新中...');
+  try {
+    await api.updateFeedPurchase(FP_EDIT_ID, payload);
+    DATA.feedPurchase = await api.getFeedPurchase();
+    cancelEditFeedPurchase();
+    rFeedPurchase();
+    notif('購入記録を更新しました');
+  } catch(e) { notif('更新エラー: '+e.message,'r'); }
+  finally { hideLoading(); }
+}
+
+function cancelEditFeedPurchase() {
+  FP_EDIT_ID = null;
+  document.getElementById('fp-amount').value = '';
+  document.getElementById('fp-note').value = '';
+  calcFpTotal();
+  const btn = document.getElementById('fp-save-btn');
+  if(btn) { btn.textContent = '✓ 購入記録を登録'; btn.setAttribute('onclick', 'saveFeedPurchase()'); }
+  const cancelBtn = document.getElementById('fp-edit-cancel-btn');
+  if(cancelBtn) cancelBtn.style.display = 'none';
 }
 
 async function delFeedPurchase(id) {

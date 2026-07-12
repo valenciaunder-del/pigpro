@@ -3083,9 +3083,11 @@ function getUnattributedDeliveryShare(farm, feedTypeLabel, monthStr, tankNamesOf
 
 function calcMonthlyUsage(feedTankData, farm, monthStr) {
   const mon = monthStr;
+  const monStart = `${mon}-01`;
   const tankRows = feedTankData.filter(r=>
     r.farm===farm && r.date && r.date.startsWith(mon)
   );
+  const allTankRows = feedTankData.filter(r=>r.farm===farm && r.date);
 
   let pigletFeedT = 0;
   let finisherFeedT = 0;
@@ -3096,12 +3098,14 @@ function calcMonthlyUsage(feedTankData, farm, monthStr) {
     const tankNames = [...new Set(ftRows.map(r=>r.tank_name).filter(Boolean))];
     if(!tankNames.length) continue;
 
-    // 在庫残量（期首・期末）はタンクごとに合算、入荷量は農場×飼料種類の購入記録合計（タンク指定の有無を問わず）を使う
+    // 在庫残量：期首は前月末以前の直近レコード（無ければ当月最初のレコード）、期末は当月最終レコード
+    // 入荷量は農場×飼料種類の購入記録合計（タンク指定の有無を問わず）を使う
     let openingSum = 0, closingSum = 0;
     tankNames.forEach(tn => {
       const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
       if(!rows.length) return;
-      openingSum += rows[0].tank_remaining||0;
+      const prevRows = allTankRows.filter(r=>r.tank_name===tn && r.date<monStart).sort((a,b)=>b.date.localeCompare(a.date));
+      openingSum += prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
       closingSum += rows[rows.length-1].tank_remaining||0;
     });
     const delivery = getMonthlyPurchaseTotal(farm, feedTypeLabel, mon);
@@ -3122,7 +3126,9 @@ function calcMonthlyUsage(feedTankData, farm, monthStr) {
 // このタンク別内訳では過少（0扱い）になる。今後はタンクを必ず指定して入力する運用とする。
 function calcMonthlyUsageByTank(feedTankData, farm, monthStr) {
   const mon = monthStr;
+  const monStart = `${mon}-01`;
   const tankRows = feedTankData.filter(r => r.farm===farm && r.date && r.date.startsWith(mon));
+  const allTankRows = feedTankData.filter(r=>r.farm===farm && r.date);
   const results = [];
   for(const ft of ['piglet', 'finisher']) {
     const feedTypeLabel = ft === 'piglet' ? '子豚用' : '肥育用';
@@ -3131,7 +3137,8 @@ function calcMonthlyUsageByTank(feedTankData, farm, monthStr) {
     for(const tn of tankNames) {
       const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
       if(!rows.length) continue;
-      const opening = rows[0].tank_remaining||0;
+      const prevRows = allTankRows.filter(r=>r.tank_name===tn && r.date<monStart).sort((a,b)=>b.date.localeCompare(a.date));
+      const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
       const closing = rows[rows.length-1].tank_remaining||0;
       const delivery = getMonthlyDeliveryForTank(farm, tn, feedTypeLabel, mon);
       const usage = Math.max(0, opening + delivery - closing);
@@ -3145,7 +3152,9 @@ function calcMonthlyUsageByTank(feedTankData, farm, monthStr) {
 // calcMonthlyUsageByTankと違い、使用量が0以下の行も含め、全ての値をそのまま返す
 function calcMonthlyUsageDetailByTank(feedTankData, farm, monthStr) {
   const mon = monthStr;
+  const monStart = `${mon}-01`;
   const tankRows = feedTankData.filter(r => r.farm===farm && r.date && r.date.startsWith(mon));
+  const allTankRows = feedTankData.filter(r=>r.farm===farm && r.date);
   const results = [];
   for(const ft of ['piglet', 'finisher']) {
     const feedTypeLabel = ft === 'piglet' ? '子豚用' : '肥育用';
@@ -3154,7 +3163,8 @@ function calcMonthlyUsageDetailByTank(feedTankData, farm, monthStr) {
     for(const tn of tankNames) {
       const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
       if(!rows.length) continue;
-      const opening = rows[0].tank_remaining||0;
+      const prevRows = allTankRows.filter(r=>r.tank_name===tn && r.date<monStart).sort((a,b)=>b.date.localeCompare(a.date));
+      const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
       const closing = rows[rows.length-1].tank_remaining||0;
       const delivery = getMonthlyDeliveryForTank(farm, tn, feedTypeLabel, mon);
       const usage = opening + delivery - closing;

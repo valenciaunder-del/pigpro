@@ -3071,6 +3071,16 @@ function getMonthlyPurchaseTotal(farm, feedTypeLabel, monthStr) {
   ).reduce((a,p)=>a+(p.amount_ton||0), 0);
 }
 
+// タンク未指定（不明）で登録された購入量を、同農場・同飼料種類の中で、指定のタンク名リストに均等按分して返す
+// 豚舎別・タンク別FCR計算で、タンク未指定分がまるごと漏れてしまう問題への対処用
+function getUnattributedDeliveryShare(farm, feedTypeLabel, monthStr, tankNamesOfSameType) {
+  if(!tankNamesOfSameType || tankNamesOfSameType.length === 0) return 0;
+  const farmTotal = getMonthlyPurchaseTotal(farm, feedTypeLabel, monthStr);
+  const matchedTotal = tankNamesOfSameType.reduce((a,tn)=>a+getMonthlyDeliveryForTank(farm, tn, feedTypeLabel, monthStr), 0);
+  const unattributed = Math.max(0, farmTotal - matchedTotal);
+  return unattributed / tankNamesOfSameType.length;
+}
+
 function calcMonthlyUsage(feedTankData, farm, monthStr) {
   const mon = monthStr;
   const tankRows = feedTankData.filter(r=>
@@ -3828,19 +3838,24 @@ function calcLotFcr(lot) {
     if(farmHeadDays <= 0) continue;
 
     const tankRows = DATA.feedTank.filter(r=>r.farm===lot.farm && r.date && r.date.startsWith(mon));
-    const tankNames = [...new Set(tankRows.map(r=>r.tank_name).filter(Boolean))];
     const allTankRows = DATA.feedTank.filter(r=>r.farm===lot.farm && r.date);
     let monFeedT = 0;
-    for(const tn of tankNames) {
-      const rows = tankRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
-      if(!rows.length) continue;
-      const prevRows = allTankRows.filter(r=>r.tank_name===tn && r.date<monStart)
-        .sort((a,b)=>b.date.localeCompare(a.date));
-      const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
-      const closing = rows[rows.length-1].tank_remaining||0;
-      const feedTypeLabel = rows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
-      const delivery = getMonthlyDeliveryForTank(lot.farm, tn, feedTypeLabel, mon);
-      const consumption = opening+delivery-closing;
+    for(const ft of ['piglet','finisher']) {
+      const feedTypeLabel = ft==='piglet' ? '子豚用' : '肥育用';
+      const ftRows = tankRows.filter(r=>r.feed_type===ft);
+      const tankNames = [...new Set(ftRows.map(r=>r.tank_name).filter(Boolean))];
+      if(!tankNames.length) continue;
+      let openingSum = 0, closingSum = 0;
+      tankNames.forEach(tn => {
+        const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+        if(!rows.length) return;
+        const prevRows = allTankRows.filter(r=>r.tank_name===tn && r.date<monStart)
+          .sort((a,b)=>b.date.localeCompare(a.date));
+        openingSum += prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
+        closingSum += rows[rows.length-1].tank_remaining||0;
+      });
+      const delivery = getMonthlyPurchaseTotal(lot.farm, feedTypeLabel, mon);
+      const consumption = openingSum+delivery-closingSum;
       if(consumption>0) monFeedT += consumption;
     }
 
@@ -3943,7 +3958,11 @@ function calcLotFcrByBarn(lot) {
       const opening  = prevRows.length?(prevRows[0].tank_remaining||0):(tankRows[0].tank_remaining||0);
       const closing  = tankRows[tankRows.length-1].tank_remaining||0;
       const feedTypeLabel = tankRows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
-      const delivery = getMonthlyDeliveryForTank(lot.farm, tnLabel, feedTypeLabel, mon);
+      // 同じ飼料種類の農場内全タンク（このタンク一致分＋タンク未指定分の按分シェア）
+      const sameTypeTanks = [...new Set(allTankRows.filter(r=>r.feed_type===tankRows[0].feed_type&&r.date.startsWith(mon)).map(r=>r.tank_name).filter(Boolean))];
+      const matchedDelivery = getMonthlyDeliveryForTank(lot.farm, tnLabel, feedTypeLabel, mon);
+      const unattributedShare = getUnattributedDeliveryShare(lot.farm, feedTypeLabel, mon, sameTypeTanks);
+      const delivery = matchedDelivery + unattributedShare;
       const usage    = opening+delivery-closing;
       if(usage>0) barnMonFeedT += usage;
     }
@@ -4193,26 +4212,30 @@ function calcFarmFcr(farm, monthStr, precomputedAdg) {
     mon = rows[rows.length-1];
   }
 
-  // 期首残 + 購入記録合計 - 期末残 方式（delivery_tonは在庫残量の把握にのみ使い、入荷量としては使用しない）
+  // 期首残 + 購入記録合計 - 期末残 方式（feed_type単位で集計。delivery_tonは使用しない）
+  // 入荷量はタンク別ではなく農場×飼料種類の合計を1回だけ使うことで、タンク未指定(不明)の購入分も漏れなく含める
   let totalFeedT = 0;
   const tankRows = DATA.feedTank.filter(r=>r.farm===farm && r.date && r.date.startsWith(mon));
-  const tankNames = [...new Set(tankRows.map(r=>r.tank_name).filter(Boolean))];
   const allTankRows = DATA.feedTank.filter(r=>r.farm===farm && r.date);
   const monStart = `${mon}-01`;
 
-  for(const tank of tankNames) {
-    const rows = tankRows.filter(r=>r.tank_name===tank).sort((a,b)=>a.date.localeCompare(b.date));
-    if(!rows.length) continue;
+  for(const ft of ['piglet','finisher']) {
+    const feedTypeLabel = ft==='piglet' ? '子豚用' : '肥育用';
+    const ftRows = tankRows.filter(r=>r.feed_type===ft);
+    const tankNames = [...new Set(ftRows.map(r=>r.tank_name).filter(Boolean))];
+    if(!tankNames.length) continue;
 
-    // 期首残：当月1日より前の直近レコード（なければ当月最初レコード）
-    const prevRows = allTankRows.filter(r=>r.tank_name===tank && r.date < monStart)
-      .sort((a,b)=>b.date.localeCompare(a.date));
-    const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
-
-    const closing  = rows[rows.length-1].tank_remaining || 0;
-    const feedTypeLabel = rows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
-    const delivery = getMonthlyDeliveryForTank(farm, tank, feedTypeLabel, mon);
-    const usage    = opening + delivery - closing;
+    let openingSum = 0, closingSum = 0;
+    tankNames.forEach(tn => {
+      const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+      if(!rows.length) return;
+      const prevRows = allTankRows.filter(r=>r.tank_name===tn && r.date < monStart)
+        .sort((a,b)=>b.date.localeCompare(a.date));
+      openingSum += prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
+      closingSum += rows[rows.length-1].tank_remaining || 0;
+    });
+    const delivery = getMonthlyPurchaseTotal(farm, feedTypeLabel, mon);
+    const usage = openingSum + delivery - closingSum;
     if(usage > 0) totalFeedT += usage;
   }
   if(totalFeedT <= 0) return null;
@@ -5457,7 +5480,10 @@ function rDashFcr() {
     if(tRows.length < 2) return '';
     const feedTypeLabel = tRows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
     const monthsInRange = [...new Set(tRows.map(r=>r.date.slice(0,7)))];
-    const deliveryTotal = monthsInRange.reduce((a,mon)=>a+getMonthlyDeliveryForTank(f, tn, feedTypeLabel, mon), 0);
+    const sameTypeTankNames = tankNames.filter(x=>x.farm===f&&tankBarnMap[x.tank]?.type===tankBarnMap[tn]?.type).map(x=>x.tank);
+    const deliveryTotal = monthsInRange.reduce((a,mon)=>
+      a + getMonthlyDeliveryForTank(f, tn, feedTypeLabel, mon) + getUnattributedDeliveryShare(f, feedTypeLabel, mon, sameTypeTankNames)
+    , 0);
     const feedT = Math.max(0,
       (tRows[0].tank_remaining||0) +
       deliveryTotal -
@@ -16267,8 +16293,12 @@ function renderFtInvTable(farm, mon, items, allTankRows) {
     return {
       stage,
       opening: d.reduce((a,t)=>a+t.opening,0),
-      delivery: d.reduce((a,t)=>a+t.delivery,0),
-      consumption: d.reduce((a,t)=>a+t.consumption,0),
+      delivery: getMonthlyPurchaseTotal(farm, stage, mon),
+      consumption: (() => {
+        const opening = d.reduce((a,t)=>a+t.opening,0);
+        const closing = d.reduce((a,t)=>a+t.closing,0);
+        return Math.max(0, opening + getMonthlyPurchaseTotal(farm, stage, mon) - closing);
+      })(),
       closing: d.reduce((a,t)=>a+t.closing,0),
     };
   });
@@ -16430,8 +16460,8 @@ function rFeedTank() {
   // 在庫変動テーブル描画（KPI・タンクカードに使用）
   const allTankRowsForInv = DATA.feedTank.filter(r=>r.farm===farm && r.date);
   const invResult = renderFtInvTable(farm, mon, items, allTankRowsForInv);
-  const pigletUseInv   = invResult?.pigletUseInv   || pigletUse;
-  const finisherUseInv = invResult?.finisherUseInv || finisherUse;
+  const pigletUseInv   = pigletUse;
+  const finisherUseInv = finisherUse;
   const totalUseInv    = pigletUseInv + finisherUseInv;
 
   // KPI
@@ -16700,7 +16730,10 @@ function rFeedTank() {
       // 消費量：期首+入荷-期末（入荷は購入記録ベース。delivery_tonは使用しない）
       const feedTypeLabelForBarnFcr = tR[0].feed_type==='piglet' ? '子豚用' : '肥育用';
       const monthsInRangeForBarnFcr = [...new Set(tR.map(r=>r.date.slice(0,7)))];
-      const deliveryForBarnFcr = monthsInRangeForBarnFcr.reduce((a,mon)=>a+getMonthlyDeliveryForTank(farm, tn, feedTypeLabelForBarnFcr, mon), 0);
+      const sameTypeTankNamesForBarnFcr = tankNamesList.filter(t=>tankBarnMap[t]?.type===tankBarnMap[tn]?.type);
+      const deliveryForBarnFcr = monthsInRangeForBarnFcr.reduce((a,mon)=>
+        a + getMonthlyDeliveryForTank(farm, tn, feedTypeLabelForBarnFcr, mon) + getUnattributedDeliveryShare(farm, feedTypeLabelForBarnFcr, mon, sameTypeTankNamesForBarnFcr)
+      , 0);
       const feedT = Math.max(0,
         (tR[0].tank_remaining||0) +
         deliveryForBarnFcr -

@@ -16333,8 +16333,33 @@ function rInvCheck() {
   const farms = CF==='both' ? ['farm1','farm2'] : [farm];
   const rows = farms.flatMap(f => calcMonthlyUsageDetailByTank(DATA.feedTank, f, mon).map(r=>({...r, farm:f})));
 
-  tbEl.innerHTML = rows.length
-    ? rows.map(r => `<tr>
+  // ステージ別合計（タンク別入力の有無に関わらず、農場合計で必ず出す）
+  const sumBy = (ft) => rows.filter(r=>r.feed_type===ft).reduce((acc,r)=>({
+    opening: acc.opening + r.opening, delivery: acc.delivery + r.delivery,
+    closing: acc.closing + r.closing, usage: acc.usage + r.usage,
+  }), { opening:0, delivery:0, closing:0, usage:0 });
+  const pigletSum   = sumBy('piglet');
+  const finisherSum = sumBy('finisher');
+
+  // 後期用はタンク管理の対象外（専用タンクが無い）ため、購入記録の合計のみ参考値として表示
+  const lateAmount = farms.reduce((a,f) => a + DATA.feedPurchase
+    .filter(p=>p.farm===f && p.feed_type==='後期用' && (p.purchased_at||'').startsWith(mon))
+    .reduce((s,p)=>s+(p.amount_ton||0), 0), 0);
+
+  const totalUsage = pigletSum.usage + finisherSum.usage;
+
+  const sumRow = (label, badge, s) => `<tr style="background:rgba(255,255,255,0.03)">
+      <td style="font-weight:700">${label}</td>
+      <td><span class="bdg ${badge}">${label}</span></td>
+      <td class="tr3 mn">${Math.round(s.opening*100)/100}</td>
+      <td class="tr3 mn ng">${Math.round(s.delivery*100)/100}</td>
+      <td class="tr3 mn">${Math.round(s.closing*100)/100}</td>
+      <td class="tr3 mn" style="font-weight:700;color:${s.usage>=0?'var(--accent2)':'var(--danger)'}">${Math.round(s.usage*100)/100}${s.usage<0?' ⚠️':''}</td>
+      <td class="tr3 mn" style="color:var(--muted)">-</td>
+    </tr>`;
+
+  tbEl.innerHTML =
+    (rows.length ? rows.map(r => `<tr>
         <td style="font-weight:600">${CF==='both'?fb(r.farm)+' ':''}${r.tank_name}</td>
         <td><span class="bdg ${r.feed_type==='piglet'?'c':'o'}">${r.feed_type_label}</span></td>
         <td class="tr3 mn">${r.opening.toLocaleString()}</td>
@@ -16342,8 +16367,21 @@ function rInvCheck() {
         <td class="tr3 mn">${r.closing.toLocaleString()}</td>
         <td class="tr3 mn" style="font-weight:700;color:${r.usage>=0?'var(--accent2)':'var(--danger)'}">${r.usage.toLocaleString()}${r.usage<0?' ⚠️':''}</td>
         <td class="tr3 mn" style="color:var(--muted)">${r.readingDays}回</td>
-      </tr>`).join('')
-    : '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">この月のタンク残量データがありません</td></tr>';
+      </tr>`).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">この月のタンク残量データがありません</td></tr>')
+    + sumRow('子豚用 合計', 'c', pigletSum)
+    + sumRow('肥育用 合計', 'o', finisherSum)
+    + `<tr style="background:rgba(255,255,255,0.03)">
+        <td style="font-weight:700">後期用（参考）</td>
+        <td><span class="bdg g">後期用</span></td>
+        <td class="tr3 mn" colspan="3" style="color:var(--muted);font-size:11px">タンク管理対象外のため購入量のみ表示</td>
+        <td class="tr3 mn" style="font-weight:700">${Math.round(lateAmount*100)/100}</td>
+        <td class="tr3 mn" style="color:var(--muted)">-</td>
+      </tr>`
+    + `<tr style="background:rgba(74,222,128,0.08);border-top:2px solid var(--border)">
+        <td style="font-weight:700;color:var(--accent)" colspan="5">月間合計使用量（子豚用＋肥育用）</td>
+        <td class="tr3 mn" style="font-weight:700;font-size:16px;color:var(--accent)">${Math.round(totalUsage*100)/100}t</td>
+        <td class="tr3 mn">-</td>
+      </tr>`;
 }
 
 function rFeedTank() {

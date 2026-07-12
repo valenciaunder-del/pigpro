@@ -16345,12 +16345,10 @@ function rInvCheck() {
   const sumBy = (ft, feedTypeLabel) => {
     const tankSum = rows.filter(r=>r.feed_type===ft).reduce((acc,r)=>({
       opening: acc.opening + r.opening, closing: acc.closing + r.closing,
-      matchedDelivery: acc.matchedDelivery + r.delivery,
-    }), { opening:0, closing:0, matchedDelivery:0 });
+    }), { opening:0, closing:0 });
     const totalDelivery = farms.reduce((a,f)=>a+getMonthlyPurchaseTotal(f, feedTypeLabel, mon), 0);
-    const unmatched = Math.max(0, totalDelivery - tankSum.matchedDelivery);
     const usage = tankSum.opening + totalDelivery - tankSum.closing;
-    return { ...tankSum, delivery: totalDelivery, unmatched, usage };
+    return { ...tankSum, delivery: totalDelivery, usage };
   };
   const pigletSum   = sumBy('piglet', '子豚用');
   const finisherSum = sumBy('finisher', '肥育用');
@@ -16366,7 +16364,7 @@ function rInvCheck() {
       <td style="font-weight:700">${label}</td>
       <td><span class="bdg ${badge}">${label}</span></td>
       <td class="tr3 mn">${Math.round(s.opening*100)/100}</td>
-      <td class="tr3 mn ng">${Math.round(s.delivery*100)/100}${s.unmatched>0?`<div style="font-size:10px;color:var(--warn)">うちタンク不明 ${Math.round(s.unmatched*100)/100}</div>`:''}</td>
+      <td class="tr3 mn ng">${Math.round(s.delivery*100)/100}</td>
       <td class="tr3 mn">${Math.round(s.closing*100)/100}</td>
       <td class="tr3 mn" style="font-weight:700;color:${s.usage>=0?'var(--accent2)':'var(--danger)'}">${Math.round(s.usage*100)/100}${s.usage<0?' ⚠️':''}</td>
       <td class="tr3 mn" style="color:var(--muted)">-</td>

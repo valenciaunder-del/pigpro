@@ -15320,6 +15320,8 @@ function dateToQuarter(dateStr) {
 // barnを指定した場合、その豚舎専用の単価があれば優先し、無ければ「全豚舎共通」設定にフォールバックする
 // 農場・四半期・飼料種類（・豚舎・銘柄）で単価を取得（円/t）＝飼料費＋運賃の合計
 // 優先順位: ①銘柄が一致（豚舎問わず。銘柄自体が製品を特定するため） → ②豚舎のみ一致（銘柄問わずの豚舎別設定） → ③全豚舎共通
+//         → ④（銘柄を特定できない場面向け）その四半期・ステージに登録されている全銘柄の平均単価
+// ④はロット単位の原価計算など、特定の銘柄を紐付けられない場面での概算に使う
 function getFeedPrice(farm, dateStr, feedType, barn, brand) {
   const q = dateToQuarter(dateStr);
   const findTotal = (rec) => rec ? ((rec.price_per_ton||0)+(rec.freight_per_ton||0)) || null : null;
@@ -15332,7 +15334,16 @@ function getFeedPrice(farm, dateStr, feedType, barn, brand) {
     const t = findTotal(DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.barn===barn && !r.brand));
     if(t) return t;
   }
-  return findTotal(DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && !r.barn && !r.brand));
+  const farmWide = findTotal(DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && !r.barn && !r.brand));
+  if(farmWide) return farmWide;
+
+  const brandPrices = DATA.feedMaster
+    .filter(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.brand)
+    .map(r => (r.price_per_ton||0)+(r.freight_per_ton||0))
+    .filter(v => v > 0);
+  if(brandPrices.length) return Math.round(brandPrices.reduce((a,v)=>a+v,0) / brandPrices.length);
+
+  return null;
 }
 
 // 飼料費と運賃を内訳付きで取得（表示用、優先順位は上記getFeedPriceと同じ）
@@ -15350,8 +15361,16 @@ function getFeedPriceDetail(farm, dateStr, feedType, barn, brand) {
     const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.barn===barn && !r.brand);
     if(rec) return toDetail(rec, barn, null);
   }
-  const rec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && !r.barn && !r.brand);
-  return rec ? toDetail(rec, null, null) : null;
+  const farmWideRec = DATA.feedMaster.find(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && !r.barn && !r.brand);
+  if(farmWideRec) return toDetail(farmWideRec, null, null);
+
+  const brandRecs = DATA.feedMaster.filter(r => r.farm===farm && r.quarter===q && r.feed_type===feedType && r.brand);
+  if(brandRecs.length) {
+    const avgPrice   = Math.round(brandRecs.reduce((a,r)=>a+(r.price_per_ton||0),0) / brandRecs.length);
+    const avgFreight = Math.round(brandRecs.reduce((a,r)=>a+(r.freight_per_ton||0),0) / brandRecs.length);
+    return { price: avgPrice, freight: avgFreight, total: avgPrice+avgFreight, barn: null, brand: null, isAverage: true };
+  }
+  return null;
 }
 
 // 購入記録から日次飼料費を集計

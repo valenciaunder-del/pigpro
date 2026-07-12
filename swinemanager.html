@@ -4191,12 +4191,30 @@ function debugLotFcrByBarn(lot) {
 // 対象ロット群の在場頭日数シェアで按分してFCRを算出する。
 // 豚舎フィルターが掛かっていない場面（農場全体・複数ロットの平均FCRなど）で、
 // ロットごとに豚舎按分してから平均する方式より安定した値になる。
-function calcPooledFcr(lots) {
+// ロット群（例：成績分析で絞り込んだ複数ロット）を1つのプールとして扱い、FCRを算出する。
+// barnFilter未指定：農場全体の使用量から頭日数按分（通常のデフォルト計算）
+// barnFilter指定：その豚舎のタンクのみの使用量・その豚舎に在籍するロットの頭日数で按分
+//   （飼料の比較試験など、豚舎ごとに銘柄を分けて検証したい場合に使用。成績分析で豚舎・期間を絞り込んで使う）
+// どちらの場合も「ロットごとに計算してから平均する」のではなく「まとめてから計算する」ため、
+// 個々のロットのデータ品質（仕切書混同・体重欠測等）の影響を受けにくい
+function calcPooledFcr(lots, barnFilter) {
   if(!lots || !lots.length) return null;
   const farm = lots[0].farm;
   if(!farm || lots.some(l=>l.farm!==farm)) return null; // 単一農場前提
 
   const yieldRate = getYieldRate(farm) / 100;
+
+  // 豚舎指定時：この豚舎のタンクラベルと、この豚舎に在籍する全ロット（頭日数の母数）を特定
+  let barnTankLabels = null, barnPoolLots = null;
+  if(barnFilter) {
+    const farmObj = FARMS[farm];
+    const barnObj = (farmObj?.barns||[]).find(b => barnFilter.includes(b.id) || barnFilter === b.name);
+    if(!barnObj) return null;
+    barnTankLabels = [barnObj.tank_hog_label, barnObj.tank_piglet_label].filter(Boolean);
+    if(!barnTankLabels.length) return null;
+    barnPoolLots = DATA.lots.filter(l=>l.farm===farm && l.barn &&
+      (l.barn.includes(barnObj.id) || l.barn===barnObj.name));
+  }
 
   // 対象ロット群の合算増体量(t)
   let totalGainT = 0;
@@ -4234,21 +4252,45 @@ function calcPooledFcr(lots) {
   });
   if(!months.size) return null;
 
-  const farmLots = DATA.lots.filter(l=>l.farm===farm);
+  const poolLots = barnFilter ? barnPoolLots : DATA.lots.filter(l=>l.farm===farm);
+  const allTankRows = barnFilter ? DATA.feedTank.filter(r=>r.farm===farm && r.date) : null;
+
   let totalFeedT = 0;
   months.forEach(mon => {
     const [y,m] = mon.split('-').map(Number);
     const daysInMonth = new Date(y,m,0).getDate();
-    let lotsHeadDays = 0, farmHeadDays = 0;
+    let lotsHeadDays = 0, poolHeadDays = 0;
     for(let d=1; d<=daysInMonth; d++) {
       const ds = `${mon}-${String(d).padStart(2,'0')}`;
       lots.forEach(l=>{ lotsHeadDays += calcLotHeadAsOf(l, ds); });
-      farmLots.forEach(l=>{ farmHeadDays += calcLotHeadAsOf(l, ds); });
+      poolLots.forEach(l=>{ poolHeadDays += calcLotHeadAsOf(l, ds); });
     }
-    if(farmHeadDays <= 0) return;
-    const monUsage = calcMonthlyUsage(DATA.feedTank, farm, mon);
-    const monTotal = (monUsage.piglet||0) + (monUsage.finisher||0);
-    if(monTotal > 0) totalFeedT += monTotal * (lotsHeadDays/farmHeadDays);
+    if(poolHeadDays <= 0) return;
+
+    let monTotal;
+    if(barnFilter) {
+      // 豚舎指定時：その豚舎のタンク（子豚+肥育）のみの使用量を、購入記録ベース＋タンク未指定分按分で計算
+      const monStart = mon+'-01';
+      monTotal = 0;
+      barnTankLabels.forEach(tnLabel => {
+        const tankRows = allTankRows.filter(r=>r.tank_name===tnLabel&&r.date.startsWith(mon)).sort((a,b)=>a.date.localeCompare(b.date));
+        if(!tankRows.length) return;
+        const prevRows = allTankRows.filter(r=>r.tank_name===tnLabel&&r.date<monStart).sort((a,b)=>b.date.localeCompare(a.date));
+        const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (tankRows[0].tank_remaining||0);
+        const closing = tankRows[tankRows.length-1].tank_remaining||0;
+        const feedTypeLabel = tankRows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
+        const sameTypeTanks = [...new Set(allTankRows.filter(r=>r.feed_type===tankRows[0].feed_type&&r.date.startsWith(mon)).map(r=>r.tank_name).filter(Boolean))];
+        const matchedDelivery = getMonthlyDeliveryForTank(farm, tnLabel, feedTypeLabel, mon);
+        const unattributedShare = getUnattributedDeliveryShare(farm, feedTypeLabel, mon, sameTypeTanks, tnLabel);
+        const usage = opening + matchedDelivery + unattributedShare - closing;
+        if(usage > 0) monTotal += usage;
+      });
+    } else {
+      // 豚舎指定なし：農場全体の使用量（既に購入記録ベースで正しい）
+      const monUsage = calcMonthlyUsage(DATA.feedTank, farm, mon);
+      monTotal = (monUsage.piglet||0) + (monUsage.finisher||0);
+    }
+    if(monTotal > 0) totalFeedT += monTotal * (lotsHeadDays/poolHeadDays);
   });
 
   if(totalFeedT <= 0) return null;
@@ -4266,8 +4308,8 @@ function calcLotProdCost(lot) {
   // ① 子豚費/頭（税抜）
   const pigletCostPerHead = lot.price || 0;
 
-  // ② FCR（lot単位 → 農場全体フォールバック）
-  let fcr = calcLotFcrByBarn(lot);
+  // ② FCR（プール方式優先。豚舎ごとのFCRは比較試験時のみ成績分析の豚舎フィルターで見る）
+  let fcr = calcPooledFcr([lot]);
   if(!fcr && calcCurrentHead(lot) === 0) fcr = calcLotFcr(lot);
   if(!fcr) {
     // 農場全体FCRでフォールバック
@@ -5860,7 +5902,7 @@ function rLotFull() {
         <td style="font-size:11px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--accent)">${l.source||'-'}</td>
         <td class="mn">${(()=>{const w=calcCurrentWeight(l);return w.value?w.value.toFixed(1)+' kg':'-';})()}</td>
         <td class="mn ${(()=>{const a=calcLotAdg(l,true);return a?ac(a):'';})()}">${(()=>{const a=calcLotAdg(l,true);if(!a)return '-';const partial=calcCurrentHead(l)>0;return a+' g'+(partial?'<span style="font-size:9px;color:var(--muted)"> 暫定</span>':'');})()}</td>
-        <td class="mn ${(()=>{const v=calcLotFcrByBarn(l)||calcLotFcr(l);return v?(v<=2.5?'ng':v<=2.8?'nw':'nb'):'';})()}">${(()=>{const v=calcLotFcrByBarn(l)||calcLotFcr(l);return v?v.toFixed(2):'-';})()}</td>
+        <td class="mn ${(()=>{const v=calcPooledFcr([l])||calcLotFcr(l);return v?(v<=2.5?'ng':v<=2.8?'nw':'nb'):'';})()}">${(()=>{const v=calcPooledFcr([l])||calcLotFcr(l);return v?v.toFixed(2):'-';})()}</td>
         <td class="mn ${(l.deaths||0)>3?'nb':'nw'}">${l.deaths||0}頭</td>
         <td class="mn">${(()=>{const dead=calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id&&d.confirmed!==false));const rate=l.count>0?(dead/l.count*100):0;const cls=rate>=5?'nb':rate>=3?'nw':'ng';return dead>0?'<span class="'+cls+'">'+rate.toFixed(1)+'%</span>':'<span style="color:var(--muted)">0%</span>';})()}</td>
         <td>${sb2(calcLotStatus(l))}</td>
@@ -7335,13 +7377,13 @@ function rPerfFull() {
 
   // FCR（出荷済みロットのみ）
   const avgFcr = (() => {
-    // 豚舎フィルターが掛かっていない場合：豚舎按分を挟まず、ロット群をまとめて農場全体の使用量から直接算出
-    // （ロットごとに豚舎按分してから平均すると、按分誤差が積み重なりやすいため）
-    if(!_barnVal && pfFarm && pfFarm !== 'both') {
-      const pooled = calcPooledFcr(lots);
+    // ロット群をまとめてプール方式で算出（豚舎フィルター指定時はその豚舎のタンクのみで計算）。
+    // ロットごとに計算してから平均するより、個々のロットのデータ品質に左右されにくい
+    if(pfFarm && pfFarm !== 'both') {
+      const pooled = calcPooledFcr(lots, _barnVal || null);
       if(pooled) return pooled.toFixed(2);
     }
-    // 優先順：①豚舎タンク按分 ②農場全体（出荷完了ロット）③農場全体FCR（フォールバック）
+    // フォールバック①：ロットごとの豚舎タンク按分 ②農場全体（出荷完了ロット）
     const fcrEntries = lots.map(l => {
       const v = calcLotFcrByBarn(l)
              || (calcCurrentHead(l) === 0 ? calcLotFcr(l) : null);
@@ -7474,11 +7516,11 @@ function rPerfFull() {
   document.getElementById('pf-lot-tb').innerHTML = lots.length
     ? lots.map(l=>{
         const adg = calcLotAdg(l,true);
-        // 平均FCR KPIと同じ優先順位：①豚舎タンク按分 ②農場全体(出荷完了ロットのみ)
-        const fcrByBarn = calcLotFcrByBarn(l);
+        // 平均FCR KPIと同じ方式：プール方式（豚舎フィルター指定時はその豚舎のみ）を優先
+        const fcrPooled = calcPooledFcr([l], _barnVal || null);
         const fcrWhole  = calcCurrentHead(l)===0 ? calcLotFcr(l) : null;
-        const fcrVal = fcrByBarn || fcrWhole;
-        const fcrSrc = fcrByBarn ? '豚舎別' : (fcrWhole ? '農場全体' : '');
+        const fcrVal = fcrPooled || fcrWhole;
+        const fcrSrc = fcrPooled ? (_barnVal?'豚舎別':'プール') : (fcrWhole ? '農場全体' : '');
         const lDetails = DATA.slaughterDetail.filter(d=>DATA.ships.some(s=>s.lot_id===l.id&&s.farm===d.farm&&s.shipped_at===d.shipped_at));
         const lUpper = lDetails.length ? Math.round(lDetails.filter(d=>d.grade==='上').length/lDetails.length*100) : null;
         const lDeath = calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id&&d.confirmed!==false));
@@ -7656,11 +7698,10 @@ function renderBarnAccident(lots) {
       <td class="mn"><span class="${rateCls}" style="font-weight:700">${rate !== '-' ? rate + '%' : '-'}</span></td>
       <td class="mn ${avgAdg ? ac(avgAdg) : ''}">${avgAdg ? avgAdg + ' g/日' : '-'}</td>
       <td class="mn">${(()=>{
-        const fv=g.lots.map(l=>calcLotFcrByBarn(l)||(calcCurrentHead(l)===0?calcLotFcr(l):null)).filter(v=>v>0);
-        if(!fv.length) return '-';
-        const avg=(fv.reduce((a,v)=>a+v,0)/fv.length);
-        const cls=avg<=2.5?'ng':avg<=2.8?'nw':'nb';
-        return '<span class="'+cls+'">'+avg.toFixed(2)+'</span>';
+        const v = calcPooledFcr(g.lots, _pfAccAxis==='barn' ? g.barn : null);
+        if(!v) return '-';
+        const cls=v<=2.5?'ng':v<=2.8?'nw':'nb';
+        return '<span class="'+cls+'">'+v.toFixed(2)+'</span>';
       })()}</td>
       <td class="mn">${avgDays ? avgDays + '日' : '-'}</td>
     </tr>`;
@@ -9221,13 +9262,21 @@ function showLD(id) {
       })()}
       ${adg ? '<div class="sr"><span class="sl">ADG（最終）</span><span class="sv mn '+ac(adg)+'">'+adg+' g/日</span></div>' : ''}
       ${(()=>{
-        const fcrB = calcLotFcrByBarn(l);
+        const fcrPooled = calcPooledFcr([l]);
         const fcrF = calcLotFcr(l);
-        if(!fcrB && !fcrF) return '';
-        const v = fcrB||fcrF;
-        const lbl = fcrB ? 'FCR（'+l.barn+'按分）' : 'FCR（農場按分）';
-        const c = v<=2.5?'ng':v<=2.8?'nw':'nb';
-        return '<div class="sr"><span class="sl">'+lbl+'</span><span class="sv mn '+c+'">'+v+'</span></div>';
+        const fcrB = calcLotFcrByBarn(l);
+        const v = fcrPooled || fcrF;
+        if(!v && !fcrB) return '';
+        let html = '';
+        if(v) {
+          const c = v<=2.5?'ng':v<=2.8?'nw':'nb';
+          html += '<div class="sr"><span class="sl">FCR</span><span class="sv mn '+c+'">'+v+'</span></div>';
+        }
+        if(fcrB && fcrB !== v) {
+          const cb = fcrB<=2.5?'ng':fcrB<=2.8?'nw':'nb';
+          html += '<div class="sr"><span class="sl">FCR（'+(l.barn||'豚舎')+'按分・参考）</span><span class="sv mn '+cb+'">'+fcrB+'</span></div>';
+        }
+        return html;
       })()}
       <div class="sep" style="margin:10px 0"></div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">枝肉成績</div>
@@ -15584,17 +15633,16 @@ function rBarnCompare() {
     const upperRate = n>0 ? Math.round(upperCount/n*1000)/10 : 0;
     const mainBuyer = Object.entries(g.buyers).sort((a,b)=>b[1]-a[1])[0]?.[0] || '-';
 
-    // このロット群からFCR・子豚費・飼料費（すでに豚舎別単価対応済みのcalcLotProdCostを使用）を平均
+    // このロット群のFCR・子豚費・飼料費（すでに豚舎別単価対応済みのcalcLotProdCostを使用）
+    // FCRはロットごとに計算して平均するのではなく、この豚舎のロット群をまとめてプール方式で算出（データ品質のブレに強いため）
     const barnLots = [...new Set(g.rows.map(r=>r.lot).filter(Boolean))];
-    let fcrSum=0, fcrCount=0, pigletCostSum=0, pigletCostCount=0, feedCostSum=0, feedCostCount=0;
+    const avgFcr = calcPooledFcr(barnLots, g.barn !== '豚舎未設定' ? g.barn : null);
+    let pigletCostSum=0, pigletCostCount=0, feedCostSum=0, feedCostCount=0;
     barnLots.forEach(l=>{
-      const fcr = calcLotFcrByBarn(l);
-      if(fcr) { fcrSum += fcr; fcrCount++; }
       const prod = calcLotProdCost(l);
       if(prod.pigletCost) { pigletCostSum += prod.pigletCost; pigletCostCount++; }
       if(prod.feedCost != null) { feedCostSum += prod.feedCost; feedCostCount++; }
     });
-    const avgFcr = fcrCount>0 ? fcrSum/fcrCount : null;
     const avgPigletCost = pigletCostCount>0 ? pigletCostSum/pigletCostCount : 0;
     const avgFeedCost   = feedCostCount>0 ? feedCostSum/feedCostCount : 0;
     const profitPerHead = revenuePerHead - avgFeedCost - avgPigletCost;

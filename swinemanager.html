@@ -3073,11 +3073,22 @@ function getMonthlyPurchaseTotal(farm, feedTypeLabel, monthStr) {
 
 // タンク未指定（不明）で登録された購入量を、同農場・同飼料種類の中で、指定のタンク名リストに均等按分して返す
 // 豚舎別・タンク別FCR計算で、タンク未指定分がまるごと漏れてしまう問題への対処用
-function getUnattributedDeliveryShare(farm, feedTypeLabel, monthStr, tankNamesOfSameType) {
+// タンク未指定（不明）で登録された購入量を、同じ飼料種類のタンクに按分して返す
+// 按分比率は「各タンクへ実際にタンク指定して登録された購入量の比率」を使う（豚舎ごとの頭数・消費量の違いを反映するため）。
+// どのタンクにも指定登録の実績が無い月のみ、均等按分にフォールバックする
+function getUnattributedDeliveryShare(farm, feedTypeLabel, monthStr, tankNamesOfSameType, targetTankName) {
   if(!tankNamesOfSameType || tankNamesOfSameType.length === 0) return 0;
   const farmTotal = getMonthlyPurchaseTotal(farm, feedTypeLabel, monthStr);
-  const matchedTotal = tankNamesOfSameType.reduce((a,tn)=>a+getMonthlyDeliveryForTank(farm, tn, feedTypeLabel, monthStr), 0);
+  const matchedByTank = tankNamesOfSameType.map(tn => ({ tn, matched: getMonthlyDeliveryForTank(farm, tn, feedTypeLabel, monthStr) }));
+  const matchedTotal = matchedByTank.reduce((a,x)=>a+x.matched, 0);
   const unattributed = Math.max(0, farmTotal - matchedTotal);
+  if(unattributed <= 0) return 0;
+
+  if(matchedTotal > 0) {
+    const targetMatched = matchedByTank.find(x=>x.tn===targetTankName)?.matched || 0;
+    return unattributed * (targetMatched / matchedTotal);
+  }
+  // どのタンクにも指定登録の実績が無い場合のみ均等按分にフォールバック
   return unattributed / tankNamesOfSameType.length;
 }
 
@@ -3971,7 +3982,7 @@ function calcLotFcrByBarn(lot) {
       // 同じ飼料種類の農場内全タンク（このタンク一致分＋タンク未指定分の按分シェア）
       const sameTypeTanks = [...new Set(allTankRows.filter(r=>r.feed_type===tankRows[0].feed_type&&r.date.startsWith(mon)).map(r=>r.tank_name).filter(Boolean))];
       const matchedDelivery = getMonthlyDeliveryForTank(lot.farm, tnLabel, feedTypeLabel, mon);
-      const unattributedShare = getUnattributedDeliveryShare(lot.farm, feedTypeLabel, mon, sameTypeTanks);
+      const unattributedShare = getUnattributedDeliveryShare(lot.farm, feedTypeLabel, mon, sameTypeTanks, tnLabel);
       const delivery = matchedDelivery + unattributedShare;
       const usage    = opening+delivery-closing;
       if(usage>0) barnMonFeedT += usage;
@@ -5492,7 +5503,7 @@ function rDashFcr() {
     const monthsInRange = [...new Set(tRows.map(r=>r.date.slice(0,7)))];
     const sameTypeTankNames = tankNames.filter(x=>x.farm===f&&tankBarnMap[x.tank]?.type===tankBarnMap[tn]?.type).map(x=>x.tank);
     const deliveryTotal = monthsInRange.reduce((a,mon)=>
-      a + getMonthlyDeliveryForTank(f, tn, feedTypeLabel, mon) + getUnattributedDeliveryShare(f, feedTypeLabel, mon, sameTypeTankNames)
+      a + getMonthlyDeliveryForTank(f, tn, feedTypeLabel, mon) + getUnattributedDeliveryShare(f, feedTypeLabel, mon, sameTypeTankNames, tn)
     , 0);
     const feedT = Math.max(0,
       (tRows[0].tank_remaining||0) +
@@ -16746,7 +16757,7 @@ function rFeedTank() {
       const monthsInRangeForBarnFcr = [...new Set(tR.map(r=>r.date.slice(0,7)))];
       const sameTypeTankNamesForBarnFcr = tankNamesList.filter(t=>tankBarnMap[t]?.type===tankBarnMap[tn]?.type);
       const deliveryForBarnFcr = monthsInRangeForBarnFcr.reduce((a,mon)=>
-        a + getMonthlyDeliveryForTank(farm, tn, feedTypeLabelForBarnFcr, mon) + getUnattributedDeliveryShare(farm, feedTypeLabelForBarnFcr, mon, sameTypeTankNamesForBarnFcr)
+        a + getMonthlyDeliveryForTank(farm, tn, feedTypeLabelForBarnFcr, mon) + getUnattributedDeliveryShare(farm, feedTypeLabelForBarnFcr, mon, sameTypeTankNamesForBarnFcr, tn)
       , 0);
       const feedT = Math.max(0,
         (tR[0].tank_remaining||0) +

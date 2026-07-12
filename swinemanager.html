@@ -16339,13 +16339,21 @@ function rInvCheck() {
   const farms = CF==='both' ? ['farm1','farm2'] : [farm];
   const rows = farms.flatMap(f => calcMonthlyUsageDetailByTank(DATA.feedTank, f, mon).map(r=>({...r, farm:f})));
 
-  // ステージ別合計（タンク別入力の有無に関わらず、農場合計で必ず出す）
-  const sumBy = (ft) => rows.filter(r=>r.feed_type===ft).reduce((acc,r)=>({
-    opening: acc.opening + r.opening, delivery: acc.delivery + r.delivery,
-    closing: acc.closing + r.closing, usage: acc.usage + r.usage,
-  }), { opening:0, delivery:0, closing:0, usage:0 });
-  const pigletSum   = sumBy('piglet');
-  const finisherSum = sumBy('finisher');
+  // ステージ別合計：残量は個別タンクの合計（実測値なので正確）だが、
+  // 購入量は「農場全体の購入合計」（getMonthlyPurchaseTotal）を使う。
+  // 個別タンクの購入量を単純合計すると、タンク不明で登録した購入分が漏れてしまうため。
+  const sumBy = (ft, feedTypeLabel) => {
+    const tankSum = rows.filter(r=>r.feed_type===ft).reduce((acc,r)=>({
+      opening: acc.opening + r.opening, closing: acc.closing + r.closing,
+      matchedDelivery: acc.matchedDelivery + r.delivery,
+    }), { opening:0, closing:0, matchedDelivery:0 });
+    const totalDelivery = farms.reduce((a,f)=>a+getMonthlyPurchaseTotal(f, feedTypeLabel, mon), 0);
+    const unmatched = Math.max(0, totalDelivery - tankSum.matchedDelivery);
+    const usage = tankSum.opening + totalDelivery - tankSum.closing;
+    return { ...tankSum, delivery: totalDelivery, unmatched, usage };
+  };
+  const pigletSum   = sumBy('piglet', '子豚用');
+  const finisherSum = sumBy('finisher', '肥育用');
 
   // 後期用はタンク管理の対象外（専用タンクが無い）ため、購入記録の合計のみ参考値として表示
   const lateAmount = farms.reduce((a,f) => a + DATA.feedPurchase
@@ -16358,7 +16366,7 @@ function rInvCheck() {
       <td style="font-weight:700">${label}</td>
       <td><span class="bdg ${badge}">${label}</span></td>
       <td class="tr3 mn">${Math.round(s.opening*100)/100}</td>
-      <td class="tr3 mn ng">${Math.round(s.delivery*100)/100}</td>
+      <td class="tr3 mn ng">${Math.round(s.delivery*100)/100}${s.unmatched>0?`<div style="font-size:10px;color:var(--warn)">うちタンク不明 ${Math.round(s.unmatched*100)/100}</div>`:''}</td>
       <td class="tr3 mn">${Math.round(s.closing*100)/100}</td>
       <td class="tr3 mn" style="font-weight:700;color:${s.usage>=0?'var(--accent2)':'var(--danger)'}">${Math.round(s.usage*100)/100}${s.usage<0?' ⚠️':''}</td>
       <td class="tr3 mn" style="color:var(--muted)">-</td>

@@ -3981,6 +3981,7 @@ function calcLotProdCost(lot) {
   const yieldRate = getYieldRate(farm) / 100;
   const lotShipsAll = DATA.ships.filter(s => s.lot_id === lot.id && s.count > 0 && s.shipped_at);
   let avgLiveWeight = 0;
+  let weightSource = 'none';
   if(lotShipsAll.length) {
     let totalLw = 0, totalHead = 0;
     lotShipsAll.forEach(s => {
@@ -3992,12 +3993,13 @@ function calcLotProdCost(lot) {
       }
       if(lw > 0) { totalLw += lw * s.count; totalHead += s.count; }
     });
-    if(totalHead > 0) avgLiveWeight = totalLw / totalHead;
+    if(totalHead > 0) { avgLiveWeight = totalLw / totalHead; weightSource = 'shipment'; }
   }
   // 出荷データがない（在籍中）場合は現在の推計生体重
   if(!avgLiveWeight) {
     const w = calcCurrentWeight(lot);
     avgLiveWeight = w.value || 0;
+    if(avgLiveWeight) weightSource = 'measured';
   }
   if(!avgLiveWeight || avgLiveWeight <= (lot.start_weight || 30))
     return { pigletCost: pigletCostPerHead, feedCost: null, total: pigletCostPerHead||null, perCw: null };
@@ -4060,6 +4062,8 @@ function calcLotProdCost(lot) {
     weightGain:     Math.round(weightGain * 10) / 10,
     avgFeedPrice:   Math.round(avgFeedPricePerT),
     pigletRatio:    Math.round(pigletRatio * 100),
+    liveWeight:     Math.round(avgLiveWeight * 10) / 10,
+    weightSource,
   };
 }
 
@@ -4090,7 +4094,7 @@ function calcCollateralValuePerLot(lot) {
 
   const pigletCostPerHead = lot.price || 0;
   if(!fcr || weightGain <= 0) {
-    return { pigletCost: pigletCostPerHead, feedCost: 0, total: Math.round(pigletCostPerHead), perCw: null, estimated: true, estWeight: Math.round(estWeight*10)/10 };
+    return { pigletCost: pigletCostPerHead, feedCost: 0, total: Math.round(pigletCostPerHead), perCw: null, estimated: true, estWeight: Math.round(estWeight*10)/10, liveWeight: Math.round(estWeight*10)/10, weightSource: 'estimated' };
   }
 
   const baseDate = lot.start_date || today;
@@ -4109,6 +4113,8 @@ function calcCollateralValuePerLot(lot) {
     weightGain: Math.round(weightGain*10)/10,
     estimated: true,
     estWeight: Math.round(estWeight*10)/10,
+    liveWeight: Math.round(estWeight*10)/10,
+    weightSource: 'estimated',
   };
 }
 
@@ -8738,7 +8744,7 @@ function rAbl() {
     <td class="mn">${r.lot.start_date||'-'}</td>
     <td class="tr3 mn">${r.days}日</td>
     <td class="tr3 mn">${r.head}頭</td>
-    <td class="tr3 mn">${r.val.estWeight?r.val.estWeight+'kg':'-'}${r.val.estimated?'<span style="color:var(--muted);font-size:10px"> 推定</span>':''}</td>
+    <td class="tr3 mn">${r.val.liveWeight?r.val.liveWeight+'kg':'-'}${r.val.weightSource==='estimated'?'<span style="color:var(--muted);font-size:10px"> 推定</span>':r.val.weightSource==='measured'?'<span style="color:var(--muted);font-size:10px"> 実測</span>':r.val.weightSource==='shipment'?'<span style="color:var(--muted);font-size:10px"> 出荷実績</span>':''}</td>
     <td class="tr3 mn">¥${(r.val.total||0).toLocaleString()}</td>
     <td class="tr3 mn" style="font-weight:700;color:var(--accent)">¥${Math.round((r.val.total||0)*r.head).toLocaleString()}</td>
   </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">在場中のロットがありません</td></tr>';

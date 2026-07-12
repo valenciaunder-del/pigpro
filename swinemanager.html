@@ -4004,6 +4004,119 @@ function calcLotFcrByBarn(lot) {
   return fcr>0&&fcr<20?Math.round(fcr*100)/100:null;
 }
 
+// calcLotFcrByBarnと全く同じロジックで、月ごとの内訳を返す診断用関数（ロット詳細モーダルの表示用）
+function debugLotFcrByBarn(lot) {
+  if(!lot.start_weight || !lot.start_date) return null;
+  const farmObj = FARMS[lot.farm];
+  if(!farmObj) return null;
+  const barn = lot.barn;
+  if(!barn) return null;
+  const barnObj = (farmObj.barns||[]).find(b => barn.includes(b.id) || barn === b.name);
+  if(!barnObj) return null;
+  const tankLabels = [barnObj.tank_hog_label, barnObj.tank_piglet_label].filter(Boolean);
+  if(!tankLabels.length) return null;
+
+  const lotShipsAll = DATA.ships.filter(s=>s.lot_id===lot.id && s.shipped_at && s.count>0);
+  if(!lotShipsAll.length) return null;
+  const lastShipDate = lotShipsAll.map(s=>s.shipped_at).sort().pop();
+  const yieldRate = getYieldRate(lot.farm) / 100;
+
+  const shipDetailParts = [];
+  const totalGainT = lotShipsAll.reduce((a,s) => {
+    let lw = s.live_weight > 0 ? s.live_weight : null;
+    let src = '出荷記録';
+    if(!lw) {
+      const sheet = DATA.slaughter.find(x=>x.farm===lot.farm && x.shipped_at===s.shipped_at);
+      if(sheet && sheet.total_carcass_kg && sheet.head_count) {
+        lw = (sheet.total_carcass_kg / sheet.head_count) / yieldRate;
+        src = '仕切書逆算';
+      }
+    }
+    if(!lw || lw <= 0) { shipDetailParts.push(`${s.shipped_at}:${s.count}頭 体重不明`); return a; }
+    const gainPerHead = lw - (lot.start_weight||0);
+    const daysToShip = dElBetween(lot.start_date, s.shipped_at);
+    if(daysToShip > 0) {
+      const impliedAdg = gainPerHead / daysToShip * 1000;
+      if(impliedAdg < 200 || impliedAdg > 1500) {
+        shipDetailParts.push(`${s.shipped_at}:${s.count}頭 ${lw.toFixed(1)}kg(${src},ADG${impliedAdg.toFixed(0)}g除外)`);
+        return a;
+      }
+    }
+    shipDetailParts.push(`${s.shipped_at}:${s.count}頭 ${lw.toFixed(1)}kg(${src})`);
+    return a + (gainPerHead * (s.count||0));
+  }, 0) / 1000;
+  if(totalGainT <= 0) return null;
+
+  const barnLots = DATA.lots.filter(l=>l.farm===lot.farm && l.barn &&
+    (l.barn.includes(barnObj.id) || l.barn===barnObj.name));
+
+  const startYM = lot.start_date.slice(0,7);
+  const endYM   = lastShipDate.slice(0,7);
+  const months  = [];
+  let cur = new Date(startYM+'-01');
+  while(cur <= new Date(endYM+'-01')) {
+    months.push(cur.toISOString().slice(0,7));
+    cur.setMonth(cur.getMonth()+1);
+  }
+
+  const allTankRows = DATA.feedTank.filter(r=>r.farm===lot.farm && r.date);
+  let totalFeedT = 0;
+  const monthDetails = [];
+
+  for(const mon of months) {
+    const [y,m] = mon.split('-').map(Number);
+    const daysInMonth = new Date(y,m,0).getDate();
+    const monStart = mon+'-01';
+
+    let lotHD = 0;
+    for(let d=1; d<=daysInMonth; d++) {
+      const ds = mon+'-'+String(d).padStart(2,'0');
+      if(ds < lot.start_date || ds > lastShipDate) continue;
+      const shipped = lotShipsAll.filter(s=>s.shipped_at&&s.shipped_at<=ds).reduce((a,s)=>a+s.count,0);
+      const dead = DATA.deaths.filter(x=>x.lot_id===lot.id&&x.date&&x.date<=ds&&x.category!=='廃棄（出荷後）').reduce((a,x)=>a+x.count,0);
+      lotHD += Math.max(0,(lot.count||0)-shipped-dead);
+    }
+    if(lotHD<=0) continue;
+
+    let barnHD = 0;
+    for(const bl of barnLots) {
+      const blLastShip = DATA.ships.filter(s=>s.lot_id===bl.id&&s.shipped_at).map(s=>s.shipped_at).sort().pop()||'9999-99-99';
+      for(let d=1; d<=daysInMonth; d++) {
+        const ds = mon+'-'+String(d).padStart(2,'0');
+        if(ds<(bl.start_date||'')) continue;
+        if(calcCurrentHead(bl)===0 && ds>blLastShip) continue;
+        const shipped = DATA.ships.filter(s=>s.lot_id===bl.id&&s.shipped_at&&s.shipped_at<=ds).reduce((a,s)=>a+s.count,0);
+        const dead = DATA.deaths.filter(x=>x.lot_id===bl.id&&x.date&&x.date<=ds&&x.category!=='廃棄（出荷後）').reduce((a,x)=>a+x.count,0);
+        barnHD += Math.max(0,(bl.count||0)-shipped-dead);
+      }
+    }
+    if(barnHD<=0) continue;
+
+    let barnMonFeedT = 0;
+    for(const tnLabel of tankLabels) {
+      const tankRows = allTankRows.filter(r=>r.tank_name===tnLabel&&r.date.startsWith(mon))
+        .sort((a,b)=>a.date.localeCompare(b.date));
+      if(!tankRows.length) continue;
+      const prevRows = allTankRows.filter(r=>r.tank_name===tnLabel&&r.date<monStart)
+        .sort((a,b)=>b.date.localeCompare(a.date));
+      const opening  = prevRows.length?(prevRows[0].tank_remaining||0):(tankRows[0].tank_remaining||0);
+      const closing  = tankRows[tankRows.length-1].tank_remaining||0;
+      const feedTypeLabel = tankRows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
+      const sameTypeTanks = [...new Set(allTankRows.filter(r=>r.feed_type===tankRows[0].feed_type&&r.date.startsWith(mon)).map(r=>r.tank_name).filter(Boolean))];
+      const matchedDelivery = getMonthlyDeliveryForTank(lot.farm, tnLabel, feedTypeLabel, mon);
+      const unattributedShare = getUnattributedDeliveryShare(lot.farm, feedTypeLabel, mon, sameTypeTanks, tnLabel);
+      const delivery = matchedDelivery + unattributedShare;
+      const usage    = opening+delivery-closing;
+      if(usage>0) barnMonFeedT += usage;
+    }
+    const allocatedFeedT = barnMonFeedT*(lotHD/barnHD);
+    if(barnMonFeedT>0) totalFeedT += allocatedFeedT;
+    monthDetails.push({ mon, lotHD, barnHD, barnMonFeedT, allocatedFeedT });
+  }
+
+  return { totalGainT, totalFeedT, months: monthDetails, shipDetail: shipDetailParts.join(' / ') };
+}
+
 // ロット群（例：成績分析で絞り込んだ複数ロット）を1つのプールとして扱い、
 // 豚舎別の按分を挟まず、農場全体の使用量（calcMonthlyUsage、既に購入記録ベースで正しい）を
 // 対象ロット群の在場頭日数シェアで按分してFCRを算出する。
@@ -8922,6 +9035,30 @@ function showLD(id) {
     })()}
     <div class="sr"><span class="sl">FCR</span><span class="sv ${fc(l.fcr||0)}">${l.fcr||0}</span></div>
     <div class="sr"><span class="sl">事故率</span><span class="sv">${(calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id && d.confirmed!==false))/l.count*100).toFixed(2)}%</span></div>
+    <div class="sep"></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:7px">FCR計算内訳（豚舎別按分方式）</div>
+    ${(()=>{
+      const dbg = debugLotFcrByBarn(l);
+      if(!dbg) return '<div style="color:var(--muted);font-size:12px">計算できるデータがありません（豚舎未設定・出荷記録なし等）</div>';
+      const rows = dbg.months.map(mo => `<tr>
+          <td class="mn">${mo.mon}</td>
+          <td class="mn">${mo.lotHD}</td>
+          <td class="mn">${mo.barnHD}</td>
+          <td class="mn">${mo.barnMonFeedT.toFixed(3)}t</td>
+          <td class="mn">${(mo.lotHD/mo.barnHD*100).toFixed(1)}%</td>
+          <td class="mn nw">${mo.allocatedFeedT.toFixed(3)}t</td>
+        </tr>`).join('');
+      return `<div style="font-size:11px;color:var(--muted2);margin-bottom:6px">
+          総増体量: <span class="mn">${dbg.totalGainT.toFixed(3)}t</span>　
+          総飼料使用量: <span class="mn">${dbg.totalFeedT.toFixed(3)}t</span>　
+          FCR: <span class="mn nb">${dbg.totalGainT>0?(dbg.totalFeedT/dbg.totalGainT).toFixed(2):'-'}</span>
+        </div>
+        <div style="max-height:180px;overflow-y:auto"><table class="pt" style="font-size:10px">
+          <thead><tr><th>月</th><th>ロット頭日数</th><th>豚舎頭日数</th><th>豚舎使用量</th><th>按分率</th><th>配分飼料</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+        <div style="font-size:10px;color:var(--muted);margin-top:6px">※各出荷の体重内訳: ${dbg.shipDetail}</div>`;
+    })()}
     <div class="sep"></div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:7px">最近の体重記録</div>
     ${wr.length?wr.map(w=>`<div class="sr"><span class="sl">${w.measured_at}</span><span class="sv">${w.avg_weight} kg (n=${w.sample_count||'-'})</span></div>`).join(''):'<div style="color:var(--muted);font-size:12px">記録なし</div>'}

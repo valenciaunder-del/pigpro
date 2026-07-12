@@ -3995,6 +3995,66 @@ function calcLotFcrByBarn(lot) {
   return fcr>0&&fcr<20?Math.round(fcr*100)/100:null;
 }
 
+// ロット群（例：成績分析で絞り込んだ複数ロット）を1つのプールとして扱い、
+// 豚舎別の按分を挟まず、農場全体の使用量（calcMonthlyUsage、既に購入記録ベースで正しい）を
+// 対象ロット群の在場頭日数シェアで按分してFCRを算出する。
+// 豚舎フィルターが掛かっていない場面（農場全体・複数ロットの平均FCRなど）で、
+// ロットごとに豚舎按分してから平均する方式より安定した値になる。
+function calcPooledFcr(lots) {
+  if(!lots || !lots.length) return null;
+  const farm = lots[0].farm;
+  if(!farm || lots.some(l=>l.farm!==farm)) return null; // 単一農場前提
+
+  const yieldRate = getYieldRate(farm) / 100;
+
+  // 対象ロット群の合算増体量(t)
+  let totalGainT = 0;
+  lots.forEach(l => {
+    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.count>0 && s.shipped_at);
+    ships.forEach(s => {
+      let lw = s.live_weight > 0 ? s.live_weight : null;
+      if(!lw) {
+        const sheet = DATA.slaughter.find(x=>x.farm===l.farm && x.shipped_at===s.shipped_at);
+        if(sheet?.total_carcass_kg && sheet?.head_count) lw = (sheet.total_carcass_kg/sheet.head_count)/yieldRate;
+      }
+      if(lw > 0) totalGainT += (lw - (l.start_weight||0)) * s.count / 1000;
+    });
+  });
+  if(totalGainT <= 0) return null;
+
+  // 対象ロット群がカバーする月の範囲
+  const months = new Set();
+  lots.forEach(l => {
+    if(!l.start_date) return;
+    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at);
+    const lastShip = ships.map(s=>s.shipped_at).sort().pop() || new Date().toISOString().slice(0,10);
+    let cur = new Date(l.start_date.slice(0,7)+'-01');
+    const end = new Date(lastShip.slice(0,7)+'-01');
+    while(cur <= end) { months.add(cur.toISOString().slice(0,7)); cur.setMonth(cur.getMonth()+1); }
+  });
+  if(!months.size) return null;
+
+  const farmLots = DATA.lots.filter(l=>l.farm===farm);
+  let totalFeedT = 0;
+  months.forEach(mon => {
+    const [y,m] = mon.split('-').map(Number);
+    const daysInMonth = new Date(y,m,0).getDate();
+    let lotsHeadDays = 0, farmHeadDays = 0;
+    for(let d=1; d<=daysInMonth; d++) {
+      const ds = `${mon}-${String(d).padStart(2,'0')}`;
+      lots.forEach(l=>{ lotsHeadDays += calcLotHeadAsOf(l, ds); });
+      farmLots.forEach(l=>{ farmHeadDays += calcLotHeadAsOf(l, ds); });
+    }
+    if(farmHeadDays <= 0) return;
+    const monUsage = calcMonthlyUsage(DATA.feedTank, farm, mon);
+    const monTotal = (monUsage.piglet||0) + (monUsage.finisher||0);
+    if(monTotal > 0) totalFeedT += monTotal * (lotsHeadDays/farmHeadDays);
+  });
+
+  if(totalFeedT <= 0) return null;
+  const fcr = totalFeedT / totalGainT;
+  return fcr>0 && fcr<20 ? Math.round(fcr*100)/100 : null;
+}
 
 // ══════════════════════════════════════════════
 // ロット別製造原価計算
@@ -7067,6 +7127,12 @@ function rPerfFull() {
 
   // FCR（出荷済みロットのみ）
   const avgFcr = (() => {
+    // 豚舎フィルターが掛かっていない場合：豚舎按分を挟まず、ロット群をまとめて農場全体の使用量から直接算出
+    // （ロットごとに豚舎按分してから平均すると、按分誤差が積み重なりやすいため）
+    if(!_barnVal && pfFarm && pfFarm !== 'both') {
+      const pooled = calcPooledFcr(lots);
+      if(pooled) return pooled.toFixed(2);
+    }
     // 優先順：①豚舎タンク按分 ②農場全体（出荷完了ロット）③農場全体FCR（フォールバック）
     const fcrEntries = lots.map(l => {
       const v = calcLotFcrByBarn(l)

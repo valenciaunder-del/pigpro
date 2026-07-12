@@ -2624,6 +2624,25 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <tbody id="ftic-tb"></tbody>
       </table></div>
     </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="ch"><span class="ct">直近3ヶ月まとめ（1日あたり消費量）</span></div>
+      <div class="cb">
+        <div class="alert i mb16">ℹ️ <div>単月だけだとCSV読み取りミス等で数字がブレやすいため、直近3ヶ月をまとめて「期首残＋購入合計－期末残」を計算し、日数で割った1日あたりの平均消費量を出しています。特定の月だけ異常値が出ていないかは上の「タンク別棚卸内訳」で月ごとに確認してください。</div></div>
+      </div>
+      <div class="tw"><table class="pt">
+        <thead><tr>
+          <th>タンク</th><th>ステージ</th>
+          <th class="tr3">期首残量(t)</th>
+          <th class="tr3 ng">＋期間購入量(t)</th>
+          <th class="tr3">－期末残量(t)</th>
+          <th class="tr3 nb">＝使用量(t)</th>
+          <th class="tr3">対象日数</th>
+          <th class="tr3 nw">1日あたり消費量</th>
+        </tr></thead>
+        <tbody id="ftic3-tb"></tbody>
+      </table></div>
+    </div>
   </div>
 
   <!-- CSV取込タブ（タンクスナップショット独立管理） -->
@@ -3188,6 +3207,56 @@ function calcMonthlyUsageDetailByTank(feedTankData, farm, monthStr) {
         closing: Math.round(closing*100)/100,
         usage: Math.round(usage*100)/100,
         readingDays: rows.length,
+      });
+    }
+  }
+  return results.sort((a,b)=> a.tank_name.localeCompare(b.tank_name,'ja'));
+}
+
+// タンクごとに、複数月をまとめた期間（monFrom〜monTo）で「期首残＋期間内購入合計－期末残＝使用量」を計算し、
+// 期間の日数で割って1日あたりの平均消費量を出す。単月だと1回のCSV読み取りミス等の影響を受けやすいため、
+// 直近数ヶ月をまとめることでブレを平均化して確認できるようにする（棚卸確認タブの「複数月まとめ」表示用）
+function calcRangeUsageByTank(feedTankData, farm, monFrom, monTo) {
+  const rangeStart = `${monFrom}-01`;
+  const [ty, tm] = monTo.split('-').map(Number);
+  const rangeEndLastDay = new Date(ty, tm, 0).getDate();
+  const rangeEnd = `${monTo}-${String(rangeEndLastDay).padStart(2,'0')}`;
+
+  const rangeRows = feedTankData.filter(r => r.farm===farm && r.date && r.date>=rangeStart && r.date<=rangeEnd);
+  const allTankRows = feedTankData.filter(r=>r.farm===farm && r.date);
+
+  // 期間内の月リスト（購入合計の按分に使用）
+  const months = [];
+  let cur = new Date(rangeStart.slice(0,7)+'-01');
+  const end = new Date(monTo+'-01');
+  while(cur <= end) { months.push(cur.toISOString().slice(0,7)); cur.setMonth(cur.getMonth()+1); }
+
+  // 期間の実日数（1日あたり換算用）
+  const totalDays = Math.round((new Date(rangeEnd) - new Date(rangeStart)) / 86400000) + 1;
+
+  const results = [];
+  for(const ft of ['piglet', 'finisher']) {
+    const feedTypeLabel = ft === 'piglet' ? '子豚用' : '肥育用';
+    const ftRows = rangeRows.filter(r => r.feed_type === ft);
+    const tankNames = [...new Set(ftRows.map(r=>r.tank_name).filter(Boolean))];
+    for(const tn of tankNames) {
+      const rows = ftRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
+      if(!rows.length) continue;
+      const prevRows = allTankRows.filter(r=>r.tank_name===tn && r.date<rangeStart).sort((a,b)=>b.date.localeCompare(a.date));
+      const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
+      const closing = rows[rows.length-1].tank_remaining||0;
+      const delivery = months.reduce((a,mon)=>a+getMonthlyDeliveryForTank(farm, tn, feedTypeLabel, mon), 0);
+      const usage = opening + delivery - closing;
+      results.push({
+        tank_name: tn,
+        feed_type: ft,
+        feed_type_label: feedTypeLabel,
+        opening: Math.round(opening*100)/100,
+        delivery: Math.round(delivery*100)/100,
+        closing: Math.round(closing*100)/100,
+        usage: Math.round(usage*100)/100,
+        days: totalDays,
+        dailyAvg: totalDays>0 ? Math.round(usage/totalDays*1000)/1000 : 0,
       });
     }
   }
@@ -16656,6 +16725,27 @@ function rInvCheck() {
         <td class="tr3 mn" style="font-weight:700;font-size:16px;color:var(--accent)">${Math.round(totalUsage*100)/100}t</td>
         <td class="tr3 mn">-</td>
       </tr>`;
+
+  // 直近3ヶ月まとめ（画面右上で選択中の月を最終月として、その月を含む直近3ヶ月）
+  const tb3 = document.getElementById('ftic3-tb');
+  if(tb3) {
+    const [ey, em] = mon.split('-').map(Number);
+    const fromD = new Date(ey, em-1-2, 1); // 2ヶ月前の月初
+    const monFrom = fromD.toISOString().slice(0,7);
+    const rows3 = farms.flatMap(f => calcRangeUsageByTank(DATA.feedTank, f, monFrom, mon).map(r=>({...r, farm:f})));
+    tb3.innerHTML = rows3.length
+      ? rows3.map(r => `<tr>
+          <td style="font-weight:600">${CF==='both'?fb(r.farm)+' ':''}${r.tank_name}</td>
+          <td><span class="bdg ${r.feed_type==='piglet'?'c':'o'}">${r.feed_type_label}</span></td>
+          <td class="tr3 mn">${r.opening.toLocaleString()}</td>
+          <td class="tr3 mn ng">${r.delivery.toLocaleString()}</td>
+          <td class="tr3 mn">${r.closing.toLocaleString()}</td>
+          <td class="tr3 mn" style="font-weight:700;color:${r.usage>=0?'var(--accent2)':'var(--danger)'}">${r.usage.toLocaleString()}${r.usage<0?' ⚠️':''}</td>
+          <td class="tr3 mn" style="color:var(--muted)">${r.days}日</td>
+          <td class="tr3 mn" style="font-weight:700;color:var(--accent3)">${r.dailyAvg.toLocaleString()}t/日</td>
+        </tr>`).join('')
+      : `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">${monFrom}〜${mon}のタンク残量データがありません</td></tr>`;
+  }
 }
 
 function rFeedTank() {

@@ -4457,7 +4457,22 @@ async function loadAll() {
     // 農場設定をSupabaseから復元（localStorageより優先）
     if(farmSettings && Object.keys(farmSettings).length > 0) {
       ['farm1','farm2'].forEach(f => {
-        if(farmSettings[f]) Object.assign(FARMS[f], farmSettings[f]);
+        if(farmSettings[f]) {
+          const defaultBarns = FARMS[f].barns; // コード側の静的デフォルト（タンク名の正）
+          Object.assign(FARMS[f], farmSettings[f]);
+          // 保存済み設定のbarnsにタンク名が空欄のものがあれば、静的デフォルトの値にフォールバックする
+          // （農場設定モーダルで他項目だけ編集して保存した際、タンク名欄が空のまま上書き保存されてしまうケースの保護）
+          if(Array.isArray(FARMS[f].barns)) {
+            FARMS[f].barns = FARMS[f].barns.map(b => {
+              const def = defaultBarns.find(d => d.id === b.id);
+              return {
+                ...b,
+                tank_piglet_label: b.tank_piglet_label || def?.tank_piglet_label || '',
+                tank_hog_label: b.tank_hog_label || def?.tank_hog_label || '',
+              };
+            });
+          }
+        }
       });
       // 共通歩留まりを復元
       if(farmSettings.common?.yields) Object.assign(COMMON_YIELDS, farmSettings.common.yields);

@@ -3838,7 +3838,8 @@ function calcLotFcr(lot) {
         .sort((a,b)=>b.date.localeCompare(a.date));
       const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
       const closing = rows[rows.length-1].tank_remaining||0;
-      const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const feedTypeLabel = rows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
+      const delivery = getMonthlyDeliveryForTank(lot.farm, tn, feedTypeLabel, mon);
       const consumption = opening+delivery-closing;
       if(consumption>0) monFeedT += consumption;
     }
@@ -3941,7 +3942,8 @@ function calcLotFcrByBarn(lot) {
         .sort((a,b)=>b.date.localeCompare(a.date));
       const opening  = prevRows.length?(prevRows[0].tank_remaining||0):(tankRows[0].tank_remaining||0);
       const closing  = tankRows[tankRows.length-1].tank_remaining||0;
-      const delivery = tankRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+      const feedTypeLabel = tankRows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
+      const delivery = getMonthlyDeliveryForTank(lot.farm, tnLabel, feedTypeLabel, mon);
       const usage    = opening+delivery-closing;
       if(usage>0) barnMonFeedT += usage;
     }
@@ -4031,7 +4033,8 @@ function calcLotProdCost(lot) {
         const prev = allTankRows.filter(r=>r.feed_type===ft&&r.date<monStart).sort((a,b)=>b.date.localeCompare(a.date));
         const opening = prev.length?(prev[0].tank_remaining||0):(rows[0].tank_remaining||0);
         const closing = rows[rows.length-1].tank_remaining||0;
-        const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+        const feedTypeLabel = ft==='piglet' ? '子豚用' : '肥育用';
+        const delivery = getMonthlyPurchaseTotal(farm, feedTypeLabel, mon);
         const usage = opening+delivery-closing;
         if(usage > 0) ft === 'piglet' ? (pigT += usage) : (finT += usage);
       });
@@ -4125,26 +4128,22 @@ function calcCollateralValuePerLot(lot) {
 // ══════════════════════════════════════════════
 // 月間頭日数の推定（inv_dailyがあればそれを使い、なければロットデータから推定）
 // ロット導入頭数 - 出荷頭数 - 事故頭数 = 月末時点在庫頭数 として日数を掛ける簡易推定
+// 農場・月の日頭数を推定（ロットの導入・出荷・事故実績から積算。棚卸データ(inventory_daily)は使用しない）
 function estimateHeadDaysForMonth(farm, mon) {
-  let headDays = DATA.invDaily.filter(r=>r.farm===farm && r.date && r.date.startsWith(mon))
-    .reduce((a,r)=>a+(r.stock_head||0), 0);
-  if(!headDays) {
-    const [y, m] = mon.split('-').map(Number);
-    const daysInMonth = new Date(y, m, 0).getDate();
-    const monEnd = `${mon}-${String(daysInMonth).padStart(2,'0')}`;
-    const farmLots = DATA.lots.filter(l=>l.farm===farm && l.start_date && l.start_date <= monEnd);
-    let estHead = 0;
-    farmLots.forEach(l => {
-      const intro = l.count || 0;
-      const shipped = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at && s.shipped_at <= monEnd)
-        .reduce((a,s)=>a+s.count,0);
-      const dead = calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id && d.date && d.date <= monEnd));
-      const inStock = intro - shipped - dead;
-      if(inStock > 0) estHead += inStock;
-    });
-    headDays = estHead * daysInMonth;
-  }
-  return headDays;
+  const [y, m] = mon.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const monEnd = `${mon}-${String(daysInMonth).padStart(2,'0')}`;
+  const farmLots = DATA.lots.filter(l=>l.farm===farm && l.start_date && l.start_date <= monEnd);
+  let estHead = 0;
+  farmLots.forEach(l => {
+    const intro = l.count || 0;
+    const shipped = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at && s.shipped_at <= monEnd)
+      .reduce((a,s)=>a+s.count,0);
+    const dead = calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id && d.date && d.date <= monEnd));
+    const inStock = intro - shipped - dead;
+    if(inStock > 0) estHead += inStock;
+  });
+  return estHead * daysInMonth;
 }
 
 // 農場の実績ベース平均ADG（頭数加重平均）を算出
@@ -4194,7 +4193,7 @@ function calcFarmFcr(farm, monthStr, precomputedAdg) {
     mon = rows[rows.length-1];
   }
 
-  // 期首残 + delivery_ton合計 - 期末残 方式
+  // 期首残 + 購入記録合計 - 期末残 方式（delivery_tonは在庫残量の把握にのみ使い、入荷量としては使用しない）
   let totalFeedT = 0;
   const tankRows = DATA.feedTank.filter(r=>r.farm===farm && r.date && r.date.startsWith(mon));
   const tankNames = [...new Set(tankRows.map(r=>r.tank_name).filter(Boolean))];
@@ -4211,7 +4210,8 @@ function calcFarmFcr(farm, monthStr, precomputedAdg) {
     const opening = prevRows.length ? (prevRows[0].tank_remaining||0) : (rows[0].tank_remaining||0);
 
     const closing  = rows[rows.length-1].tank_remaining || 0;
-    const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0), 0);
+    const feedTypeLabel = rows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
+    const delivery = getMonthlyDeliveryForTank(farm, tank, feedTypeLabel, mon);
     const usage    = opening + delivery - closing;
     if(usage > 0) totalFeedT += usage;
   }
@@ -4457,8 +4457,8 @@ const gCostVal = (farm, month, type) => DATA.costs
   .filter(c => (farm==='both'||c.farm===farm) && (!month||c.month===month) && (!type||c.cost_type===type))
   .reduce((a,c) => a+c.amount, 0);
 // 売上はslaughter_sheetsから動的集計（slaughtered_at基準）
-// 即席粗利：出荷売上 − 出荷頭数×前日在庫単価（飼料費込み）
-// FM棚卸の在庫単価は「導入費+飼料費+薬品費を按分した1頭あたり原価」なので粗利計算に使える
+// 即席粗利：出荷売上 − 出荷頭数×ロット別製造原価（子豚費+飼料費）
+// 月次確定前（正式コスト未確定）の概算粗利表示に使用。棚卸データ(inventory_daily)は使用しない
 function gInstantProfit(farm, month) {
   // 当月の出荷記録を取得
   const ships = DATA.ships.filter(s=>
@@ -4472,19 +4472,14 @@ function gInstantProfit(farm, month) {
     .reduce((a,s)=>a+(s.total_amount||0),0);
   if(!sales) return null;
 
-  // 出荷コスト：各出荷日の前日在庫単価 × 出荷頭数
+  // 出荷コスト：各出荷のロット別製造原価（子豚費+飼料費/頭）× 出荷頭数
   let cost = 0;
   ships.forEach(s=>{
     if(!s.shipped_at) return;
-    // 前日の在庫単価を取得
-    const prevDate = new Date(s.shipped_at);
-    prevDate.setDate(prevDate.getDate()-1);
-    const prevDateStr = prevDate.toISOString().slice(0,10);
-    // inv_dailyから前日単価を検索（農場一致・日付一致）
-    const inv = DATA.invDaily
-      .filter(d=>d.farm===farm && d.date<=s.shipped_at)
-      .sort((a,b)=>b.date.localeCompare(a.date))[0];
-    const unitPrice = inv?.stock_unit_price || 0;
+    const lot = DATA.lots.find(l=>l.id===s.lot_id);
+    if(!lot) return;
+    const prodCost = calcLotProdCost(lot);
+    const unitPrice = prodCost?.total || 0;
     cost += unitPrice * (s.count||0);
   });
 
@@ -5225,18 +5220,16 @@ function rImportStatus() {
   const farmNames = { farm1:'中田農場', farm2:'米山農場' };
   const farmColors = { farm1:'var(--f1)', farm2:'var(--f2)' };
 
-  // 棚卸から出荷日数を取得（出荷ありの日をカウント）
+  // 出荷日数を取得（出荷記録ベース。棚卸データ(inventory_daily)は使用しない）
   const getOutDays = (farm, mon) => {
-    // 棚卸データの出荷日数
-    const invDays = DATA.invDaily.filter(r =>
-      r.farm===farm && r.date.startsWith(mon) && (r.out_head||0) > 0
-    ).map(r=>r.date);
-    // 仕切書データの出荷日数（棚卸なし月でも判定できるよう）
+    const shipDays = DATA.ships.filter(r =>
+      r.farm===farm && r.shipped_at?.startsWith(mon) && (r.count||0) > 0
+    ).map(r=>r.shipped_at);
+    // 仕切書データの出荷日数（あわせてユニーク化）
     const slipDays = DATA.slaughter.filter(r=>
       r.farm===farm && r.shipped_at?.startsWith(mon)
     ).map(r=>r.shipped_at);
-    // 両方を合わせてユニークな出荷日数を返す
-    return [...new Set([...invDays, ...slipDays])].length;
+    return [...new Set([...shipDays, ...slipDays])].length;
   };
 
   // 仕切書の取込件数（出荷日×屠畜場ベース）
@@ -5246,25 +5239,20 @@ function rImportStatus() {
       .map(r=>r.shipped_at))].length;
 
   const check = {
-    inv: (farm, mon) => ({
-      ok: DATA.invDaily.some(r=>r.farm===farm && r.date.startsWith(mon)),
-      outDays: null,
-      inDays: null,
-    }),
     slip: (farm, mon) => {
       const slipDays = getSlipDays(farm, mon);
-      // 仕切書も棚卸も出荷記録がない月は「—」
-      const invOutDays = DATA.invDaily.filter(r=>
-        r.farm===farm && r.date.startsWith(mon) && (r.out_head||0) > 0
-      ).length;
-      if(slipDays === 0 && invOutDays === 0) return { ok: null, outDays: 0, inDays: 0 };
+      const shipDaysCount = [...new Set(DATA.ships.filter(r=>
+        r.farm===farm && r.shipped_at?.startsWith(mon) && (r.count||0) > 0
+      ).map(r=>r.shipped_at))].length;
+      // 出荷記録も仕切書も出荷実績が無い月は「—」
+      if(slipDays === 0 && shipDaysCount === 0) return { ok: null, outDays: 0, inDays: 0 };
       const outDays = getOutDays(farm, mon);
       return { ok: slipDays >= outDays, outDays, inDays: slipDays };
     },
   };
 
-  const labels = { inv:'棚卸', slip:'仕切書' };
-  const icons  = { inv:'📋', slip:'📄' };
+  const labels = { slip:'仕切書' };
+  const icons  = { slip:'📄' };
 
   let html = `
     <div style="overflow-x:auto">
@@ -5296,16 +5284,10 @@ function rImportStatus() {
             return `<td style="text-align:center;padding:5px 8px"><span style="color:var(--muted);font-size:13px">—</span></td>`;
           }
           if(result.ok === null) {
-            // 棚卸なし or 出荷なし
+            // 出荷なし
             return `<td style="text-align:center;padding:5px 8px"><span style="color:var(--muted);font-size:13px" title="出荷なし">—</span></td>`;
           }
-          if(key === 'inv') {
-            const hasInv = result.ok;
-            return `<td style="text-align:center;padding:5px 8px">
-              <span style="font-size:18px" title="${hasInv?'取込済み':'未取込'}">${hasInv?'✅':'❌'}</span>
-            </td>`;
-          }
-          // 仕切書・格付け：件数表示
+          // 仕切書：件数表示
           const { ok, outDays, inDays } = result;
           const short = outDays - inDays;
           const tip = ok
@@ -5473,13 +5455,15 @@ function rDashFcr() {
   barnGrid.innerHTML = tankNames.map(({farm:f, tank:tn}) => {
     const tRows = tankRows.filter(r=>r.farm===f&&r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
     if(tRows.length < 2) return '';
+    const feedTypeLabel = tRows[0].feed_type==='piglet' ? '子豚用' : '肥育用';
+    const monthsInRange = [...new Set(tRows.map(r=>r.date.slice(0,7)))];
+    const deliveryTotal = monthsInRange.reduce((a,mon)=>a+getMonthlyDeliveryForTank(f, tn, feedTypeLabel, mon), 0);
     const feedT = Math.max(0,
       (tRows[0].tank_remaining||0) +
-      tRows.reduce((a,r)=>a+(r.delivery_ton||0),0) -
+      deliveryTotal -
       (tRows[tRows.length-1].tank_remaining||0)
     );
-    const invR = DATA.invDaily.filter(r=>r.farm===f&&r.date>=tRows[0].date&&r.date<=tRows[tRows.length-1].date);
-    const hd = invR.reduce((a,r)=>a+(r.stock_head||0),0);
+    const hd = monthsInRange.reduce((a,mon)=>a+estimateHeadDaysForMonth(f, mon), 0);
     const info = tankBarnMap[tn];
     const sameType = tankNames.filter(x=>x.farm===f&&tankBarnMap[x.tank]?.type===info?.type);
     const ratio = sameType.length > 0 ? 1/sameType.length : 0.5;
@@ -10069,27 +10053,20 @@ function rProdCost() {
   document.getElementById('pc-open-lbl').textContent = prevMon + '末';
   document.getElementById('pc-close-lbl').textContent = mon + '末';
 
-  // 棚卸データから期首・期末評価額を取得
-  const prevMonthEnd = DATA.invDaily
-    .filter(r=>(farm==='both'||r.farm===farm)&&r.date.startsWith(prevMon)&&r.stock_value)
-    .sort((a,b)=>b.date.localeCompare(a.date))[0];
-  const thisMonthEnd = DATA.invDaily
-    .filter(r=>(farm==='both'||r.farm===farm)&&r.date.startsWith(mon)&&r.stock_value)
-    .sort((a,b)=>b.date.localeCompare(a.date))[0];
-
+  // 期首・期末評価額はロット・飼料記録からの計算値を使用（棚卸データ(inventory_daily)は使用しない）
   const openAuto = calcAutoInventoryVal(farm, prevMon);
   const closeAuto = calcAutoInventoryVal(farm, mon);
 
-  // 棚卸データがあればそちらを優先
-  const openAutoVal  = prevMonthEnd?.stock_value || openAuto.total;
-  const closeAutoVal = thisMonthEnd?.stock_value  || closeAuto.total;
-  const openHeads  = prevMonthEnd?.stock_head || openAuto.heads;
-  const closeHeads = thisMonthEnd?.stock_head || closeAuto.heads;
+  const openAutoVal  = openAuto.total;
+  const closeAutoVal = closeAuto.total;
+  const openHeads  = openAuto.heads;
+  const closeHeads = closeAuto.heads;
 
   document.getElementById('pc-open-heads').value = openHeads;
   document.getElementById('pc-open-auto').value = openAutoVal;
   document.getElementById('pc-close-heads').value = closeHeads;
   document.getElementById('pc-close-auto').value = closeAutoVal;
+  const savedOpen = DATA.balance.find(b => b.farm===farm && b.month===prevMon);
   const savedClose = DATA.balance.find(b => b.farm===farm && b.month===mon);
   if(savedOpen && !document.getElementById('pc-open-val')._userEdited) {
     document.getElementById('pc-open-val').value = savedOpen.closing_value || openAuto.total;
@@ -16231,10 +16208,11 @@ function renderFtInvTable(farm, mon, items, allTankRows) {
     // 期末残：当月最終レコード
     const closing = rows.length ? (rows[rows.length-1].tank_remaining||0) : 0;
 
-    // 月間入荷合計
-    const delivery = rows.reduce((a,r)=>a+(r.delivery_ton||0), 0);
+    // 月間入荷合計（購入記録ベース。delivery_tonは使用しない）
+    const feedTypeLabelForTank = (rows[0]?.feed_type==='piglet') ? '子豚用' : '肥育用';
+    const delivery = getMonthlyDeliveryForTank(farm, tn, feedTypeLabelForTank, mon);
 
-    // 消費量：期首残 + delivery_ton合計 - 期末残
+    // 消費量：期首残 + 購入記録合計 - 期末残
     const consumption = Math.max(0, opening + delivery - closing);
 
     // feedType
@@ -16429,12 +16407,13 @@ function rFeedTank() {
     return;
   }
 
-  // 月間使用量
-  const pigletUse   = pigletRows.reduce((a,r)=>a+(r.daily_usage||0),0);
-  const finisherUse = finisherRows.reduce((a,r)=>a+(r.daily_usage||0),0);
+  // 月間使用量・入荷量（購入記録ベース、他画面と統一。daily_usage/delivery_tonは使用しない）
+  const monthlyUsage = calcMonthlyUsage(DATA.feedTank, farm, mon);
+  const pigletUse   = monthlyUsage.piglet;
+  const finisherUse = monthlyUsage.finisher;
   const totalUse    = pigletUse + finisherUse;
-  const pigletIn    = pigletRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
-  const finisherIn  = finisherRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+  const pigletIn    = getMonthlyPurchaseTotal(farm, '子豚用', mon);
+  const finisherIn  = getMonthlyPurchaseTotal(farm, '肥育用', mon);
 
   const fcrResult = calcFarmFcr(farm, mon);
   const fcr = fcrResult !== null ? fcrResult.toFixed(2) : '-';
@@ -16472,11 +16451,13 @@ function rFeedTank() {
   }).filter(Boolean);
 
   const cardsEl = document.getElementById('ft-tank-cards');
+  const tankUsageDetail = calcMonthlyUsageByTank(DATA.feedTank, farm, mon);
   cardsEl.innerHTML = displayTanks.map((tn, idx) => {
     const tRows = items.filter(r=>(r.tank_name||(FEED_TYPE_LABEL[r.feed_type]||r.feed_type))===tn);
     const last  = tRows[tRows.length-1];
-    const use   = invResult?.tankConsumption?.[tn] ?? tRows.reduce((a,r)=>a+(r.daily_usage||0),0);
-    const inT   = tRows.reduce((a,r)=>a+(r.delivery_ton||0),0);
+    const feedTypeLabel = tRows[0]?.feed_type==='piglet' ? '子豚用' : '肥育用';
+    const use   = tankUsageDetail.find(r=>r.tank_name===tn)?.usage || 0;
+    const inT   = getMonthlyDeliveryForTank(farm, tn, feedTypeLabel, mon);
     const avg   = use / (tRows.length || 1);
     const col   = TANK_COLORS[idx % TANK_COLORS.length];
     const ft    = tRows[0]?.feed_type==='piglet' ? '🐣 子豚用' : '🥩 肉豚用';
@@ -16716,10 +16697,13 @@ function rFeedTank() {
     barnFcrTb.innerHTML = tankNamesList.map(tn=>{
       const tR = tankRows.filter(r=>r.tank_name===tn).sort((a,b)=>a.date.localeCompare(b.date));
       if(tR.length<2) return '';
-      // 消費量：期首+入荷-期末
+      // 消費量：期首+入荷-期末（入荷は購入記録ベース。delivery_tonは使用しない）
+      const feedTypeLabelForBarnFcr = tR[0].feed_type==='piglet' ? '子豚用' : '肥育用';
+      const monthsInRangeForBarnFcr = [...new Set(tR.map(r=>r.date.slice(0,7)))];
+      const deliveryForBarnFcr = monthsInRangeForBarnFcr.reduce((a,mon)=>a+getMonthlyDeliveryForTank(farm, tn, feedTypeLabelForBarnFcr, mon), 0);
       const feedT = Math.max(0,
         (tR[0].tank_remaining||0) +
-        tR.reduce((a,r)=>a+(r.delivery_ton||0),0) -
+        deliveryForBarnFcr -
         (tR[tR.length-1].tank_remaining||0)
       );
       const barnInfo = tankBarnMap[tn];
@@ -16738,10 +16722,8 @@ function rFeedTank() {
         }
       }
       if(!tankHeadDays) {
-        // 豚舎紐付けがロット側に無い場合のフォールバック（従来方式）
-        const invR = DATA.invDaily.filter(r=>r.farm===farm &&
-          r.date>=tR[0].date && r.date<=tR[tR.length-1].date);
-        const totalHeadDays = invR.reduce((a,r)=>a+(r.stock_head||0),0);
+        // 豚舎紐付けがロット側に無い場合のフォールバック（棚卸データ(inventory_daily)は使用せず、月次の在場頭数推定を使う）
+        const totalHeadDays = monthsInRangeForBarnFcr.reduce((a,mon)=>a+estimateHeadDaysForMonth(farm, mon), 0);
         const sameType = tankNamesList.filter(t=>tankBarnMap[t]?.type===barnInfo?.type);
         const allocRatio = sameType.length > 0 ? 1/sameType.length : 0.5;
         tankHeadDays = totalHeadDays * allocRatio;

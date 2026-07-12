@@ -7189,7 +7189,11 @@ function rPerfFull() {
   document.getElementById('pf-lot-tb').innerHTML = lots.length
     ? lots.map(l=>{
         const adg = calcLotAdg(l,true);
-        const fcrVal = calcCurrentHead(l)===0 ? calcLotFcr(l) : null;
+        // 平均FCR KPIと同じ優先順位：①豚舎タンク按分 ②農場全体(出荷完了ロットのみ)
+        const fcrByBarn = calcLotFcrByBarn(l);
+        const fcrWhole  = calcCurrentHead(l)===0 ? calcLotFcr(l) : null;
+        const fcrVal = fcrByBarn || fcrWhole;
+        const fcrSrc = fcrByBarn ? '豚舎別' : (fcrWhole ? '農場全体' : '');
         const lDetails = DATA.slaughterDetail.filter(d=>DATA.ships.some(s=>s.lot_id===l.id&&s.farm===d.farm&&s.shipped_at===d.shipped_at));
         const lUpper = lDetails.length ? Math.round(lDetails.filter(d=>d.grade==='上').length/lDetails.length*100) : null;
         const lDeath = calcAccidentOnly(DATA.deaths.filter(d=>d.lot_id===l.id&&d.confirmed!==false));
@@ -7205,7 +7209,7 @@ function rPerfFull() {
           <td class="mn">${l.count||'-'}頭</td>
           <td class="mn">${lDays?lDays+'日':'-'}</td>
           <td class="mn ${adg?ac(adg):''}">${adg?adg+' g':'-'}</td>
-          <td class="mn">${fcrVal?fcrVal.toFixed(2):'-'}</td>
+          <td class="mn" title="${fcrSrc?'算出方式: '+fcrSrc:''}">${fcrVal?fcrVal.toFixed(2):'-'}${fcrSrc?`<span style="font-size:9px;color:var(--muted)"> (${fcrSrc})</span>`:''}</td>
           <td class="mn">${lUpper!==null?lUpper+'%':'-'}</td>
           <td class="mn ${parseFloat(lDeathRate)>5?'nb':''}">${lDeathRate!=='-'?lDeathRate+'%':'-'}</td>
           <td style="font-size:11px">${lBuyer}</td>

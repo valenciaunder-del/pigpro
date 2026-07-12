@@ -2459,8 +2459,8 @@ tbody td{padding:8px 10px;white-space:nowrap;}
       <div class="tab" onclick="st('ft-t','ft-csv-import',this)">📥 CSV取込</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <select class="fs" id="ft-mon-y" onchange="syncMon('ft-mon');rFeedTank()" style="width:72px"></select><select class="fs" id="ft-mon-m" onchange="syncMon('ft-mon');rFeedTank()" style="width:52px"></select><input type="hidden" id="ft-mon">
-      <button class="btn bs sm" onclick="rFeedTank()">更新</button>
+      <select class="fs" id="ft-mon-y" onchange="syncMon('ft-mon');rFeedTank();rInvCheck()" style="width:72px"></select><select class="fs" id="ft-mon-m" onchange="syncMon('ft-mon');rFeedTank();rInvCheck()" style="width:52px"></select><input type="hidden" id="ft-mon">
+      <button class="btn bs sm" onclick="rFeedTank();rInvCheck()">更新</button>
     </div>
   </div>
 
@@ -2609,14 +2609,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 
   <!-- 棚卸確認タブ -->
   <div class="ft-t-c" id="ft-inv-check" style="display:none">
-    <div class="alert i mb18">ℹ️ <div>タンクごとに「期首残量（ミルフィー等の実測）＋当月購入量－期末残量＝使用量」の内訳を確認できます。数字が想定と違う場合は、タンク残量CSVの取込漏れや購入記録の入力ミスがないか確認してください。</div></div>
-    <div class="card mb18">
-      <div class="cb" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <select class="fs" id="ftic-mon-y" onchange="syncMon('ftic-mon');rInvCheck()" style="width:80px"></select>
-        <select class="fs" id="ftic-mon-m" onchange="syncMon('ftic-mon');rInvCheck()" style="width:60px"></select>
-        <input type="hidden" id="ftic-mon">
-      </div>
-    </div>
+    <div class="alert i mb18">ℹ️ <div>タンクごとに「期首残量（ミルフィー等の実測）＋当月購入量－期末残量＝使用量」の内訳を確認できます（画面右上の年月と連動）。数字が想定と違う場合は、タンク残量CSVの取込漏れや購入記録の入力ミスがないか確認してください。</div></div>
     <div class="card">
       <div class="ch"><span class="ct">タンク別 棚卸内訳</span></div>
       <div class="tw"><table class="pt">
@@ -15343,6 +15336,16 @@ function getFeedPrice(farm, dateStr, feedType, barn, brand) {
     .filter(v => v > 0);
   if(brandPrices.length) return Math.round(brandPrices.reduce((a,v)=>a+v,0) / brandPrices.length);
 
+  // ⑤ 最終フォールバック：対象四半期に単価データが一切無い場合（銘柄管理を始める前の古いロットなど）、
+  //    その農場・ステージで単価が登録されている中で最も新しい四半期の平均単価を概算として使う
+  const anyBrandRecs = DATA.feedMaster.filter(r => r.farm===farm && r.feed_type===feedType && r.brand);
+  if(anyBrandRecs.length) {
+    const latestQuarter = [...new Set(anyBrandRecs.map(r=>r.quarter))].sort().reverse()[0];
+    const latestPrices = anyBrandRecs.filter(r=>r.quarter===latestQuarter)
+      .map(r => (r.price_per_ton||0)+(r.freight_per_ton||0)).filter(v=>v>0);
+    if(latestPrices.length) return Math.round(latestPrices.reduce((a,v)=>a+v,0) / latestPrices.length);
+  }
+
   return null;
 }
 
@@ -15369,6 +15372,17 @@ function getFeedPriceDetail(farm, dateStr, feedType, barn, brand) {
     const avgPrice   = Math.round(brandRecs.reduce((a,r)=>a+(r.price_per_ton||0),0) / brandRecs.length);
     const avgFreight = Math.round(brandRecs.reduce((a,r)=>a+(r.freight_per_ton||0),0) / brandRecs.length);
     return { price: avgPrice, freight: avgFreight, total: avgPrice+avgFreight, barn: null, brand: null, isAverage: true };
+  }
+
+  const anyBrandRecs = DATA.feedMaster.filter(r => r.farm===farm && r.feed_type===feedType && r.brand);
+  if(anyBrandRecs.length) {
+    const latestQuarter = [...new Set(anyBrandRecs.map(r=>r.quarter))].sort().reverse()[0];
+    const latestRecs = anyBrandRecs.filter(r=>r.quarter===latestQuarter);
+    if(latestRecs.length) {
+      const avgPrice   = Math.round(latestRecs.reduce((a,r)=>a+(r.price_per_ton||0),0) / latestRecs.length);
+      const avgFreight = Math.round(latestRecs.reduce((a,r)=>a+(r.freight_per_ton||0),0) / latestRecs.length);
+      return { price: avgPrice, freight: avgFreight, total: avgPrice+avgFreight, barn: null, brand: null, isAverage: true, fromOtherQuarter: latestQuarter };
+    }
   }
   return null;
 }
@@ -16314,8 +16328,7 @@ function rInvCheck() {
   const tbEl = document.getElementById('ftic-tb');
   if(!tbEl) return;
   const farm = CF==='both' ? 'farm1' : CF;
-  const mon = document.getElementById('ftic-mon')?.value || new Date().toISOString().slice(0,7);
-  if(!document.getElementById('ftic-mon').value) setMonthSelect('ftic-mon', mon);
+  const mon = document.getElementById('ft-mon')?.value || new Date().toISOString().slice(0,7);
 
   const farms = CF==='both' ? ['farm1','farm2'] : [farm];
   const rows = farms.flatMap(f => calcMonthlyUsageDetailByTank(DATA.feedTank, f, mon).map(r=>({...r, farm:f})));

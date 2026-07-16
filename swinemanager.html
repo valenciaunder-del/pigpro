@@ -6485,14 +6485,32 @@ function rShipPlan() {
   });
 
   // 出荷タイミング統計テーブル（曜日別）
-  rShipTimingTable(optDaysArr, farm, shipDays, mean, std);
+  try {
+    rShipTimingTable(optDaysArr, farm, shipDays, mean, std);
+  } catch(e) {
+    console.error('rShipTimingTableエラー:', e);
+    const elT = document.getElementById('sp-timing-table');
+    if(elT) elT.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:12px">表示エラー: ${e.message}</div>`;
+  }
 
   // 肥育中ロット出荷予測
-  rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, usedTargetLw, yieldRate, shipDays);
+  try {
+    rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, usedTargetLw, yieldRate, shipDays);
+  } catch(e) {
+    console.error('rShipForecastエラー:', e);
+    const elF = document.getElementById('sp-forecast');
+    if(elF) elF.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:12px">表示エラー: ${e.message}</div>`;
+  }
 
   // 月間出荷予定
-  initShipMonthSel();
-  rShipMonthly();
+  try {
+    initShipMonthSel();
+    rShipMonthly();
+  } catch(e) {
+    console.error('rShipMonthlyエラー:', e);
+    const elM = document.getElementById('sp-monthly');
+    if(elM) elM.innerHTML = `<div style="color:var(--danger);font-size:12px;padding:12px">表示エラー: ${e.message}</div>`;
+  }
 }
 
 // ロットの実績ADGを計算（g/日）

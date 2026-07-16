@@ -7106,13 +7106,25 @@ function rShipMonthly() {
     }
     if(!allDayPdfs.length) return;
 
-    // PDF合計で正規化
-    const pdfTotal = allDayPdfs.reduce((a,v) => a + v.pdf, 0);
+    // 過去日を先に除外してから正規化する（正規化後に過去日を捨てると、その分の頭数が
+    // どの日にも配分されずに消えてしまい、在場頭数の合計と一致しなくなるため）
+    const futureDayPdfs = allDayPdfs.filter(({dateStr}) => dateStr >= todayStr);
+    if(!futureDayPdfs.length) {
+      // 分布の範囲が全て過去（出荷が大幅に遅れているロット）の場合は、
+      // 残頭数を丸ごと直近の出荷可能日に計上する（頭数を消さないため）
+      const nextDate = nextShipDate(today, shipDays);
+      if(dailyTotals[nextDate]) {
+        dailyTotals[nextDate].head += currentHead;
+        dailyTotals[nextDate].lotBreakdown.push({ id: lot.id, farm, head: currentHead, carryover: true });
+      }
+      return;
+    }
+
+    // 未来日のPDF合計で正規化（在場頭数の合計＝カレンダー上の合計になるようにする）
+    const pdfTotal = futureDayPdfs.reduce((a,v) => a + v.pdf, 0);
     if(pdfTotal <= 0) return;
 
-    // 過去日はスキップ（繰越なし）
-    allDayPdfs.forEach(({ dateStr, pdf }) => {
-      if(dateStr < todayStr) return; // 過去日は無視
+    futureDayPdfs.forEach(({ dateStr, pdf }) => {
       const headForDay = currentHead * (pdf / pdfTotal);
       if(dailyTotals[dateStr]) {
         dailyTotals[dateStr].head += headForDay;

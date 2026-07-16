@@ -6779,9 +6779,10 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
   const DAY_NAMES = ['日','月','火','水','木','金','土'];
   const farmObj = FARMS[farm];
 
+  // 対象ロット：在場頭数が残っている全ロット（一部出荷済みでも残頭数がある限り予測対象にする）
   const allActiveLots = DATA.lots.filter(l => {
     if(l.farm !== farm) return false;
-    return !DATA.ships.some(s=>s.lot_id===l.id);
+    return calcCurrentHead(l) > 0;
   });
 
   if(!allActiveLots.length) {
@@ -6847,7 +6848,7 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
     const elapsedDays = Math.floor((today - startDate) / 86400000);
     const initWeight = lot.start_weight || 30;
     const src = lot.source || '不明';
-    const headCount = lot.count;
+    const headCount = calcCurrentHead(lot); // 残頭数（一部出荷済みロットは残りの頭数のみ予測対象にする）
 
     const srcData = sourceAdgMap[src];
     const useAdg  = (srcData?.adg && srcData.headSum >= 10) ? srcData.adg : farmAdgAll;
@@ -6925,7 +6926,7 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
           <span style="font-weight:700;color:var(--accent2);font-size:14px">${lot.id}</span>
           ${lot.source ? `<span style="font-size:11px;background:var(--panel);color:var(--accent);padding:2px 8px;border-radius:10px">${lot.source}</span>` : ''}
-          <span style="font-size:12px;color:var(--muted)">導入${lot.start_date} / ${headCount}頭 / 経過${elapsedDays}日</span>
+          <span style="font-size:12px;color:var(--muted)">導入${lot.start_date} / ${lot.count!==headCount?`導入${lot.count}頭・残${headCount}頭`:`${headCount}頭`} / 経過${elapsedDays}日</span>
           <span style="margin-left:auto;font-size:12px;font-weight:700;color:${urgColor}">${urgLabel}</span>
         </div>
         <div style="margin-bottom:12px">

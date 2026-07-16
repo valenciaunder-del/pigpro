@@ -6291,7 +6291,15 @@ function setPfGraph(type, el) {
   const chartCard = document.querySelector('#page-performance .card:has(#pf-chart)');
   if(chartCard) chartCard.style.display = (type==='shipplan' || type==='monthly-summary') ? 'none' : '';
   if(type==='shipplan') {
-    rShipPlan();
+    if(typeof Chart === 'undefined') {
+      // Chart.js未ロード時は読み込んでから実行する（未読込のままnew Chart()すると例外で以降の処理が止まるため）
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+      s.onload = () => rShipPlan();
+      document.head.appendChild(s);
+    } else {
+      rShipPlan();
+    }
   } else if(type==='monthly-summary') {
     renderMonthlySummary();
   } else {
@@ -6443,46 +6451,55 @@ function rShipPlan() {
     {label:'90%ile', val:`${p90}日`},
   ].map(k=>`<div style="${kpiStyle}"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">${k.label}</div><div style="font-size:18px;font-weight:700;color:var(--accent2)">${k.val}</div></div>`).join('');
 
-  // 正規分布グラフ
-  const binSize = 5;
-  const minD = Math.floor(Math.min(...days)/binSize)*binSize;
-  const maxD = Math.ceil(Math.max(...days)/binSize)*binSize;
-  const bins = [];
-  const labels = [];
-  for(let d=minD; d<=maxD; d+=binSize) {
-    labels.push(`${d}〜${d+binSize}日`);
-    bins.push(days.filter(v=>v>=d&&v<d+binSize).length);
-  }
-  if(_spChart) { _spChart.destroy(); _spChart = null; }
-  const ctx = document.getElementById('sp-dist-chart').getContext('2d');
-  _spChart = new Chart(ctx, {
-    type:'bar',
-    data:{
-      labels,
-      datasets:[{
-        label:'頭数',
-        data:bins,
-        backgroundColor: bins.map((_,i)=>{
-          const center = minD + i*binSize + binSize/2;
-          if(center>=p25&&center<=p75) return 'rgba(74,222,128,0.7)';
-          if(center>=p10&&center<=p90) return 'rgba(74,222,128,0.4)';
-          return 'rgba(248,113,113,0.4)';
-        }),
-        borderColor:'rgba(74,222,128,0.9)',borderWidth:1
-      }]
-    },
-    options:{
-      responsive:true,
-      plugins:{
-        legend:{display:false},
-        title:{display:true,text:`${farmObj.name} 適正肥育日数分布（目標生体重${usedTargetLw.toFixed(1)}kg）`,color:'var(--text)'}
-      },
-      scales:{
-        x:{ticks:{color:'var(--muted)',font:{size:10}}},
-        y:{ticks:{color:'var(--muted)'},title:{display:true,text:'頭数',color:'var(--muted)'}}
-      }
+  // 正規分布グラフ（Chart.jsが未ロード等で失敗しても、以降の処理は止めない）
+  try {
+    if(typeof Chart === 'undefined') throw new Error('Chart.jsが読み込まれていません');
+    const binSize = 5;
+    const minD = Math.floor(Math.min(...days)/binSize)*binSize;
+    const maxD = Math.ceil(Math.max(...days)/binSize)*binSize;
+    const bins = [];
+    const labels = [];
+    for(let d=minD; d<=maxD; d+=binSize) {
+      labels.push(`${d}〜${d+binSize}日`);
+      bins.push(days.filter(v=>v>=d&&v<d+binSize).length);
     }
-  });
+    if(_spChart) { _spChart.destroy(); _spChart = null; }
+    const ctx = document.getElementById('sp-dist-chart').getContext('2d');
+    _spChart = new Chart(ctx, {
+      type:'bar',
+      data:{
+        labels,
+        datasets:[{
+          label:'頭数',
+          data:bins,
+          backgroundColor: bins.map((_,i)=>{
+            const center = minD + i*binSize + binSize/2;
+            if(center>=p25&&center<=p75) return 'rgba(74,222,128,0.7)';
+            if(center>=p10&&center<=p90) return 'rgba(74,222,128,0.4)';
+            return 'rgba(248,113,113,0.4)';
+          }),
+          borderColor:'rgba(74,222,128,0.9)',borderWidth:1
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{
+          legend:{display:false},
+          title:{display:true,text:`${farmObj.name} 適正肥育日数分布（目標生体重${usedTargetLw.toFixed(1)}kg）`,color:'var(--text)'}
+        },
+        scales:{
+          x:{ticks:{color:'var(--muted)',font:{size:10}}},
+          y:{ticks:{color:'var(--muted)'},title:{display:true,text:'頭数',color:'var(--muted)'}}
+        }
+      }
+    });
+  } catch(e) {
+    console.error('分布グラフ描画エラー:', e);
+    const chartEl = document.getElementById('sp-dist-chart');
+    if(chartEl) chartEl.style.display = 'none';
+    const emptyEl = document.getElementById('sp-dist-empty');
+    if(emptyEl) { emptyEl.style.display = 'block'; emptyEl.textContent = 'グラフ表示エラー: ' + e.message; }
+  }
 
   // 出荷タイミング統計テーブル（曜日別）
   try {

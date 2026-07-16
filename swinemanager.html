@@ -2970,6 +2970,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div class="fg"><label class="fl">品種</label><input class="fi" id="s1-breed" placeholder="例：LWD"></div>
           <div class="fg"><label class="fl">ADG目標(g/日)</label><input class="fi" type="number" id="s1-adg" value="750"></div>
           <div class="fg"><label class="fl">FCR目標</label><input class="fi" type="number" id="s1-fcr" value="2.70" step="0.01"></div>
+          <div class="fg"><label class="fl">夏季(7/1〜9/15)ADG低下率(%)</label><input class="fi" type="number" id="s1-summer-adg" value="20" step="1" min="0" max="90"></div>
           <div class="fg" style="grid-column:span 2"><label class="fl" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="s1-skip-inv-tank"> 棚卸データからタンク残量を自動生成しない（API等で直接タンクデータを入れる場合）</label></div>
         </div>
         <div style="margin-top:12px">
@@ -3014,6 +3015,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div class="fg"><label class="fl">品種</label><input class="fi" id="s2-breed" placeholder="例：LWD"></div>
           <div class="fg"><label class="fl">ADG目標(g/日)</label><input class="fi" type="number" id="s2-adg" value="740"></div>
           <div class="fg"><label class="fl">FCR目標</label><input class="fi" type="number" id="s2-fcr" value="2.75" step="0.01"></div>
+          <div class="fg"><label class="fl">夏季(7/1〜9/15)ADG低下率(%)</label><input class="fi" type="number" id="s2-summer-adg" value="20" step="1" min="0" max="90"></div>
           <div class="fg" style="grid-column:span 2"><label class="fl" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="s2-skip-inv-tank"> 棚卸データからタンク残量を自動生成しない（API等で直接タンクデータを入れる場合）</label></div>
         </div>
         <div style="margin-top:12px">
@@ -3666,13 +3668,13 @@ const api = {
 let CF = 'farm1', CP = 'dashboard';
 let DATA = { lots:[], weights:[], feeds:[], deaths:[], ships:[], costs:[], sales:[], ival:[], balance:[], feedMaster:[], feedPurchase:[], invDaily:[], slaughter:[], slaughterDetail:[], feedTank:[] };
 const FARMS = {
-  farm1: { name:'中田農場', short:'中田農場', adgT:750, fcrT:2.70, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5,
+  farm1: { name:'中田農場', short:'中田農場', adgT:750, fcrT:2.70, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5, summerAdgReduction:20,
     barns: [
       { id:'A', name:'A豚舎', location:'北側', tank_piglet:1, tank_hog:2, tank_piglet_label:'子豚A', tank_hog_label:'肉豚A' },
       { id:'B', name:'B豚舎', location:'南側', tank_piglet:3, tank_hog:4, tank_piglet_label:'子豚B', tank_hog_label:'肉豚B' },
     ]
   },
-  farm2: { name:'米山農場', short:'米山農場', adgT:740, fcrT:2.75, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5,
+  farm2: { name:'米山農場', short:'米山農場', adgT:740, fcrT:2.75, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5, summerAdgReduction:20,
     barns: [
       { id:'A', name:'A豚舎', location:'道路側', tank_piglet:3, tank_hog:4, tank_piglet_label:'子豚3', tank_hog_label:'肉豚4' },
       { id:'B', name:'B豚舎', location:'川側',   tank_piglet:2, tank_hog:1, tank_piglet_label:'子豚2', tank_hog_label:'肉豚1' },
@@ -5037,6 +5039,11 @@ function initFarmSettingsModal() {
   document.getElementById('s1-wt-max').value = FARMS.farm1.targetCwMax||'';
   document.getElementById('s2-wt-min').value = FARMS.farm2.targetCwMin||'';
   document.getElementById('s2-wt-max').value = FARMS.farm2.targetCwMax||'';
+  // 夏季ADG低下率
+  const s1SummerEl = document.getElementById('s1-summer-adg');
+  const s2SummerEl = document.getElementById('s2-summer-adg');
+  if(s1SummerEl) s1SummerEl.value = FARMS.farm1.summerAdgReduction ?? 20;
+  if(s2SummerEl) s2SummerEl.value = FARMS.farm2.summerAdgReduction ?? 20;
   // 共通歩留まり
   const cy1 = document.getElementById('cy-仙台中央卸売市場株式会社');
   const cy2 = document.getElementById('cy-宮城県食肉流通公社');
@@ -6701,18 +6708,19 @@ const FORECAST_TARGET_LW  = FORECAST_TARGET_CW / FORECAST_YIELD;
 const ADG_EARLY_COEF = 1.08;
 const ADG_LATE_COEF  = 0.88;
 const ADG_BREAK_DAY  = 75;
-// 夏季停滞（7/1〜9/15はADGが通常の80%＝約20%減になると想定。年は問わずMM-DDで判定）
-const SUMMER_ADG_COEF   = 0.80;
+// 夏季停滞（7/1〜9/15はADGが低下すると想定。低下率は農場設定(FARMS[farm].summerAdgReduction、%)で農場ごとに指定。年は問わずMM-DDで判定）
 const SUMMER_START_MMDD = 701;  // 7月1日
 const SUMMER_END_MMDD   = 915;  // 9月15日
 const isSummerDate = (d) => {
   const md = (d.getMonth()+1)*100 + d.getDate();
   return md >= SUMMER_START_MMDD && md <= SUMMER_END_MMDD;
 };
+// 農場ごとの夏季ADG係数（例：低下率20% → 0.80）。未設定時は20%減をデフォルトとする
+const getSummerAdgCoef = (farm) => 1 - ((FARMS[farm]?.summerAdgReduction ?? 20) / 100);
 
 // 導入日から経過日数分の生体重を日次シミュレーションで計算する
-// 序盤(〜75日)/後半(75日〜)の2段階成長係数に加え、暦日が夏季(7/1〜9/15)に該当する日は追加でADGを落とす
-function growthLw(initWeight, adgAvg, elapsedDays, startDate) {
+// 序盤(〜75日)/後半(75日〜)の2段階成長係数に加え、暦日が夏季(7/1〜9/15)に該当する日は農場設定の低下率でADGを落とす
+function growthLw(initWeight, adgAvg, elapsedDays, startDate, farm) {
   const adgEBase = adgAvg * ADG_EARLY_COEF / 1000;
   const adgLBase = adgAvg * ADG_LATE_COEF  / 1000;
   if(!startDate) {
@@ -6720,17 +6728,18 @@ function growthLw(initWeight, adgAvg, elapsedDays, startDate) {
     if(elapsedDays <= ADG_BREAK_DAY) return initWeight + adgEBase * elapsedDays;
     return initWeight + adgEBase * ADG_BREAK_DAY + adgLBase * (elapsedDays - ADG_BREAK_DAY);
   }
+  const summerCoef = getSummerAdgCoef(farm);
   let weight = initWeight;
   for(let d=0; d<elapsedDays; d++) {
     const date = new Date(startDate); date.setDate(date.getDate()+d);
     const base = d < ADG_BREAK_DAY ? adgEBase : adgLBase;
-    weight += isSummerDate(date) ? base*SUMMER_ADG_COEF : base;
+    weight += isSummerDate(date) ? base*summerCoef : base;
   }
   return weight;
 }
 
-// 目標生体重に到達するまでの日数を日次シミュレーションで求める（夏季停滞を考慮）
-function daysToTargetLw(initWeight, adgAvg, targetLw, startDate) {
+// 目標生体重に到達するまでの日数を日次シミュレーションで求める（農場ごとの夏季停滞を考慮）
+function daysToTargetLw(initWeight, adgAvg, targetLw, startDate, farm) {
   const adgEBase = adgAvg * ADG_EARLY_COEF / 1000;
   const adgLBase = adgAvg * ADG_LATE_COEF  / 1000;
   if(!startDate) {
@@ -6739,12 +6748,13 @@ function daysToTargetLw(initWeight, adgAvg, targetLw, startDate) {
     if(targetLw <= lwAtBreak) return Math.ceil((targetLw - initWeight) / adgEBase);
     return Math.ceil(ADG_BREAK_DAY + (targetLw - lwAtBreak) / adgLBase);
   }
+  const summerCoef = getSummerAdgCoef(farm);
   let weight = initWeight, d = 0;
   const maxDays = 400; // 無限ループ防止の安全弁
   while(weight < targetLw && d < maxDays) {
     const date = new Date(startDate); date.setDate(date.getDate()+d);
     const base = d < ADG_BREAK_DAY ? adgEBase : adgLBase;
-    weight += isSummerDate(date) ? base*SUMMER_ADG_COEF : base;
+    weight += isSummerDate(date) ? base*summerCoef : base;
     d++;
   }
   return d;
@@ -6867,13 +6877,13 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
       ? `導入元「${src}」${srcData.headSum}頭実績 ADG${useAdg}g/日`
       : `農場全体実績 ADG${useAdg}g/日`;
 
-    const currentLw = growthLw(initWeight, useAdg, elapsedDays, startDate);
+    const currentLw = growthLw(initWeight, useAdg, elapsedDays, startDate, farm);
     const currentCw = currentLw * FORECAST_YIELD;
     const sigma = std || 18;
 
     // 5グループの日齢を計算（正規分布のパーセンタイル）
     // p10=早出し境界, p30=準早出し境界, p70=準遅出し境界, p90=オールアウト境界
-    const peakDay = daysToTargetLw(initWeight, useAdg, FORECAST_TARGET_LW, startDate);
+    const peakDay = daysToTargetLw(initWeight, useAdg, FORECAST_TARGET_LW, startDate, farm);
     const p10d = Math.max(peakDay - Math.round(sigma * 1.28), elapsedDays + 1);
     const p30d = Math.max(Math.round((p10d + peakDay) / 2), elapsedDays + 1);
     const p70d = Math.max(Math.round((peakDay + peakDay + Math.round(sigma * 1.28)) / 2), elapsedDays + 1);
@@ -6962,7 +6972,7 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
           ${groupRows}
         </div>
         <div style="font-size:11px;color:var(--muted)">
-          ※ ${adgSrcLabel} → 2段階成長（〜${ADG_BREAK_DAY}日: ${Math.round(useAdg*ADG_EARLY_COEF)}g/日 / ${ADG_BREAK_DAY}日〜: ${Math.round(useAdg*ADG_LATE_COEF)}g/日）＋夏季停滞（7/1〜9/15はさらに${Math.round((1-SUMMER_ADG_COEF)*100)}%減）σ=${Math.round(sigma)}日
+          ※ ${adgSrcLabel} → 2段階成長（〜${ADG_BREAK_DAY}日: ${Math.round(useAdg*ADG_EARLY_COEF)}g/日 / ${ADG_BREAK_DAY}日〜: ${Math.round(useAdg*ADG_LATE_COEF)}g/日）＋夏季停滞（7/1〜9/15はさらに${farmObj.summerAdgReduction ?? 20}%減）σ=${Math.round(sigma)}日
         </div>
       </div>`;
   }).join('');
@@ -7067,7 +7077,7 @@ function rShipMonthly() {
     }
 
     const p50v = (typeof daysToTargetLw === 'function')
-      ? daysToTargetLw(lot.start_weight||30, useAdg, fcTargetLw, startDate)
+      ? daysToTargetLw(lot.start_weight||30, useAdg, fcTargetLw, startDate, farm)
       : Math.round((fcTargetLw - (lot.start_weight||30)) / (useAdg/1000));
     const sigma = 18; // 固定σ（データ蓄積後に導入元別σに更新予定）
     const mean = p50v;
@@ -17455,6 +17465,8 @@ async function saveFarm() {
   FARMS.farm2.adgT = parseInt(document.getElementById('s2-adg').value)||740;
   FARMS.farm1.fcrT = parseFloat(document.getElementById('s1-fcr').value)||2.70;
   FARMS.farm2.fcrT = parseFloat(document.getElementById('s2-fcr').value)||2.75;
+  FARMS.farm1.summerAdgReduction = parseFloat(document.getElementById('s1-summer-adg')?.value) || 0;
+  FARMS.farm2.summerAdgReduction = parseFloat(document.getElementById('s2-summer-adg')?.value) || 0;
   FARMS.farm1.skipInvTankSync = document.getElementById('s1-skip-inv-tank')?.checked || false;
   FARMS.farm2.skipInvTankSync = document.getElementById('s2-skip-inv-tank')?.checked || false;
   FARMS.farm1.breed = document.getElementById('s1-breed').value||'';
@@ -17497,8 +17509,8 @@ async function saveFarm() {
   Object.assign(TANK_NAME_MAP, buildTankNameMap());
   // Supabaseに保存（localStorageにも念のため）
   const settingsToSave = {
-    farm1: { name:FARMS.farm1.name, adgT:FARMS.farm1.adgT, fcrT:FARMS.farm1.fcrT, breed:FARMS.farm1.breed, defaultYield:FARMS.farm1.defaultYield, yields:FARMS.farm1.yields, sources:FARMS.farm1.sources, targetCwMin:FARMS.farm1.targetCwMin, targetCwMax:FARMS.farm1.targetCwMax, shipDays:FARMS.farm1.shipDays, barns:FARMS.farm1.barns, skipInvTankSync:FARMS.farm1.skipInvTankSync },
-    farm2: { name:FARMS.farm2.name, adgT:FARMS.farm2.adgT, fcrT:FARMS.farm2.fcrT, breed:FARMS.farm2.breed, defaultYield:FARMS.farm2.defaultYield, yields:FARMS.farm2.yields, sources:FARMS.farm2.sources, targetCwMin:FARMS.farm2.targetCwMin, targetCwMax:FARMS.farm2.targetCwMax, shipDays:FARMS.farm2.shipDays, barns:FARMS.farm2.barns, skipInvTankSync:FARMS.farm2.skipInvTankSync },
+    farm1: { name:FARMS.farm1.name, adgT:FARMS.farm1.adgT, fcrT:FARMS.farm1.fcrT, breed:FARMS.farm1.breed, defaultYield:FARMS.farm1.defaultYield, yields:FARMS.farm1.yields, sources:FARMS.farm1.sources, targetCwMin:FARMS.farm1.targetCwMin, targetCwMax:FARMS.farm1.targetCwMax, shipDays:FARMS.farm1.shipDays, barns:FARMS.farm1.barns, skipInvTankSync:FARMS.farm1.skipInvTankSync, summerAdgReduction:FARMS.farm1.summerAdgReduction },
+    farm2: { name:FARMS.farm2.name, adgT:FARMS.farm2.adgT, fcrT:FARMS.farm2.fcrT, breed:FARMS.farm2.breed, defaultYield:FARMS.farm2.defaultYield, yields:FARMS.farm2.yields, sources:FARMS.farm2.sources, targetCwMin:FARMS.farm2.targetCwMin, targetCwMax:FARMS.farm2.targetCwMax, shipDays:FARMS.farm2.shipDays, barns:FARMS.farm2.barns, skipInvTankSync:FARMS.farm2.skipInvTankSync, summerAdgReduction:FARMS.farm2.summerAdgReduction },
     common: { yields: COMMON_YIELDS },
   };
   try {

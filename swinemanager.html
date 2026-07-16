@@ -5143,6 +5143,17 @@ function renderPage(id) {
   if(id==='lot')        { rLotFull(); fillSelects(); rDthTb(); rWtTb(); rFdTb(); }
   if(id==='performance') {
     initPfYearSelect(); // 年選択肢を最新データで更新
+    // グラフ種類の状態を標準（ADG分布）にリセットしてから描画する。
+    // 「出荷計画」「月次サマリー」等を選んだ状態のまま農場切替・再訪問すると、
+    // rPerfFull()が即returnしてKPIカードが二度と再計算されなくなるバグがあったため
+    PF_GRAPH_TYPE = 'adg-dist';
+    document.querySelectorAll('.pf-graph-btn').forEach(b=>b.classList.remove('active'));
+    const defaultBtn = document.querySelector('.pf-graph-btn[onclick*="adg-dist"]');
+    if(defaultBtn) defaultBtn.classList.add('active');
+    const spArea = document.getElementById('pf-shipplan-area'); if(spArea) spArea.style.display = 'none';
+    const msArea = document.getElementById('pf-monthly-summary'); if(msArea) msArea.style.display = 'none';
+    const cmpCard = document.getElementById('pf-cmp-card'); if(cmpCard) cmpCard.style.display = 'none';
+    const chartCard = document.querySelector('#page-performance .card:has(#pf-chart)'); if(chartCard) chartCard.style.display = '';
     onPfModeChange(); // 表示モード（月次/年間/期間指定）の表示切替を初期化
     // Chart.jsをロード
     if(!window.Chart) {

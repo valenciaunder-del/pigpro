@@ -6690,20 +6690,53 @@ const FORECAST_TARGET_LW  = FORECAST_TARGET_CW / FORECAST_YIELD;
 const ADG_EARLY_COEF = 1.08;
 const ADG_LATE_COEF  = 0.88;
 const ADG_BREAK_DAY  = 75;
+// 夏季停滞（7/1〜9/15はADGが通常の80%＝約20%減になると想定。年は問わずMM-DDで判定）
+const SUMMER_ADG_COEF   = 0.80;
+const SUMMER_START_MMDD = 701;  // 7月1日
+const SUMMER_END_MMDD   = 915;  // 9月15日
+const isSummerDate = (d) => {
+  const md = (d.getMonth()+1)*100 + d.getDate();
+  return md >= SUMMER_START_MMDD && md <= SUMMER_END_MMDD;
+};
 
-function growthLw(initWeight, adgAvg, elapsedDays) {
-  const adgE = adgAvg * ADG_EARLY_COEF / 1000;
-  const adgL = adgAvg * ADG_LATE_COEF  / 1000;
-  if(elapsedDays <= ADG_BREAK_DAY) return initWeight + adgE * elapsedDays;
-  return initWeight + adgE * ADG_BREAK_DAY + adgL * (elapsedDays - ADG_BREAK_DAY);
+// 導入日から経過日数分の生体重を日次シミュレーションで計算する
+// 序盤(〜75日)/後半(75日〜)の2段階成長係数に加え、暦日が夏季(7/1〜9/15)に該当する日は追加でADGを落とす
+function growthLw(initWeight, adgAvg, elapsedDays, startDate) {
+  const adgEBase = adgAvg * ADG_EARLY_COEF / 1000;
+  const adgLBase = adgAvg * ADG_LATE_COEF  / 1000;
+  if(!startDate) {
+    // startDate未指定時（暦日を考慮できない場面用）は季節補正なしの従来計算にフォールバック
+    if(elapsedDays <= ADG_BREAK_DAY) return initWeight + adgEBase * elapsedDays;
+    return initWeight + adgEBase * ADG_BREAK_DAY + adgLBase * (elapsedDays - ADG_BREAK_DAY);
+  }
+  let weight = initWeight;
+  for(let d=0; d<elapsedDays; d++) {
+    const date = new Date(startDate); date.setDate(date.getDate()+d);
+    const base = d < ADG_BREAK_DAY ? adgEBase : adgLBase;
+    weight += isSummerDate(date) ? base*SUMMER_ADG_COEF : base;
+  }
+  return weight;
 }
 
-function daysToTargetLw(initWeight, adgAvg, targetLw) {
-  const adgE = adgAvg * ADG_EARLY_COEF / 1000;
-  const adgL = adgAvg * ADG_LATE_COEF  / 1000;
-  const lwAtBreak = initWeight + adgE * ADG_BREAK_DAY;
-  if(targetLw <= lwAtBreak) return Math.ceil((targetLw - initWeight) / adgE);
-  return Math.ceil(ADG_BREAK_DAY + (targetLw - lwAtBreak) / adgL);
+// 目標生体重に到達するまでの日数を日次シミュレーションで求める（夏季停滞を考慮）
+function daysToTargetLw(initWeight, adgAvg, targetLw, startDate) {
+  const adgEBase = adgAvg * ADG_EARLY_COEF / 1000;
+  const adgLBase = adgAvg * ADG_LATE_COEF  / 1000;
+  if(!startDate) {
+    // startDate未指定時（暦日を考慮できない場面用）は季節補正なしの従来計算にフォールバック
+    const lwAtBreak = initWeight + adgEBase * ADG_BREAK_DAY;
+    if(targetLw <= lwAtBreak) return Math.ceil((targetLw - initWeight) / adgEBase);
+    return Math.ceil(ADG_BREAK_DAY + (targetLw - lwAtBreak) / adgLBase);
+  }
+  let weight = initWeight, d = 0;
+  const maxDays = 400; // 無限ループ防止の安全弁
+  while(weight < targetLw && d < maxDays) {
+    const date = new Date(startDate); date.setDate(date.getDate()+d);
+    const base = d < ADG_BREAK_DAY ? adgEBase : adgLBase;
+    weight += isSummerDate(date) ? base*SUMMER_ADG_COEF : base;
+    d++;
+  }
+  return d;
 }
 
 function calcSourceAdgMap(farm) {
@@ -6822,13 +6855,13 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
       ? `導入元「${src}」${srcData.headSum}頭実績 ADG${useAdg}g/日`
       : `農場全体実績 ADG${useAdg}g/日`;
 
-    const currentLw = growthLw(initWeight, useAdg, elapsedDays);
+    const currentLw = growthLw(initWeight, useAdg, elapsedDays, startDate);
     const currentCw = currentLw * FORECAST_YIELD;
     const sigma = std || 18;
 
     // 5グループの日齢を計算（正規分布のパーセンタイル）
     // p10=早出し境界, p30=準早出し境界, p70=準遅出し境界, p90=オールアウト境界
-    const peakDay = daysToTargetLw(initWeight, useAdg, FORECAST_TARGET_LW);
+    const peakDay = daysToTargetLw(initWeight, useAdg, FORECAST_TARGET_LW, startDate);
     const p10d = Math.max(peakDay - Math.round(sigma * 1.28), elapsedDays + 1);
     const p30d = Math.max(Math.round((p10d + peakDay) / 2), elapsedDays + 1);
     const p70d = Math.max(Math.round((peakDay + peakDay + Math.round(sigma * 1.28)) / 2), elapsedDays + 1);
@@ -6917,7 +6950,7 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
           ${groupRows}
         </div>
         <div style="font-size:11px;color:var(--muted)">
-          ※ ${adgSrcLabel} → 2段階成長（〜${ADG_BREAK_DAY}日: ${Math.round(useAdg*ADG_EARLY_COEF)}g/日 / ${ADG_BREAK_DAY}日〜: ${Math.round(useAdg*ADG_LATE_COEF)}g/日）σ=${Math.round(sigma)}日
+          ※ ${adgSrcLabel} → 2段階成長（〜${ADG_BREAK_DAY}日: ${Math.round(useAdg*ADG_EARLY_COEF)}g/日 / ${ADG_BREAK_DAY}日〜: ${Math.round(useAdg*ADG_LATE_COEF)}g/日）＋夏季停滞（7/1〜9/15はさらに${Math.round((1-SUMMER_ADG_COEF)*100)}%減）σ=${Math.round(sigma)}日
         </div>
       </div>`;
   }).join('');
@@ -7022,7 +7055,7 @@ function rShipMonthly() {
     }
 
     const p50v = (typeof daysToTargetLw === 'function')
-      ? daysToTargetLw(lot.start_weight||30, useAdg, fcTargetLw)
+      ? daysToTargetLw(lot.start_weight||30, useAdg, fcTargetLw, startDate)
       : Math.round((fcTargetLw - (lot.start_weight||30)) / (useAdg/1000));
     const sigma = 18; // 固定σ（データ蓄積後に導入元別σに更新予定）
     const mean = p50v;

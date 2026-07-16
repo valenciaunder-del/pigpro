@@ -6878,12 +6878,12 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
       : `農場全体実績 ADG${useAdg}g/日`;
 
     const currentLw = growthLw(initWeight, useAdg, elapsedDays, startDate, farm);
-    const currentCw = currentLw * FORECAST_YIELD;
+    const currentCw = currentLw * yieldRate;
     const sigma = std || 18;
 
     // 5グループの日齢を計算（正規分布のパーセンタイル）
     // p10=早出し境界, p30=準早出し境界, p70=準遅出し境界, p90=オールアウト境界
-    const peakDay = daysToTargetLw(initWeight, useAdg, FORECAST_TARGET_LW, startDate, farm);
+    const peakDay = daysToTargetLw(initWeight, useAdg, targetLw, startDate, farm);
     const p10d = Math.max(peakDay - Math.round(sigma * 1.28), elapsedDays + 1);
     const p30d = Math.max(Math.round((p10d + peakDay) / 2), elapsedDays + 1);
     const p70d = Math.max(Math.round((peakDay + peakDay + Math.round(sigma * 1.28)) / 2), elapsedDays + 1);
@@ -6916,7 +6916,7 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
     const urgColor = daysToStart <= 0 ? 'var(--danger)' : daysToStart <= 14 ? 'var(--warn)' : 'var(--f1)';
     const urgLabel = daysToStart <= 0 ? '🔴 出荷開始時期' : daysToStart <= 14 ? `🟡 ${daysToStart}日後に開始` : `🟢 ${daysToStart}日後〜`;
 
-    const pct = Math.min(100, Math.round((currentLw - initWeight) / (FORECAST_TARGET_LW - initWeight) * 100));
+    const pct = Math.min(100, Math.round((currentLw - initWeight) / (targetLw - initWeight) * 100));
     const barColor = pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warn)' : 'var(--f1)';
 
     // グループ行レンダリング
@@ -6954,7 +6954,7 @@ function rShipForecast(farm, mean, std, p10, p25, p50, p75, p90, targetLw, yield
           <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:3px">
             <span>導入 ${initWeight}kg</span>
             <span style="color:${barColor};font-weight:600">現在推定 ${currentCw.toFixed(1)}kg枝重 / 生体${currentLw.toFixed(1)}kg</span>
-            <span>目標 ${FORECAST_TARGET_CW}kg枝重</span>
+            <span>目標 ${(targetLw*yieldRate).toFixed(1)}kg枝重（生体${targetLw.toFixed(1)}kg）</span>
           </div>
           <div style="background:var(--panel);border-radius:4px;height:6px;overflow:hidden">
             <div style="background:${barColor};height:100%;width:${pct}%;transition:width .3s"></div>
@@ -7057,9 +7057,10 @@ function rShipMonthly() {
     const startDate = new Date(lot.start_date);
 
     // 成長曲線ベースで目標到達日を計算（growthLw/daysToTargetLw を使用）
-    // FORECAST_TARGET_LW=120kg（枝重78kg・歩留65%）が定義済みならそれを使用
-    const fcTargetLw = (typeof FORECAST_TARGET_LW !== 'undefined') ? FORECAST_TARGET_LW
-      : (((farmObj.targetCwMin||76) + (farmObj.targetCwMax||82.5)) / 2) / yieldRate;
+    // 目標生体重は「出荷計画」ページ上部の入力欄(sp-target-lw)の値を使う（他セクションと一致させるため）
+    const fcTargetLw = parseFloat(document.getElementById('sp-target-lw')?.value)
+      || (typeof FORECAST_TARGET_LW !== 'undefined' ? FORECAST_TARGET_LW
+      : (((farmObj.targetCwMin||76) + (farmObj.targetCwMax||82.5)) / 2) / yieldRate);
 
     // 導入元別ADGを取得（calcSourceAdgMapが定義済みの場合）
     let useAdg;

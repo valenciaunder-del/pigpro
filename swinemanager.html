@@ -2971,6 +2971,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div class="fg"><label class="fl">ADG目標(g/日)</label><input class="fi" type="number" id="s1-adg" value="750"></div>
           <div class="fg"><label class="fl">FCR目標</label><input class="fi" type="number" id="s1-fcr" value="2.70" step="0.01"></div>
           <div class="fg"><label class="fl">夏季(7/1〜9/15)ADG低下率(%)</label><input class="fi" type="number" id="s1-summer-adg" value="20" step="1" min="0" max="90"></div>
+          <div class="fg"><label class="fl">目標出荷生体重(kg)</label><input class="fi" type="number" id="s1-target-lw" value="120" step="0.5"></div>
           <div class="fg" style="grid-column:span 2"><label class="fl" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="s1-skip-inv-tank"> 棚卸データからタンク残量を自動生成しない（API等で直接タンクデータを入れる場合）</label></div>
         </div>
         <div style="margin-top:12px">
@@ -3016,6 +3017,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div class="fg"><label class="fl">ADG目標(g/日)</label><input class="fi" type="number" id="s2-adg" value="740"></div>
           <div class="fg"><label class="fl">FCR目標</label><input class="fi" type="number" id="s2-fcr" value="2.75" step="0.01"></div>
           <div class="fg"><label class="fl">夏季(7/1〜9/15)ADG低下率(%)</label><input class="fi" type="number" id="s2-summer-adg" value="20" step="1" min="0" max="90"></div>
+          <div class="fg"><label class="fl">目標出荷生体重(kg)</label><input class="fi" type="number" id="s2-target-lw" value="120" step="0.5"></div>
           <div class="fg" style="grid-column:span 2"><label class="fl" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="s2-skip-inv-tank"> 棚卸データからタンク残量を自動生成しない（API等で直接タンクデータを入れる場合）</label></div>
         </div>
         <div style="margin-top:12px">
@@ -3668,13 +3670,13 @@ const api = {
 let CF = 'farm1', CP = 'dashboard';
 let DATA = { lots:[], weights:[], feeds:[], deaths:[], ships:[], costs:[], sales:[], ival:[], balance:[], feedMaster:[], feedPurchase:[], invDaily:[], slaughter:[], slaughterDetail:[], feedTank:[] };
 const FARMS = {
-  farm1: { name:'中田農場', short:'中田農場', adgT:750, fcrT:2.70, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5, summerAdgReduction:20,
+  farm1: { name:'中田農場', short:'中田農場', adgT:750, fcrT:2.70, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5, summerAdgReduction:20, targetLiveWeight:120,
     barns: [
       { id:'A', name:'A豚舎', location:'北側', tank_piglet:1, tank_hog:2, tank_piglet_label:'子豚A', tank_hog_label:'肉豚A' },
       { id:'B', name:'B豚舎', location:'南側', tank_piglet:3, tank_hog:4, tank_piglet_label:'子豚B', tank_hog_label:'肉豚B' },
     ]
   },
-  farm2: { name:'米山農場', short:'米山農場', adgT:740, fcrT:2.75, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5, summerAdgReduction:20,
+  farm2: { name:'米山農場', short:'米山農場', adgT:740, fcrT:2.75, breed:'', defaultYield:78, yields:{}, sources:[], targetCwMin:76, targetCwMax:82.5, summerAdgReduction:20, targetLiveWeight:120,
     barns: [
       { id:'A', name:'A豚舎', location:'道路側', tank_piglet:3, tank_hog:4, tank_piglet_label:'子豚3', tank_hog_label:'肉豚4' },
       { id:'B', name:'B豚舎', location:'川側',   tank_piglet:2, tank_hog:1, tank_piglet_label:'子豚2', tank_hog_label:'肉豚1' },
@@ -5044,6 +5046,10 @@ function initFarmSettingsModal() {
   const s2SummerEl = document.getElementById('s2-summer-adg');
   if(s1SummerEl) s1SummerEl.value = FARMS.farm1.summerAdgReduction ?? 20;
   if(s2SummerEl) s2SummerEl.value = FARMS.farm2.summerAdgReduction ?? 20;
+  const s1TargetLwEl = document.getElementById('s1-target-lw');
+  const s2TargetLwEl = document.getElementById('s2-target-lw');
+  if(s1TargetLwEl) s1TargetLwEl.value = FARMS.farm1.targetLiveWeight ?? 120;
+  if(s2TargetLwEl) s2TargetLwEl.value = FARMS.farm2.targetLiveWeight ?? 120;
   // 共通歩留まり
   const cy1 = document.getElementById('cy-仙台中央卸売市場株式会社');
   const cy2 = document.getElementById('cy-宮城県食肉流通公社');
@@ -6340,21 +6346,23 @@ let _spChart = null;
 function rShipPlan() {
   const farm = CF !== 'both' ? CF : (document.getElementById('pf-f-farm')?.value || 'farm1');
   const farmObj = FARMS[farm];
-  // 歩留はFORECAST_YIELD固定（78kg枝重・65%）または農場設定の主要出荷先から取得
-  // 個頭計算では各頭の出荷先ごとに個別歩留を使う（下のoptDaysArr計算内で適用）
-  const defaultYieldRate = (typeof FORECAST_YIELD !== 'undefined') ? FORECAST_YIELD : getYieldRate(farm) / 100;
+  const yieldRate = getYieldRate(farm) / 100;
   const cwMin = farmObj.targetCwMin || 76;
   const cwMax = farmObj.targetCwMax || 82.5;
-  const cwTarget = (typeof FORECAST_TARGET_CW !== 'undefined') ? FORECAST_TARGET_CW : (cwMin + cwMax) / 2;
-  const yieldRate = defaultYieldRate; // 後方互換のため保持（個頭計算では上書き）
-  const targetLw = (typeof FORECAST_TARGET_LW !== 'undefined') ? FORECAST_TARGET_LW : cwTarget / yieldRate;
+  // 目標生体重は農場設定（targetLiveWeight）を正とする。未設定の農場のみ枝肉重量目標÷歩留りから自動算出
+  const targetLw = farmObj.targetLiveWeight || ((cwMin + cwMax) / 2) / yieldRate;
+  const cwTarget = targetLw * yieldRate;
   const shipDays = farmObj.shipDays || [];
 
-  // 目標生体重を表示
+  // 目標生体重を表示（農場を切り替えた時だけ、その農場の設定値に入力欄をリセットする。
+  // 同じ農場を見ている間にユーザーが仮の数値へ変更した場合はそれを保持する）
   const autoEl = document.getElementById('sp-auto-lw');
-  if(autoEl) autoEl.textContent = targetLw.toFixed(1) + 'kg（枝肉目標' + cwTarget.toFixed(1) + 'kg ÷ 歩留' + (yieldRate*100).toFixed(1) + '%）';
+  if(autoEl) autoEl.textContent = targetLw.toFixed(1) + 'kg（枝肉目標' + cwTarget.toFixed(1) + 'kg ÷ 歩留' + (yieldRate*100).toFixed(1) + '%、農場設定で固定変更可）';
   const targetInput = document.getElementById('sp-target-lw');
-  if(targetInput && !targetInput._userEdited) targetInput.value = targetLw.toFixed(1);
+  if(targetInput && targetInput.dataset.lastFarm !== farm) {
+    targetInput.value = targetLw.toFixed(1);
+    targetInput.dataset.lastFarm = farm;
+  }
 
   // 頭別枝肉データを取得
   const details = DATA.slaughterDetail || [];
@@ -17468,6 +17476,8 @@ async function saveFarm() {
   FARMS.farm2.fcrT = parseFloat(document.getElementById('s2-fcr').value)||2.75;
   FARMS.farm1.summerAdgReduction = parseFloat(document.getElementById('s1-summer-adg')?.value) || 0;
   FARMS.farm2.summerAdgReduction = parseFloat(document.getElementById('s2-summer-adg')?.value) || 0;
+  FARMS.farm1.targetLiveWeight = parseFloat(document.getElementById('s1-target-lw')?.value) || 120;
+  FARMS.farm2.targetLiveWeight = parseFloat(document.getElementById('s2-target-lw')?.value) || 120;
   FARMS.farm1.skipInvTankSync = document.getElementById('s1-skip-inv-tank')?.checked || false;
   FARMS.farm2.skipInvTankSync = document.getElementById('s2-skip-inv-tank')?.checked || false;
   FARMS.farm1.breed = document.getElementById('s1-breed').value||'';
@@ -17510,8 +17520,8 @@ async function saveFarm() {
   Object.assign(TANK_NAME_MAP, buildTankNameMap());
   // Supabaseに保存（localStorageにも念のため）
   const settingsToSave = {
-    farm1: { name:FARMS.farm1.name, adgT:FARMS.farm1.adgT, fcrT:FARMS.farm1.fcrT, breed:FARMS.farm1.breed, defaultYield:FARMS.farm1.defaultYield, yields:FARMS.farm1.yields, sources:FARMS.farm1.sources, targetCwMin:FARMS.farm1.targetCwMin, targetCwMax:FARMS.farm1.targetCwMax, shipDays:FARMS.farm1.shipDays, barns:FARMS.farm1.barns, skipInvTankSync:FARMS.farm1.skipInvTankSync, summerAdgReduction:FARMS.farm1.summerAdgReduction },
-    farm2: { name:FARMS.farm2.name, adgT:FARMS.farm2.adgT, fcrT:FARMS.farm2.fcrT, breed:FARMS.farm2.breed, defaultYield:FARMS.farm2.defaultYield, yields:FARMS.farm2.yields, sources:FARMS.farm2.sources, targetCwMin:FARMS.farm2.targetCwMin, targetCwMax:FARMS.farm2.targetCwMax, shipDays:FARMS.farm2.shipDays, barns:FARMS.farm2.barns, skipInvTankSync:FARMS.farm2.skipInvTankSync, summerAdgReduction:FARMS.farm2.summerAdgReduction },
+    farm1: { name:FARMS.farm1.name, adgT:FARMS.farm1.adgT, fcrT:FARMS.farm1.fcrT, breed:FARMS.farm1.breed, defaultYield:FARMS.farm1.defaultYield, yields:FARMS.farm1.yields, sources:FARMS.farm1.sources, targetCwMin:FARMS.farm1.targetCwMin, targetCwMax:FARMS.farm1.targetCwMax, shipDays:FARMS.farm1.shipDays, barns:FARMS.farm1.barns, skipInvTankSync:FARMS.farm1.skipInvTankSync, summerAdgReduction:FARMS.farm1.summerAdgReduction, targetLiveWeight:FARMS.farm1.targetLiveWeight },
+    farm2: { name:FARMS.farm2.name, adgT:FARMS.farm2.adgT, fcrT:FARMS.farm2.fcrT, breed:FARMS.farm2.breed, defaultYield:FARMS.farm2.defaultYield, yields:FARMS.farm2.yields, sources:FARMS.farm2.sources, targetCwMin:FARMS.farm2.targetCwMin, targetCwMax:FARMS.farm2.targetCwMax, shipDays:FARMS.farm2.shipDays, barns:FARMS.farm2.barns, skipInvTankSync:FARMS.farm2.skipInvTankSync, summerAdgReduction:FARMS.farm2.summerAdgReduction, targetLiveWeight:FARMS.farm2.targetLiveWeight },
     common: { yields: COMMON_YIELDS },
   };
   try {

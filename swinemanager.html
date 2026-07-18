@@ -3841,16 +3841,26 @@ function calcLotAdg(lot, allowPartial=false, minShipRatio=null) {
   }
   if(!lot.start_date || !lot.start_weight) return null;
 
-  // shipping_recordsのlive_weightから直接ADG計算（確定値を使用）
-  const lotShips = DATA.ships.filter(s=>s.lot_id===lot.id && s.live_weight>0);
+  const yieldRate = getYieldRate(lot.farm) / 100;
+  const lotShips = DATA.ships.filter(s=>s.lot_id===lot.id && s.shipped_at && s.count>0);
   if(!lotShips.length) return null;
 
   // 各出荷ごとにADG計算して頭数加重平均
+  // live_weight未入力の出荷は仕切書の平均枝重から逆算する（要望により採用）
   let weightedAdgSum = 0, totalHead = 0;
   lotShips.forEach(s => {
+    let lw = s.live_weight > 0 ? s.live_weight : null;
+    if(!lw) {
+      const sheet = DATA.slaughter.find(x=>x.farm===lot.farm && x.shipped_at===s.shipped_at);
+      if(sheet?.total_carcass_kg && sheet?.head_count) lw = (sheet.total_carcass_kg / sheet.head_count) / yieldRate;
+    }
+    if(!(lw > 0)) return;
     const days = dElBetween(lot.start_date, s.shipped_at);
-    if(days > 0 && s.live_weight > 0) {
-      const adg = (s.live_weight - lot.start_weight) / days * 1000;
+    if(days > 0) {
+      const adg = (lw - lot.start_weight) / days * 1000;
+      // 仕切書は出荷日のみでロットに紐付けているため、同日複数ロット・複数仕切書があると混同することがある。
+      // 生物学的に有り得ない増体速度(200〜1500g/日の範囲外)の場合はこの出荷分を除外する
+      if(adg < 200 || adg > 1500) return;
       weightedAdgSum += adg * s.count;
       totalHead += s.count;
     }
@@ -4507,11 +4517,13 @@ function calcFarmActualAdg(farm, cutoffDate) {
   const SHIP_RATIO_THRESHOLD = 0.95; // 出荷率95%以上のロットを「実質完了」とみなす
 
   // ①出荷率95%以上のロット（早出しバイアスを抑えつつサンプル数を確保）
+  // calcLotAdgがlive_weight未入力分を仕切書から逆算するようになったため、
+  // 頭数の重みづけも同じ出荷実績（全出荷記録）ベースにする
   let wA = 0, tH = 0;
   lots.forEach(l => {
     const adg = calcLotAdg(l, false, SHIP_RATIO_THRESHOLD);
     if(!adg) return;
-    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.live_weight>0);
+    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at && s.count>0);
     const head = ships.reduce((a,s)=>a+s.count, 0);
     if(head > 0) { wA += adg*head; tH += head; }
   });
@@ -4522,7 +4534,7 @@ function calcFarmActualAdg(farm, cutoffDate) {
   lots.forEach(l => {
     const adg2 = calcLotAdg(l, true);
     if(!adg2) return;
-    const ships2 = DATA.ships.filter(s=>s.lot_id===l.id && s.live_weight>0);
+    const ships2 = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at && s.count>0);
     const head2 = ships2.reduce((a,s)=>a+s.count, 0);
     if(head2 > 0) { wA2 += adg2*head2; tH2 += head2; }
   });

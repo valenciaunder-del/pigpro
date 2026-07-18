@@ -4211,12 +4211,16 @@ function debugLotFcrByBarn(lot) {
 //   （飼料の比較試験など、豚舎ごとに銘柄を分けて検証したい場合に使用。成績分析で豚舎・期間を絞り込んで使う）
 // どちらの場合も「ロットごとに計算してから平均する」のではなく「まとめてから計算する」ため、
 // 個々のロットのデータ品質（仕切書混同・体重欠測等）の影響を受けにくい
-function calcPooledFcr(lots, barnFilter) {
+// periodFrom/periodTo（'YYYY-MM-DD'、省略可）を指定すると、増体量・飼料量の集計をその期間内に
+// 限定する。月次フィルターなど「その月に出荷があったロット」を対象にする画面で、複数月にまたがって
+// 出荷するロットの生涯全体の数値が該当する全ての月に二重計上されるのを防ぐために使う
+function calcPooledFcr(lots, barnFilter, periodFrom, periodTo) {
   if(!lots || !lots.length) return null;
   const farm = lots[0].farm;
   if(!farm || lots.some(l=>l.farm!==farm)) return null; // 単一農場前提
 
   const yieldRate = getYieldRate(farm) / 100;
+  const inPeriod = (dateStr) => !!dateStr && (!periodFrom || dateStr >= periodFrom) && (!periodTo || dateStr <= periodTo);
 
   // 豚舎指定時：この豚舎のタンクラベルと、この豚舎に在籍する全ロット（頭日数の母数）を特定
   let barnTankLabels = null, barnPoolLots = null;
@@ -4230,10 +4234,10 @@ function calcPooledFcr(lots, barnFilter) {
       (l.barn.includes(barnObj.id) || l.barn===barnObj.name));
   }
 
-  // 対象ロット群の合算増体量(t)
+  // 対象ロット群の合算増体量(t)（期間指定時はその期間内の出荷分のみ）
   let totalGainT = 0;
   lots.forEach(l => {
-    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.count>0 && s.shipped_at);
+    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.count>0 && s.shipped_at && inPeriod(s.shipped_at));
     ships.forEach(s => {
       let lw = s.live_weight > 0 ? s.live_weight : null;
       if(!lw) {
@@ -4254,7 +4258,7 @@ function calcPooledFcr(lots, barnFilter) {
   });
   if(totalGainT <= 0) return null;
 
-  // 対象ロット群がカバーする月の範囲
+  // 対象ロット群がカバーする月の範囲（期間指定時はその期間内に限定）
   const months = new Set();
   lots.forEach(l => {
     if(!l.start_date) return;
@@ -4262,7 +4266,11 @@ function calcPooledFcr(lots, barnFilter) {
     const lastShip = ships.map(s=>s.shipped_at).sort().pop() || new Date().toISOString().slice(0,10);
     let cur = new Date(l.start_date.slice(0,7)+'-01');
     const end = new Date(lastShip.slice(0,7)+'-01');
-    while(cur <= end) { months.add(cur.toISOString().slice(0,7)); cur.setMonth(cur.getMonth()+1); }
+    while(cur <= end) {
+      const mon = cur.toISOString().slice(0,7);
+      if((!periodFrom || mon+'-31' >= periodFrom) && (!periodTo || mon+'-01' <= periodTo)) months.add(mon);
+      cur.setMonth(cur.getMonth()+1);
+    }
   });
   if(!months.size) return null;
 
@@ -7483,15 +7491,18 @@ function rPerfFull() {
   })();
 
   // ロットベースKPI（ADG・FCR・肥育日数・導入体重はロット単位で計算）
-  let adgWsum=0, adgHsum=0;
-  lots.forEach(l=>{
-    const adg = calcLotAdg(l);
-    if(!adg) return;
-    const sh = DATA.ships.filter(s=>s.lot_id===l.id&&s.live_weight>0);
-    const h = sh.reduce((a,s)=>a+s.count,0);
-    if(h>0){adgWsum+=adg*h;adgHsum+=h;}
-  });
-  const avgAdg = adgHsum>0 ? Math.round(adgWsum/adgHsum) : null;
+  const avgAdg = (() => {
+    let adgWsum = 0, adgHsum = 0;
+    lots.forEach(l=>{
+      const adg = calcLotAdg(l);
+      if(!adg) return;
+      // calcLotAdgが仕切書逆算も使うようになったため、頭数の重みづけも同じ出荷実績（全出荷記録）ベースにする
+      const sh = DATA.ships.filter(s=>s.lot_id===l.id&&s.shipped_at&&s.count>0);
+      const h = sh.reduce((a,s)=>a+s.count,0);
+      if(h>0){adgWsum+=adg*h;adgHsum+=h;}
+    });
+    return adgHsum>0 ? Math.round(adgWsum/adgHsum) : null;
+  })();
 
   const avgDays = (() => {
     const vals = lots.map(l=>calcLotAvgDays(l)).filter(v=>v>0);
@@ -7501,9 +7512,13 @@ function rPerfFull() {
   // FCR（出荷済みロットのみ）
   const avgFcr = (() => {
     // ロット群をまとめてプール方式で算出（豚舎フィルター指定時はその豚舎のタンクのみで計算）。
-    // ロットごとに計算してから平均するより、個々のロットのデータ品質に左右されにくい
+    // ロットごとに計算してから平均するより、個々のロットのデータ品質に左右されにくい。
+    // 出荷日基準で期間を絞り込んでいる場合は、その期間内の出荷分だけに増体量・飼料量を限定する
+    // （複数月にまたがって出荷するロットが、該当する全ての月の集計にまるごと二重計上されるのを防ぐため）
     if(pfFarm && pfFarm !== 'both') {
-      const pooled = calcPooledFcr(lots, _barnVal || null);
+      const periodFrom = document.getElementById('pf-f-out-from')?.value || null;
+      const periodTo   = document.getElementById('pf-f-out-to')?.value || null;
+      const pooled = calcPooledFcr(lots, _barnVal || null, periodFrom, periodTo);
       if(pooled) return pooled.toFixed(2);
     }
     // フォールバック①：ロットごとの豚舎タンク按分 ②農場全体（出荷完了ロット）

@@ -4268,7 +4268,7 @@ function calcPooledFcr(lots, barnFilter, periodFrom, periodTo) {
     const end = new Date(lastShip.slice(0,7)+'-01');
     while(cur <= end) {
       const mon = cur.toISOString().slice(0,7);
-      if((!periodFrom || mon+'-31' >= periodFrom) && (!periodTo || mon+'-01' <= periodTo)) months.add(mon);
+        if(!periodTo || mon+'-01' <= periodTo) months.add(mon); // 下限(periodFrom)は課さない：出荷月より前の飼育期間の飼料も計上する必要があるため
       cur.setMonth(cur.getMonth()+1);
     }
   });
@@ -17573,6 +17573,9 @@ async function saveFarm() {
   }
   // ロット登録フォームの仕入先セレクトを更新
   updateSourceSelects();
+  // 出荷計画ページの目標体重入力欄を次回描画時に農場設定値で再同期させる（農場を切替えない限り古い値が残る不具合の修正）
+  const _spTargetInput = document.getElementById('sp-target-lw');
+  if(_spTargetInput) delete _spTargetInput.dataset.lastFarm;
   cm('m-farm-set'); notif('農場設定を保存しました（クラウド同期済み）');
   updateSBInfo(); renderPage(CP);
 }

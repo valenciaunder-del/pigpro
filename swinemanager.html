@@ -15436,11 +15436,13 @@ function calcPeriodActualAdg(farm, from, to) {
   const SHIP_RATIO_THRESHOLD = 0.95;
 
   // ①出荷率95%以上のロットのうち、期間内に出荷実績があるもの
+  // calcLotAdgがlive_weight未入力分を仕切書から逆算するようになったため、
+  // 頭数の重みづけも同じ出荷実績（全出荷記録）ベースにする
   let wA = 0, tH = 0;
   lots.forEach(l => {
     const adg = calcLotAdg(l, false, SHIP_RATIO_THRESHOLD);
     if(!adg) return;
-    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.live_weight>0 && inRange(s.shipped_at));
+    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at && s.count>0 && inRange(s.shipped_at));
     const head = ships.reduce((a,s)=>a+s.count, 0);
     if(head > 0) { wA += adg*head; tH += head; }
   });
@@ -15451,7 +15453,7 @@ function calcPeriodActualAdg(farm, from, to) {
   lots.forEach(l => {
     const adg2 = calcLotAdg(l, true);
     if(!adg2) return;
-    const ships2 = DATA.ships.filter(s=>s.lot_id===l.id && s.live_weight>0 && inRange(s.shipped_at));
+    const ships2 = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at && s.count>0 && inRange(s.shipped_at));
     const head2 = ships2.reduce((a,s)=>a+s.count, 0);
     if(head2 > 0) { wA2 += adg2*head2; tH2 += head2; }
   });

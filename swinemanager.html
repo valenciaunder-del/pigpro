@@ -4220,7 +4220,7 @@ function calcPooledFcr(lots, barnFilter, periodFrom, periodTo) {
   if(!farm || lots.some(l=>l.farm!==farm)) return null; // 単一農場前提
 
   const yieldRate = getYieldRate(farm) / 100;
-  const inPeriod = (dateStr) => !!dateStr && (!periodFrom || dateStr >= periodFrom) && (!periodTo || dateStr <= periodTo);
+  const usePeriod = !!(periodFrom && periodTo);
 
   // 豚舎指定時：この豚舎のタンクラベルと、この豚舎に在籍する全ロット（頭日数の母数）を特定
   let barnTankLabels = null, barnPoolLots = null;
@@ -4233,67 +4233,14 @@ function calcPooledFcr(lots, barnFilter, periodFrom, periodTo) {
     barnPoolLots = DATA.lots.filter(l=>l.farm===farm && l.barn &&
       (l.barn.includes(barnObj.id) || l.barn===barnObj.name));
   }
-
-  // 対象ロット群の合算増体量(t)（期間指定時はその期間内の出荷分のみ）
-  let totalGainT = 0;
-  lots.forEach(l => {
-    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.count>0 && s.shipped_at && inPeriod(s.shipped_at));
-    ships.forEach(s => {
-      let lw = s.live_weight > 0 ? s.live_weight : null;
-      if(!lw) {
-        const sheet = DATA.slaughter.find(x=>x.farm===l.farm && x.shipped_at===s.shipped_at);
-        if(sheet?.total_carcass_kg && sheet?.head_count) lw = (sheet.total_carcass_kg/sheet.head_count)/yieldRate;
-      }
-      if(!(lw > 0)) return;
-      const gainPerHead = lw - (l.start_weight||0);
-      // 仕切書は出荷日のみでロットに紐付けているため、同日複数ロット・複数仕切書があると混同することがある。
-      // 生物学的に有り得ない増体速度(200〜1500g/日の範囲外)の場合はこの出荷分を除外する
-      const daysToShip = dElBetween(l.start_date, s.shipped_at);
-      if(daysToShip > 0) {
-        const impliedAdg = gainPerHead / daysToShip * 1000;
-        if(impliedAdg < 200 || impliedAdg > 1500) return;
-      }
-      totalGainT += gainPerHead * s.count / 1000;
-    });
-  });
-  if(totalGainT <= 0) return null;
-
-  // 対象ロット群がカバーする月の範囲（期間指定時はその期間内に限定）
-  const months = new Set();
-  lots.forEach(l => {
-    if(!l.start_date) return;
-    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at);
-    const lastShip = ships.map(s=>s.shipped_at).sort().pop() || new Date().toISOString().slice(0,10);
-    let cur = new Date(l.start_date.slice(0,7)+'-01');
-    const end = new Date(lastShip.slice(0,7)+'-01');
-    while(cur <= end) {
-      const mon = cur.toISOString().slice(0,7);
-        if(!periodTo || mon+'-01' <= periodTo) months.add(mon); // 下限(periodFrom)は課さない：出荷月より前の飼育期間の飼料も計上する必要があるため
-      cur.setMonth(cur.getMonth()+1);
-    }
-  });
-  if(!months.size) return null;
-
   const poolLots = barnFilter ? barnPoolLots : DATA.lots.filter(l=>l.farm===farm);
   const allTankRows = barnFilter ? DATA.feedTank.filter(r=>r.farm===farm && r.date) : null;
 
-  let totalFeedT = 0;
-  months.forEach(mon => {
-    const [y,m] = mon.split('-').map(Number);
-    const daysInMonth = new Date(y,m,0).getDate();
-    let lotsHeadDays = 0, poolHeadDays = 0;
-    for(let d=1; d<=daysInMonth; d++) {
-      const ds = `${mon}-${String(d).padStart(2,'0')}`;
-      lots.forEach(l=>{ lotsHeadDays += calcLotHeadAsOf(l, ds); });
-      poolLots.forEach(l=>{ poolHeadDays += calcLotHeadAsOf(l, ds); });
-    }
-    if(poolHeadDays <= 0) return;
-
-    let monTotal;
+  // 指定月(mon='YYYY-MM')の飼料使用量(t)。豚舎指定時はその豚舎のタンクのみ、購入記録ベース＋タンク未指定分按分
+  function monthlyFeedTotal(mon) {
     if(barnFilter) {
-      // 豚舎指定時：その豚舎のタンク（子豚+肥育）のみの使用量を、購入記録ベース＋タンク未指定分按分で計算
       const monStart = mon+'-01';
-      monTotal = 0;
+      let monTotal = 0;
       barnTankLabels.forEach(tnLabel => {
         const tankRows = allTankRows.filter(r=>r.tank_name===tnLabel&&r.date.startsWith(mon)).sort((a,b)=>a.date.localeCompare(b.date));
         if(!tankRows.length) return;
@@ -4307,14 +4254,111 @@ function calcPooledFcr(lots, barnFilter, periodFrom, periodTo) {
         const usage = opening + matchedDelivery + unattributedShare - closing;
         if(usage > 0) monTotal += usage;
       });
-    } else {
-      // 豚舎指定なし：農場全体の使用量（既に購入記録ベースで正しい）
-      const monUsage = calcMonthlyUsage(DATA.feedTank, farm, mon);
-      monTotal = (monUsage.piglet||0) + (monUsage.finisher||0);
+      return monTotal;
     }
-    if(monTotal > 0) totalFeedT += monTotal * (lotsHeadDays/poolHeadDays);
-  });
+    // 豚舎指定なし：農場全体の使用量（既に購入記録ベースで正しい）
+    const monUsage = calcMonthlyUsage(DATA.feedTank, farm, mon);
+    return (monUsage.piglet||0) + (monUsage.finisher||0);
+  }
 
+  if(!usePeriod) {
+    // 期間指定なし：ロットの生涯全体を、実際の出荷体重ベースの増体量で計算
+    // （ロット単体の製造原価・生涯損益を見る用途向け。従来通り）
+    let totalGainT = 0;
+    lots.forEach(l => {
+      const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.count>0 && s.shipped_at);
+      ships.forEach(s => {
+        let lw = s.live_weight > 0 ? s.live_weight : null;
+        if(!lw) {
+          const sheet = DATA.slaughter.find(x=>x.farm===l.farm && x.shipped_at===s.shipped_at);
+          if(sheet?.total_carcass_kg && sheet?.head_count) lw = (sheet.total_carcass_kg/sheet.head_count)/yieldRate;
+        }
+        if(!(lw > 0)) return;
+        const gainPerHead = lw - (l.start_weight||0);
+        // 仕切書は出荷日のみでロットに紐付けているため、同日複数ロット・複数仕切書があると混同することがある。
+        // 生物学的に有り得ない増体速度(200〜1500g/日の範囲外)の場合はこの出荷分を除外する
+        const daysToShip = dElBetween(l.start_date, s.shipped_at);
+        if(daysToShip > 0) {
+          const impliedAdg = gainPerHead / daysToShip * 1000;
+          if(impliedAdg < 200 || impliedAdg > 1500) return;
+        }
+        totalGainT += gainPerHead * s.count / 1000;
+      });
+    });
+    if(totalGainT <= 0) return null;
+
+    let totalFeedT = 0;
+    lots.forEach(l => {
+      if(!l.start_date) return;
+      const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.shipped_at);
+      const lastShip = ships.map(s=>s.shipped_at).sort().pop() || new Date().toISOString().slice(0,10);
+      let cur = new Date(l.start_date.slice(0,7)+'-01');
+      const end = new Date(lastShip.slice(0,7)+'-01');
+      while(cur <= end) {
+        const mon = cur.toISOString().slice(0,7);
+        const [y,m] = mon.split('-').map(Number);
+        const daysInMonth = new Date(y,m,0).getDate();
+        let lotHeadDays=0, poolHeadDays=0;
+        for(let d=1; d<=daysInMonth; d++) {
+          const ds = `${mon}-${String(d).padStart(2,'0')}`;
+          lotHeadDays += calcLotHeadAsOf(l, ds);
+          poolLots.forEach(pl=>{ poolHeadDays += calcLotHeadAsOf(pl, ds); });
+        }
+        if(poolHeadDays > 0) {
+          const monTotal = monthlyFeedTotal(mon);
+          if(monTotal > 0) totalFeedT += monTotal * (lotHeadDays/poolHeadDays);
+        }
+        cur.setMonth(cur.getMonth()+1);
+      }
+    });
+    if(totalFeedT <= 0) return null;
+    const fcr = totalFeedT / totalGainT;
+    return fcr>0 && fcr<20 ? Math.round(fcr*100)/100 : null;
+  }
+
+  // 期間指定あり（成績分析の月次・年間などの画面）：
+  // 増体量は「対象ロット群の期間内頭日数 × 農場の実測平均ADG」で推定する
+  // （飼料タンク管理ページのcalcFarmFcrと同じ考え方に統一）。
+  // 出荷済みかどうかに関係なく、在場していた全頭・全日が農場の実測ペースで育ったと仮定するため、
+  // 期間内に出荷が完了しているかどうかで歪まない（出荷済み頭数だけで按分する方式の構造的な弱点を回避）
+  const cutoffDate = farm === 'farm2' ? '2026-02-13' : '2020-01-01';
+  const avgAdg = calcFarmActualAdg(farm, cutoffDate);
+  if(!avgAdg) return null;
+
+  let lotsHeadDaysTotal = 0;
+  {
+    let cur = new Date(periodFrom);
+    const end = new Date(periodTo);
+    while(cur <= end) {
+      const ds = cur.toISOString().slice(0,10);
+      lots.forEach(l=>{ lotsHeadDaysTotal += calcLotHeadAsOf(l, ds); });
+      cur.setDate(cur.getDate()+1);
+    }
+  }
+  const totalGainT = lotsHeadDaysTotal * avgAdg / 1e6;
+  if(totalGainT <= 0) return null;
+
+  let totalFeedT = 0;
+  {
+    let cur = new Date(periodFrom.slice(0,7)+'-01');
+    const end = new Date(periodTo.slice(0,7)+'-01');
+    while(cur <= end) {
+      const mon = cur.toISOString().slice(0,7);
+      const [y,m] = mon.split('-').map(Number);
+      const daysInMonth = new Date(y,m,0).getDate();
+      let lotsHeadDaysMon=0, poolHeadDaysMon=0;
+      for(let d=1; d<=daysInMonth; d++) {
+        const ds = `${mon}-${String(d).padStart(2,'0')}`;
+        lots.forEach(l=>{ lotsHeadDaysMon += calcLotHeadAsOf(l, ds); });
+        poolLots.forEach(pl=>{ poolHeadDaysMon += calcLotHeadAsOf(pl, ds); });
+      }
+      if(poolHeadDaysMon > 0) {
+        const monTotal = monthlyFeedTotal(mon);
+        if(monTotal > 0) totalFeedT += monTotal * (lotsHeadDaysMon/poolHeadDaysMon);
+      }
+      cur.setMonth(cur.getMonth()+1);
+    }
+  }
   if(totalFeedT <= 0) return null;
   const fcr = totalFeedT / totalGainT;
   return fcr>0 && fcr<20 ? Math.round(fcr*100)/100 : null;

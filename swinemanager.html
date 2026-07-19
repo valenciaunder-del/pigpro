@@ -4430,20 +4430,16 @@ function calcLotProdCost(lot, periodFrom, periodTo) {
 
   const weightGain = avgLiveWeight - (lot.start_weight || 30); // kg/頭
 
-  // ④ 飼料単価（加重平均：子豚用 + 肉豚用）
-  // 導入日基準の四半期単価を使用
-  const baseDate = lot.start_date || new Date().toISOString().slice(0,10);
-  // feed_price_masterのfeed_typeは日本語（'子豚用'/'肥育用'）。豚舎別単価があれば優先
-  const pigletPrice   = getFeedPrice(farm, baseDate, '子豚用', lot.barn)   || 0;
-  const finisherPrice = getFeedPrice(farm, baseDate, '肥育用', lot.barn) || 0;
-
-  // 飼料使用比率（飼料タンクデータから、なければ経験則40:60）
-  let pigletRatio = 0.4;
+  // ④ 飼料単価（月ごとの実際の使用量で加重平均：子豚用 + 肉豚用）
+  // 導入日1時点の四半期単価で固定するのではなく、ロットが実際に肥育期間中に過ごした各月の
+  // 単価（四半期改定を反映）を、その月の使用量で重み付けして平均する。単価改定のタイミングが
+  // ロットの途中にあっても正しく反映される（期間指定時はその期間の月だけで重み付けする）
+  let pigletRatio = 0.4; // 使用量データが無い場合のフォールバック比率
+  let pigT = 0, finT = 0, pigPriceWeighted = 0, finPriceWeighted = 0;
   const allTankRows = DATA.feedTank.filter(r => r.farm === farm && r.date);
   if(allTankRows.length && lot.start_date) {
-    const startYM = lot.start_date.slice(0,7);
-    const endYM   = (lotShipsAll.map(s=>s.shipped_at).sort().pop() || new Date().toISOString().slice(0,7)).slice(0,7);
-    let pigT = 0, finT = 0;
+    const startYM = usePeriod ? periodFrom.slice(0,7) : lot.start_date.slice(0,7);
+    const endYM   = (usePeriod ? periodTo : (lotShipsAll.map(s=>s.shipped_at).sort().pop() || new Date().toISOString().slice(0,7))).slice(0,7);
     let cur = new Date(startYM+'-01');
     while(cur <= new Date(endYM+'-01')) {
       const mon = cur.toISOString().slice(0,7);
@@ -4458,7 +4454,11 @@ function calcLotProdCost(lot, periodFrom, periodTo) {
         const feedTypeLabel = ft==='piglet' ? '子豚用' : '肥育用';
         const delivery = getMonthlyPurchaseTotal(farm, feedTypeLabel, mon);
         const usage = opening+delivery-closing;
-        if(usage > 0) ft === 'piglet' ? (pigT += usage) : (finT += usage);
+        if(usage > 0) {
+          const monPrice = getFeedPrice(farm, monStart, feedTypeLabel, lot.barn) || 0;
+          if(ft === 'piglet') { pigT += usage; pigPriceWeighted += usage*monPrice; }
+          else { finT += usage; finPriceWeighted += usage*monPrice; }
+        }
       });
       cur.setMonth(cur.getMonth()+1);
     }
@@ -4466,7 +4466,17 @@ function calcLotProdCost(lot, periodFrom, periodTo) {
     if(tot > 0) pigletRatio = pigT / tot;
   }
 
-  const avgFeedPricePerT = pigletPrice * pigletRatio + finisherPrice * (1 - pigletRatio);
+  // feed_typeベースの実使用量データが取れなかった場合のフォールバック：
+  // 導入日基準の四半期単価を経験則比率(40:60)で加重
+  let avgFeedPricePerT;
+  if((pigT + finT) > 0) {
+    avgFeedPricePerT = (pigPriceWeighted + finPriceWeighted) / (pigT + finT);
+  } else {
+    const baseDate = lot.start_date || new Date().toISOString().slice(0,10);
+    const pigletPrice   = getFeedPrice(farm, baseDate, '子豚用', lot.barn)   || 0;
+    const finisherPrice = getFeedPrice(farm, baseDate, '肥育用', lot.barn) || 0;
+    avgFeedPricePerT = pigletPrice * pigletRatio + finisherPrice * (1 - pigletRatio);
+  }
   if(!avgFeedPricePerT)
     return { pigletCost: pigletCostPerHead, feedCost: null, total: pigletCostPerHead||null, perCw: null };
 

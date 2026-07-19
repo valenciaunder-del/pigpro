@@ -4371,7 +4371,11 @@ function calcPooledFcr(lots, barnFilter, periodFrom, periodTo) {
 // periodFrom/periodTo（省略可）：指定すると、画面で選択中の期間（成績分析の年間・月次フィルター等）に
 // FCR・増体重の両方を揃えて計算する。省略時（ロット詳細モーダル等、単体ロットの生涯損益を見る用途）は
 // 従来通りロットの生涯全体で計算する
-function calcLotProdCost(lot, periodFrom, periodTo) {
+// precomputedFcr（省略可）：呼び出し元がすでに複数ロットまとめてプール方式でFCRを計算済みの場合
+// （例：成績分析の平均FCR KPIカード）、そのFCRをそのまま使う。ロットごとに別々にcalcPooledFcr([lot])を
+// 再計算すると、ロットサイズ・タイミングの違いで「まとめて計算した場合のFCR」とはズレた値になり、
+// 表示中のFCRカードと飼料費の辻褄が合わなくなるため（ロット単体の生涯損益を見る用途では省略可）
+function calcLotProdCost(lot, periodFrom, periodTo, precomputedFcr) {
   const farm = lot.farm;
   const usePeriod = !!(periodFrom || periodTo);
   const inPeriod = (dateStr) => !!dateStr && (!periodFrom || dateStr >= periodFrom) && (!periodTo || dateStr <= periodTo);
@@ -4379,8 +4383,8 @@ function calcLotProdCost(lot, periodFrom, periodTo) {
   // ① 子豚費/頭（税抜）
   const pigletCostPerHead = lot.price || 0;
 
-  // ② FCR（プール方式優先。豚舎ごとのFCRは比較試験時のみ成績分析の豚舎フィルターで見る）
-  let fcr = calcPooledFcr([lot], null, periodFrom, periodTo);
+  // ② FCR（呼び出し元から渡されていればそれを優先。無ければプール方式で単体計算）
+  let fcr = (precomputedFcr!=null && precomputedFcr>0) ? precomputedFcr : calcPooledFcr([lot], null, periodFrom, periodTo);
   if(!fcr && !usePeriod && calcCurrentHead(lot) === 0) fcr = calcLotFcr(lot);
   if(!fcr) {
     // 農場全体FCRでフォールバック
@@ -7625,8 +7629,10 @@ function rPerfFull() {
     // FCRカードだけに適用しているローリング3ヶ月窓はここでは使わず、選択期間そのものを使う）
     const pcPeriodFrom = document.getElementById('pf-f-out-from')?.value || null;
     const pcPeriodTo   = document.getElementById('pf-f-out-to')?.value || null;
+    // 上部の平均FCRカードと同じプール済みFCRの値をそのまま使う（ロットごとの再計算とのズレを防ぐ）
+    const pcFcr = avgFcr ? parseFloat(avgFcr) : null;
     const entries = lots.map(l => {
-      const c = calcLotProdCost(l, pcPeriodFrom, pcPeriodTo);
+      const c = calcLotProdCost(l, pcPeriodFrom, pcPeriodTo, pcFcr);
       return c ? { ...c, count: l.count || 1 } : null;
     }).filter(Boolean);
     if(!entries.length) return null;

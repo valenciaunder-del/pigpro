@@ -4088,6 +4088,9 @@ function calcLotFcrByBarn(lot) {
 }
 
 // calcLotFcrByBarnと全く同じロジックで、月ごとの内訳を返す診断用関数（ロット詳細モーダルの表示用）
+// 増体量は成績分析の期間指定FCR（calcPooledFcr）と同じ「頭日数×農場実測平均ADG」方式で推定する
+// （出荷済み頭数だけで生涯飼料を割ると、まだ肥育中の頭が多いロットで実態よりFCRが過大に出るため。
+// 各出荷の実測体重(shipDetail)は参考表示として残すが、増体量の計算そのものには使わない）
 function debugLotFcrByBarn(lot) {
   if(!lot.start_weight || !lot.start_date) return null;
   const farmObj = FARMS[lot.farm];
@@ -4100,12 +4103,16 @@ function debugLotFcrByBarn(lot) {
   if(!tankLabels.length) return null;
 
   const lotShipsAll = DATA.ships.filter(s=>s.lot_id===lot.id && s.shipped_at && s.count>0);
-  if(!lotShipsAll.length) return null;
-  const lastShipDate = lotShipsAll.map(s=>s.shipped_at).sort().pop();
   const yieldRate = getYieldRate(lot.farm) / 100;
+  const todayStr = new Date().toISOString().slice(0,10);
+  const stillActive = calcCurrentHead(lot) > 0;
+  const lastShipDate = lotShipsAll.length ? lotShipsAll.map(s=>s.shipped_at).sort().pop() : null;
+  // まだ肥育中なら今日まで、出荷完了済みなら最終出荷日までを対象期間とする
+  const endDate = stillActive ? todayStr : lastShipDate;
+  if(!endDate) return null;
 
-  const shipDetailParts = [];
-  const totalGainT = lotShipsAll.reduce((a,s) => {
+  // 参考表示用：各出荷の体重内訳（増体量の計算には使わない）
+  const shipDetailParts = lotShipsAll.map(s => {
     let lw = s.live_weight > 0 ? s.live_weight : null;
     let src = '出荷記録';
     if(!lw) {
@@ -4115,26 +4122,25 @@ function debugLotFcrByBarn(lot) {
         src = '仕切書逆算';
       }
     }
-    if(!lw || lw <= 0) { shipDetailParts.push(`${s.shipped_at}:${s.count}頭 体重不明`); return a; }
+    if(!lw || lw <= 0) return `${s.shipped_at}:${s.count}頭 体重不明`;
     const gainPerHead = lw - (lot.start_weight||0);
     const daysToShip = dElBetween(lot.start_date, s.shipped_at);
     if(daysToShip > 0) {
       const impliedAdg = gainPerHead / daysToShip * 1000;
-      if(impliedAdg < 200 || impliedAdg > 1500) {
-        shipDetailParts.push(`${s.shipped_at}:${s.count}頭 ${lw.toFixed(1)}kg(${src},ADG${impliedAdg.toFixed(0)}g除外)`);
-        return a;
-      }
+      if(impliedAdg < 200 || impliedAdg > 1500) return `${s.shipped_at}:${s.count}頭 ${lw.toFixed(1)}kg(${src},ADG${impliedAdg.toFixed(0)}g除外)`;
     }
-    shipDetailParts.push(`${s.shipped_at}:${s.count}頭 ${lw.toFixed(1)}kg(${src})`);
-    return a + (gainPerHead * (s.count||0));
-  }, 0) / 1000;
-  if(totalGainT <= 0) return null;
+    return `${s.shipped_at}:${s.count}頭 ${lw.toFixed(1)}kg(${src})`;
+  });
+
+  const cutoffDate = lot.farm === 'farm2' ? '2026-02-13' : '2020-01-01';
+  const avgAdg = calcFarmActualAdg(lot.farm, cutoffDate);
+  if(!avgAdg) return null;
 
   const barnLots = DATA.lots.filter(l=>l.farm===lot.farm && l.barn &&
     (l.barn.includes(barnObj.id) || l.barn===barnObj.name));
 
   const startYM = lot.start_date.slice(0,7);
-  const endYM   = lastShipDate.slice(0,7);
+  const endYM   = endDate.slice(0,7);
   const months  = [];
   let cur = new Date(startYM+'-01');
   while(cur <= new Date(endYM+'-01')) {
@@ -4143,7 +4149,7 @@ function debugLotFcrByBarn(lot) {
   }
 
   const allTankRows = DATA.feedTank.filter(r=>r.farm===lot.farm && r.date);
-  let totalFeedT = 0;
+  let totalFeedT = 0, totalLotHD = 0;
   const monthDetails = [];
 
   for(const mon of months) {
@@ -4154,12 +4160,13 @@ function debugLotFcrByBarn(lot) {
     let lotHD = 0;
     for(let d=1; d<=daysInMonth; d++) {
       const ds = mon+'-'+String(d).padStart(2,'0');
-      if(ds < lot.start_date || ds > lastShipDate) continue;
+      if(ds < lot.start_date || ds > endDate) continue;
       const shipped = lotShipsAll.filter(s=>s.shipped_at&&s.shipped_at<=ds).reduce((a,s)=>a+s.count,0);
       const dead = DATA.deaths.filter(x=>x.lot_id===lot.id&&x.date&&x.date<=ds&&x.category!=='廃棄（出荷後）').reduce((a,x)=>a+x.count,0);
       lotHD += Math.max(0,(lot.count||0)-shipped-dead);
     }
     if(lotHD<=0) continue;
+    totalLotHD += lotHD;
 
     let barnHD = 0;
     for(const bl of barnLots) {
@@ -4196,6 +4203,9 @@ function debugLotFcrByBarn(lot) {
     if(barnMonFeedT>0) totalFeedT += allocatedFeedT;
     monthDetails.push({ mon, lotHD, barnHD, barnMonFeedT, allocatedFeedT });
   }
+
+  const totalGainT = totalLotHD * avgAdg / 1e6;
+  if(totalGainT <= 0 || totalFeedT <= 0) return null;
 
   return { totalGainT, totalFeedT, months: monthDetails, shipDetail: shipDetailParts.join(' / ') };
 }

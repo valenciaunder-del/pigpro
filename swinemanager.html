@@ -9344,6 +9344,24 @@ function showLD(id) {
   document.getElementById('ld-title').innerHTML = `ロット ${l.id} ${fb(l.farm)}`;
   const d = dElLot(l);
   const gain = l.current_weight&&l.start_weight?(l.current_weight-l.start_weight).toFixed(1):'-';
+  // 出荷済み枝肉重量の合計（仕切書に実測値があればそれを出荷頭数按分、無ければ生体重×歩留率で推定）
+  const carcassInfo = (() => {
+    const yieldRate = getYieldRate(l.farm) / 100;
+    const ships = DATA.ships.filter(s=>s.lot_id===l.id && s.count>0 && s.shipped_at);
+    let totalCw = 0, totalHead = 0, hasEstimate = false;
+    ships.forEach(s => {
+      const sheet = DATA.slaughter.find(x=>x.farm===l.farm && x.shipped_at===s.shipped_at);
+      if(sheet?.total_carcass_kg && sheet?.head_count) {
+        totalCw += sheet.total_carcass_kg * (s.count / sheet.head_count);
+        totalHead += s.count;
+      } else if(s.live_weight > 0) {
+        totalCw += s.live_weight * yieldRate * s.count;
+        totalHead += s.count;
+        hasEstimate = true;
+      }
+    });
+    return totalHead > 0 ? { totalCw, totalHead, hasEstimate } : null;
+  })();
   const wr = DATA.weights.filter(w=>w.lot_id===id).slice(0,3);
   const dr = DATA.deaths.filter(x=>x.lot_id===id && x.confirmed!==false);
   const lotSt = calcLotStatus(l);
@@ -9363,6 +9381,7 @@ function showLD(id) {
       <div><div class="kl">現体重</div><div class="mn ng">${l.current_weight?.toFixed(1)||'-'} kg</div></div>
       <div><div class="kl">総増体</div><div class="mn ng">+${gain} kg</div></div>
       <div><div class="kl">目標出荷</div><div class="mn">${l.target_date||'-'}</div></div>
+      <div><div class="kl">出荷済枝肉合計${carcassInfo?.hasEstimate?' <span style="font-size:9px;color:var(--muted)">(一部推定)</span>':''}</div><div class="mn ng">${carcassInfo?carcassInfo.totalCw.toFixed(1)+' kg':'-'}${carcassInfo?`<span style="font-size:11px;color:var(--muted)"> (${carcassInfo.totalHead}頭)</span>`:''}</div></div>
     </div>
     <div class="sep"></div>
     ${(()=>{

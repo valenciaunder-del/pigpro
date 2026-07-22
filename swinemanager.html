@@ -7229,6 +7229,20 @@ function rShipMonthly() {
     });
   });
 
+  // 各日の丸め済み合計頭数を事前計算する（ロット別内訳を個別に四捨五入してから合計したもの）。
+  // 週計・月計もこれを合計することで、内訳の合計・日計・週計・月計が常に一致するようにする
+  // （日計だけ別に「四捨五入前の合計」を丸めていたため、内訳の合計と1頭ズレることがあった）
+  const dayHeadRoundMap = {};
+  Object.keys(dailyTotals).forEach(dateStr => {
+    const data = dailyTotals[dateStr];
+    const lotHeadMap = {};
+    data.lotBreakdown.forEach(lb => {
+      if(!lotHeadMap[lb.id]) lotHeadMap[lb.id] = 0;
+      lotHeadMap[lb.id] += lb.head;
+    });
+    dayHeadRoundMap[dateStr] = Object.values(lotHeadMap).reduce((a,h)=>a+Math.round(h), 0);
+  });
+
   // カレンダー生成
   const weeks = [];
   let week = [];
@@ -7241,7 +7255,7 @@ function rShipMonthly() {
   if(week.length) { while(week.length<7) week.push(null); weeks.push(week); }
 
   const farmColor = {'farm1':'var(--f1)','farm2':'var(--f2)'};
-  const monthTotal = Object.values(dailyTotals).reduce((a,v) => a + v.head, 0);
+  const monthTotal = Object.values(dayHeadRoundMap).reduce((a,v) => a + v, 0);
   const totalCurrentHead = activeLots.reduce((a,l)=>a+calcCurrentHead(l),0);
 
   const html = `
@@ -7255,14 +7269,13 @@ function rShipMonthly() {
       </thead>
       <tbody>
         ${weeks.map(week => {
-          const weekTotal = week.reduce((a,day)=>a+(day?dailyTotals[toLocalDateStr(day)]?.head||0:0),0);
+          const weekTotal = week.reduce((a,day)=>a+(day?dayHeadRoundMap[toLocalDateStr(day)]||0:0),0);
           return `<tr>
             ${week.map(day => {
               if(!day) return `<td style="padding:6px 4px;border:1px solid var(--border);background:var(--panel2);opacity:0.3"></td>`;
               const dateStr = toLocalDateStr(day);
               const data = dailyTotals[dateStr];
               const headFloat = data.head;
-              const headRound = Math.round(headFloat);
               const isToday = dateStr===todayStr;
               const dow2=day.getDay(), isSun=dow2===0, isSat=dow2===6;
               const farmHeadMap = {};
@@ -7285,6 +7298,8 @@ function rShipMonthly() {
                 .filter(([,v])=>Math.round(v.head)>0)
                 .sort((a,b)=>b[1].head-a[1].head);
               const carryoverTotal = Math.round(data.carryover||0);
+              // 日付ヘッダーの合計は事前計算済みのdayHeadRoundMapを使う（内訳の合計と常に一致する）
+              const headRound = dayHeadRoundMap[dateStr];
 
               return `<td style="padding:5px 4px;border:1px solid var(--border);background:${bgColor};vertical-align:top;min-width:80px;height:auto">
                 <div style="font-size:11px;font-weight:${isToday?'700':'400'};color:${dayColor};margin-bottom:3px">${day.getDate()}</div>

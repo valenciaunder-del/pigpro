@@ -7519,6 +7519,13 @@ function rPerfFull() {
   const _outTo   = document.getElementById('pf-f-out-to')?.value   || '';
   const inPeriod = dt => dt && (!_outFrom || dt >= _outFrom) && (!_outTo || dt <= _outTo);
 
+  // 期末在庫頭数：対象ロット（現在の絞り込み条件＝豚舎・導入元・販売先を反映済みのlots）の、
+  // 期間終了日時点（期間未指定なら今日時点）での在場頭数の合計
+  const endInvHead = (() => {
+    const asOf = _outTo || new Date().toISOString().slice(0,10);
+    return lots.reduce((a,l)=>a+calcLotHeadAsOf(l, asOf), 0);
+  })();
+
   // 対象ロットの出荷記録のうち期間内のもの（イベント単位で集計）
   const lotShipRecords = DATA.ships.filter(s => lotIds.has(s.lot_id) &&
     (!(_outFrom||_outTo) || inPeriod(s.shipped_at)));
@@ -7761,6 +7768,7 @@ function rPerfFull() {
 
   document.getElementById('pf-kpi').innerHTML = `
     <div class="kcard g" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間導入頭数</div><div class="kv">${periodIntroHead||'-'}<span class="ku">頭</span></div></div>
+    <div class="kcard g" style="grid-column:span 2"><div class="kl" style="font-size:10px">期末在庫頭数</div><div class="kv">${endInvHead!=null?endInvHead.toLocaleString():'-'}<span class="ku">頭</span></div></div>
     <div class="kcard r" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間事故頭数</div><div class="kv">${deathSum||'-'}<span class="ku">頭</span></div></div>
     <div class="kcard c" style="grid-column:span 2"><div class="kl" style="font-size:10px">月間出荷頭数</div><div class="kv">${totalShipped||'-'}<span class="ku">頭</span></div></div>
     <div class="kcard r"><div class="kl">事故率</div><div class="kv">${deathRate!==null?deathRate+' %':'-'}</div></div>

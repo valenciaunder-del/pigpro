@@ -12062,7 +12062,9 @@ async function processOtasanXlsAppend(file) {
     });
   }
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type:'array' });
+  // cellDates:trueで、日付書式のセルをExcelのシリアル値ではなくJS Dateオブジェクトとして読み込む
+  // （太田産商の精算書はと畜日セルが日付型で入っていることがあり、これが無いと素通りしてしまう）
+  const wb = XLSX.read(buf, { type:'array', cellDates: true });
   const addRows = [];
 
   for(const sheetName of wb.SheetNames) {
@@ -12110,7 +12112,9 @@ async function processOtasanXls(file, suppressLoading=false) {
       });
     }
     const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type:'array' });
+    // cellDates:trueで、日付書式のセルをExcelのシリアル値ではなくJS Dateオブジェクトとして読み込む
+    // （太田産商の精算書はと畜日セルが日付型で入っていることがあり、これが無いと素通りしてしまう）
+    const wb = XLSX.read(buf, { type:'array', cellDates: true });
 
     const allRows = [];
     let detectedSlaughteredAt = null; // と畜日（屠畜日）

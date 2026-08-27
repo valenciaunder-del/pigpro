@@ -9435,6 +9435,7 @@ function showLD(id) {
       <div><div class="kl">在場頭数</div><div class="mn">${calcCurrentHead(l)}頭<span style="font-size:11px;color:var(--muted)"> / 導入${l.count}頭</span></div></div>
       <div><div class="kl">死廃</div><div class="mn ${(l.deaths||0)>3?'nb':'nw'}">${l.deaths||0}頭</div></div>
       <div><div class="kl">導入体重</div><div class="mn">${l.start_weight||'-'} kg</div></div>
+      <div><div class="kl">子豚単価</div><div class="mn">${l.price?'¥'+l.price.toLocaleString()+'/頭':'-'}</div></div>
       <div><div class="kl">現体重</div><div class="mn ng">${l.current_weight?.toFixed(1)||'-'} kg</div></div>
       <div><div class="kl">総増体</div><div class="mn ng">+${gain} kg</div></div>
       <div><div class="kl">目標出荷</div><div class="mn">${l.target_date||'-'}</div></div>

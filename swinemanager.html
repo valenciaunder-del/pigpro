@@ -6217,11 +6217,14 @@ function getPfSeason(dateStr) {
 // フィルタ条件に合うロットを取得
 // overrideOutFrom/overrideOutTo: 出荷日フィルターをDOM上の値ではなく明示的な期間で上書きしたい場合に指定
 // （例：FCRだけ直近3ヶ月ローリングで拾いたいが、他のKPIは選択月のみに絞りたい場合）
-function getPfLots(overrideOutFrom, overrideOutTo) {
+// overrideOutFrom/overrideOutTo/overrideBarn/overrideSource/overrideBuyer: DOM上の値ではなく明示的な値で
+// 上書きしたい場合に指定（例：豚舎・導入元・販売先で絞り込んでいても、FCRだけは常に農場全体で計算したい場合に
+// 空文字を渡してこれらの絞り込みを無視させる）
+function getPfLots(overrideOutFrom, overrideOutTo, overrideBarn, overrideSource, overrideBuyer) {
   const farm     = CF !== 'both' ? CF : (document.getElementById('pf-f-farm')?.value || '');
-  const barn     = document.getElementById('pf-f-barn')?.value || '';
-  const source   = document.getElementById('pf-f-source')?.value || '';
-  const buyer    = document.getElementById('pf-f-buyer')?.value || '';
+  const barn     = overrideBarn   !== undefined ? (overrideBarn||'')   : (document.getElementById('pf-f-barn')?.value || '');
+  const source   = overrideSource !== undefined ? (overrideSource||'') : (document.getElementById('pf-f-source')?.value || '');
+  const buyer    = overrideBuyer  !== undefined ? (overrideBuyer||'')  : (document.getElementById('pf-f-buyer')?.value || '');
   const inFrom   = document.getElementById('pf-f-in-from')?.value || '';
   const inTo     = document.getElementById('pf-f-in-to')?.value || '';
   const outFrom  = overrideOutFrom !== undefined ? (overrideOutFrom||'') : (document.getElementById('pf-f-out-from')?.value || '');
@@ -7611,26 +7614,30 @@ function rPerfFull() {
   // 単月だけだとロット構成・仕切書逆算のブレの影響を受けやすいため、月次モード（基準日=出荷日）の
   // 時は選択月を含む直近3ヶ月のローリング窓でプール計算する（他のKPIは選択月のみのまま）
   let _fcrRolling = false;
+  // 豚舎・導入元・販売先で絞り込んでいても、FCRは常に農場全体（絞り込み無視）で計算する。
+  // 頭日数按分方式は、子豚と肥育後期が混在する期間・特定ロットだけを取り出すと数値が不安定になりやすいため
+  // （当面の運用として、信頼できる農場全体の値に統一する）
+  const _fcrIsFarmWide = !!(_barnVal || document.getElementById('pf-f-source')?.value || document.getElementById('pf-f-buyer')?.value);
   const avgFcr = (() => {
-    // ロット群をまとめてプール方式で算出（豚舎フィルター指定時はその豚舎のタンクのみで計算）。
-    // ロットごとに計算してから平均するより、個々のロットのデータ品質に左右されにくい。
+    // ロット群をまとめてプール方式で算出。ロットごとに計算してから平均するより、個々のロットのデータ品質に左右されにくい。
     // 出荷日基準で期間を絞り込んでいる場合は、その期間内の出荷分だけに増体量・飼料量を限定する
     // （複数月にまたがって出荷するロットが、該当する全ての月の集計にまるごと二重計上されるのを防ぐため）
     if(pfFarm && pfFarm !== 'both') {
       const pfMode = document.getElementById('pf-view-mode')?.value || 'month';
       let periodFrom = document.getElementById('pf-f-out-from')?.value || null;
       let periodTo   = document.getElementById('pf-f-out-to')?.value || null;
-      let fcrLots = lots;
+      // 豚舎・導入元・販売先の絞り込みを無視した農場全体のロット群を使う
+      let fcrLots = getPfLots(periodFrom || undefined, periodTo || undefined, '', '', '');
       if(pfMode === 'month' && periodFrom && periodTo) {
         // 選択月を含む直近3ヶ月（2ヶ月前の1日〜選択月末日）に窓を広げる
         const [ry, rm] = periodFrom.slice(0,7).split('-').map(Number);
         const winStartDate = new Date(ry, rm-1-2, 1);
         const winFrom = `${winStartDate.getFullYear()}-${String(winStartDate.getMonth()+1).padStart(2,'0')}-01`;
-        fcrLots = getPfLots(winFrom, periodTo);
+        fcrLots = getPfLots(winFrom, periodTo, '', '', '');
         periodFrom = winFrom;
         _fcrRolling = true;
       }
-      const pooled = calcPooledFcr(fcrLots, _barnVal || null, periodFrom, periodTo);
+      const pooled = calcPooledFcr(fcrLots, null, periodFrom, periodTo);
       if(pooled) return pooled.toFixed(2);
     }
     // フォールバック①：ロットごとの豚舎タンク按分 ②農場全体（出荷完了ロット）
@@ -7781,7 +7788,7 @@ function rPerfFull() {
     <div class="kcard o"><div class="kl">手取合計（税抜）</div><div class="kv">${totalNetAmount?'¥'+Math.round(totalNetAmount).toLocaleString():'-'}</div></div>
     <div class="kcard y"><div class="kl">飼料費合計（棚卸差引・税抜）</div><div class="kv">${totalFeedCost!=null?'¥'+totalFeedCost.toLocaleString():'-'}</div></div>
     <div class="kcard g"><div class="kl">平均ADG</div><div class="kv ${avgAdg?ac(avgAdg):''}">${avgAdg||'-'}<span class="ku">g/日</span></div></div>
-    <div class="kcard c"><div class="kl">平均FCR${_fcrRolling?'<span style="font-size:9px;color:var(--muted);font-weight:400"> (直近3ヶ月)</span>':''}</div><div class="kv ${avgFcr?fc(parseFloat(avgFcr)):''}">${avgFcr||'-'}</div></div>
+    <div class="kcard c"><div class="kl">平均FCR${_fcrRolling?'<span style="font-size:9px;color:var(--muted);font-weight:400"> (直近3ヶ月)</span>':''}${_fcrIsFarmWide?'<span style="font-size:9px;color:var(--muted);font-weight:400"> (農場全体)</span>':''}</div><div class="kv ${avgFcr?fc(parseFloat(avgFcr)):''}">${avgFcr||'-'}</div></div>
     <div class="kcard o"><div class="kl">平均肥育日数</div><div class="kv">${avgDays||'-'}<span class="ku">日</span></div></div>
     ${avgProdCost ? `
     <div class="kcard" style="grid-column:span 4;background:rgba(251,146,60,.05);border-color:var(--accent3)">

@@ -7736,17 +7736,20 @@ function rPerfFull() {
   })();
   // 手取単価（税抜）＝枝肉金額(税抜) − 控除小計(税抜・deduction_subtotal) を重量で加重平均
   let totalNetAmount = 0;
+  let totalGrossAmount = 0; // 控除前の枝肉金額（税抜）合計＝手取合計に控除小計を足し戻したもの
   const avgNetUnitPrice = (() => {
-    let amtSum = 0, kgSum = 0;
+    let amtSum = 0, kgSum = 0, grossSum = 0;
     periodSheets.forEach(s => {
       if(!s.total_carcass_kg) return;
       const carcassEx = calcCarcassAmountEx(s);
       if(!carcassEx) return;
       const net = carcassEx - (s.deduction_subtotal||0);
       amtSum += net;
+      grossSum += carcassEx;
       kgSum  += s.total_carcass_kg;
     });
     totalNetAmount = amtSum;
+    totalGrossAmount = grossSum;
     return kgSum > 0 ? Math.round(amtSum / kgSum) : null;
   })();
 
@@ -7786,6 +7789,7 @@ function rPerfFull() {
     <div class="kcard c"><div class="kl">枝肉単価（税抜）</div><div class="kv">${avgUnitPrice?'¥'+avgUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard o"><div class="kl">手取単価（税抜）</div><div class="kv">${avgNetUnitPrice?'¥'+avgNetUnitPrice.toLocaleString():'-'}<span class="ku">/kg</span></div></div>
     <div class="kcard o"><div class="kl">手取合計（税抜）</div><div class="kv">${totalNetAmount?'¥'+Math.round(totalNetAmount).toLocaleString():'-'}</div></div>
+    <div class="kcard o"><div class="kl">売上合計（控除前・税抜）</div><div class="kv">${totalGrossAmount?'¥'+Math.round(totalGrossAmount).toLocaleString():'-'}</div></div>
     <div class="kcard y"><div class="kl">飼料費合計（棚卸差引・税抜）</div><div class="kv">${totalFeedCost!=null?'¥'+totalFeedCost.toLocaleString():'-'}</div></div>
     <div class="kcard g"><div class="kl">平均ADG</div><div class="kv ${avgAdg?ac(avgAdg):''}">${avgAdg||'-'}<span class="ku">g/日</span></div></div>
     <div class="kcard c"><div class="kl">平均FCR${_fcrRolling?'<span style="font-size:9px;color:var(--muted);font-weight:400"> (直近3ヶ月)</span>':''}${_fcrIsFarmWide?'<span style="font-size:9px;color:var(--muted);font-weight:400"> (農場全体)</span>':''}</div><div class="kv ${avgFcr?fc(parseFloat(avgFcr)):''}">${avgFcr||'-'}</div></div>

@@ -789,6 +789,13 @@ tbody td{padding:8px 10px;white-space:nowrap;}
           <div class="fg"><label class="fl">測定日 *</label><input class="fi" type="date" id="w-date"></div>
           <div class="fg"><label class="fl">測定頭数</label><input class="fi" type="number" id="w-n" min="1" max="200" placeholder="例：20" oninput="genWeightInputs()"></div>
         </div>
+        <div class="fg3 mb16">
+          <div class="fg"><label class="fl">性別</label><select class="fs" id="w-sex">
+            <option value="">未区分（全体）</option>
+            <option value="male">雄</option>
+            <option value="female">雌</option>
+          </select></div>
+        </div>
 
         <!-- 個体別入力エリア -->
         <div id="w-individual-area" style="display:none;margin-bottom:16px">
@@ -827,7 +834,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
 
         <button class="btn bp" onclick="addWeight()">✓ 記録登録</button>
         <div class="sep"></div>
-        <div class="tw"><table><thead><tr><th>農場</th><th>ロット</th><th>測定日</th><th>平均体重</th><th>中央値</th><th>最小</th><th>最大</th><th>頭数</th><th>ADG換算</th><th></th></tr></thead><tbody id="wt-tb"></tbody></table></div>
+        <div class="tw"><table><thead><tr><th>農場</th><th>ロット</th><th>測定日</th><th>性別</th><th>平均体重</th><th>中央値</th><th>最小</th><th>最大</th><th>頭数</th><th>ADG換算</th><th></th></tr></thead><tbody id="wt-tb"></tbody></table></div>
       </div>
     </div>
   </div>
@@ -9970,6 +9977,7 @@ async function addWeight() {
     trim_avg: window._wTrimAvg||null,
     std_dev: window._wStdDev||null,
     individual_weights: window._wIndividualWeights||null,
+    sex: document.getElementById('w-sex')?.value || null,
   };
   showLoading('登録中...');
   try {
@@ -9989,6 +9997,7 @@ async function addWeight() {
     document.getElementById('w-min').value = '';
     document.getElementById('w-max').value = '';
     if(document.getElementById('w-med')) document.getElementById('w-med').value = '';
+    if(document.getElementById('w-sex')) document.getElementById('w-sex').value = '';
     rWtTb();
     notif('体重記録を登録しました');
   } catch(e) { notif('登録エラー: '+e.message,'r'); }
@@ -10265,10 +10274,12 @@ function rWtTb() {
     const l = DATA.lots.find(x=>x.id===w.lot_id);
     const d = l?.start_date && w.measured_at ? dElBetween(l.start_date, w.measured_at) : 1;
     const adg = (l?.start_weight && d > 0) ? Math.round((w.avg_weight-(l.start_weight||30))/d*1000) : '-';
+    const sexLabel = w.sex==='male'?'雄':w.sex==='female'?'雌':'-';
     return `<tr>
       <td>${fb(w.farm)}</td>
       <td class="mn" style="color:var(--accent2)">${w.lot_id}</td>
       <td class="mn">${w.measured_at||'-'}</td>
+      <td class="mn" style="color:var(--muted2)">${sexLabel}</td>
       <td class="mn ng">${w.avg_weight} kg</td>
       <td class="mn" style="color:var(--muted2)">${w.median_weight?w.median_weight+' kg':'-'}</td>
       <td class="mn" style="color:var(--muted)">${w.min_weight?w.min_weight+' kg':'-'}</td>
@@ -10280,7 +10291,7 @@ function rWtTb() {
         <button class="btn bd sm" onclick="delWeight('${w.id}')">削除</button>
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">記録がありません</td></tr>';
+  }).join('') || '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:16px">記録がありません</td></tr>';
 }
 
 async function delWeight(id) {
@@ -10395,6 +10406,7 @@ function editWeight(id) {
   document.getElementById('w-min').value = w.min_weight||'';
   document.getElementById('w-max').value = w.max_weight||'';
   document.getElementById('w-n').value = w.sample_count||'';
+  if(document.getElementById('w-sex')) document.getElementById('w-sex').value = w.sex||'';
   const btn = document.querySelector('[onclick="addWeight()"]');
   if(btn) { btn.textContent = '✓ 更新'; btn.setAttribute('onclick', `updateWeight('${id}')`); }
   document.getElementById('lt-weight').scrollTop = 0;
@@ -10411,6 +10423,7 @@ async function updateWeight(id) {
     min_weight: parseFloat(document.getElementById('w-min').value)||null,
     max_weight: parseFloat(document.getElementById('w-max').value)||null,
     sample_count: parseInt(document.getElementById('w-n').value)||null,
+    sex: document.getElementById('w-sex')?.value || null,
   };
   showLoading('更新中...');
   try {

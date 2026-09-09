@@ -1168,8 +1168,13 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <label class="fl">目標生体重(kg)</label>
             <input class="fi" type="number" id="sp-target-lw" value="122" step="1" style="width:80px" onchange="rShipPlan()">
           </div>
+          <div class="fg">
+            <label class="fl">ADG設定(g/日)</label>
+            <input class="fi" type="number" id="sp-adg-override" value="1063" step="1" style="width:90px" onchange="rShipPlan()">
+          </div>
           <div style="font-size:11px;color:var(--muted);padding-bottom:6px">
-            ※ 目標枝肉重量÷歩留まりから自動計算 → <span id="sp-auto-lw" style="color:var(--accent2);font-weight:700"></span>
+            ※ 目標枝肉重量÷歩留まりから自動計算 → <span id="sp-auto-lw" style="color:var(--accent2);font-weight:700"></span><br>
+            ※ 月間出荷予定カレンダーはこのADG設定値を優先して使用（実測体重ベースで手動更新推奨。空欄で導入元・農場実績ADGに戻る）
           </div>
         </div>
         <canvas id="sp-dist-chart" style="width:100%;max-height:280px"></canvas>
@@ -7176,9 +7181,13 @@ function rShipMonthly() {
       || (typeof FORECAST_TARGET_LW !== 'undefined' ? FORECAST_TARGET_LW
       : (((farmObj.targetCwMin||76) + (farmObj.targetCwMax||82.5)) / 2) / yieldRate);
 
-    // 導入元別ADGを取得（calcSourceAdgMapが定義済みの場合）
+    // ADGは「ADG設定」欄に手動値があればそれを優先する（実測体重から算出した最新の成長ペースを
+    // 反映させたい場合など）。空欄なら従来通り導入元別／農場全体の実績ADGにフォールバックする
+    const adgOverride = parseFloat(document.getElementById('sp-adg-override')?.value);
     let useAdg;
-    if(typeof calcSourceAdgMap === 'function') {
+    if(adgOverride > 0) {
+      useAdg = adgOverride;
+    } else if(typeof calcSourceAdgMap === 'function') {
       const srcMap = calcSourceAdgMap(lot.farm);
       const srcD = srcMap[lot.source || '不明'];
       const farmAdg = (() => {
@@ -7346,7 +7355,7 @@ function rShipMonthly() {
       <span>対象ロット：<strong style="color:var(--accent2)">${activeLots.length}ロット</strong>
         （${activeLots.map(l=>`${l.id.slice(4)} ${calcCurrentHead(l)}頭`).join('・')}）
       </span>
-      <span>※ 実績ADGから適正肥育日数の正規分布で按分（全期間合計＝在場頭数）</span>
+      <span>※ ${(() => { const ov = parseFloat(document.getElementById('sp-adg-override')?.value); return ov > 0 ? `ADG設定値 ${ov}g/日（手動設定）` : '実績ADGから'; })()}適正肥育日数の正規分布で按分（全期間合計＝在場頭数）</span>
     </div>`;
   el.innerHTML = html;
 }

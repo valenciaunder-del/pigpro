@@ -7545,9 +7545,20 @@ function rPerfFull() {
     return lots.reduce((a,l)=>a+calcLotHeadAsOf(l, asOf), 0);
   })();
 
-  // 対象ロットの出荷記録のうち期間内のもの（イベント単位で集計）
+  // 販売先フィルター：出荷記録に紐づく仕切書のbuyerが一致するものだけに絞る
+  // （getPfLots()の販売先フィルターはロット単位の「該当販売先への出荷が1件でもあるか」の絞り込みのため、
+  //  同一ロットが複数の販売先に出荷している場合、以降の仕切書・頭別明細ベースのKPIが
+  //  販売先を無視して全件集計されてしまう。ここで出荷記録自体を販売先で絞り込むことで、
+  //  建値・枝肉単価・手取単価・出荷頭数など全てのKPIに販売先フィルターを一貫して反映させる）
+  const _buyerVal = document.getElementById('pf-f-buyer')?.value || '';
+  const shipSheetOf = s => s.sheet_id
+    ? DATA.slaughter.find(x=>x.id===s.sheet_id)
+    : DATA.slaughter.find(x=>x.farm===s.farm && x.shipped_at===s.shipped_at);
+
+  // 対象ロットの出荷記録のうち期間内（・販売先指定時はその販売先向け）のもの（イベント単位で集計）
   const lotShipRecords = DATA.ships.filter(s => lotIds.has(s.lot_id) &&
-    (!(_outFrom||_outTo) || inPeriod(s.shipped_at)));
+    (!(_outFrom||_outTo) || inPeriod(s.shipped_at)) &&
+    (!_buyerVal || shipSheetOf(s)?.buyer === _buyerVal));
   const lotSheetIds = new Set(lotShipRecords.map(s=>s.sheet_id).filter(Boolean));
   // 期間内の仕切書（sheet_id照合、旧データはfarm+shipped_at照合）
   const periodSheets = DATA.slaughter.filter(s =>

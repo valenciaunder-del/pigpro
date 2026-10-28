@@ -1436,7 +1436,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
             <div class="sr"><span class="sl">原皮金額（税抜）</span><input class="fi" type="number" id="sl-r-hide" style="width:120px" onchange="updateSlSummary()"></div>
             <div class="sr" style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px"><span class="sl">売上小計（税抜）</span><span class="sv mn" id="sl-r-sales-sub">-</span></div>
             <div class="sr"><span class="sl">消費税8%（枝肉・内臓）</span><span class="sv mn" id="sl-r-tax-co">-</span></div>
-            <div class="sr"><span class="sl">消費税10%（原皮）</span><span class="sv mn" id="sl-r-tax-hide">-</span></div>
+            <div class="sr"><span class="sl">消費税10%（原皮）</span><span style="display:flex;align-items:center;gap:6px"><input class="fi mn" type="number" id="sl-r-tax-hide" style="width:90px;text-align:right" onchange="slTaxHideOverride()"><a href="javascript:void(0)" onclick="slTaxHideReset()" id="sl-r-tax-hide-reset" style="font-size:10px;color:var(--accent2);display:none;white-space:nowrap">↺自動計算に戻す</a></span></div>
             <div class="sr"><span class="sl" style="font-weight:700">売上合計</span><span class="sv ng mn" style="font-weight:700" id="sl-r-sales-total">-</span></div>
             <div style="font-size:11px;font-weight:700;color:var(--danger);margin-bottom:4px;margin-top:8px">【控除】</div>
             <div id="sl-ded-table-wrap">
@@ -1621,7 +1621,7 @@ tbody td{padding:8px 10px;white-space:nowrap;}
         <div><div class="fl">内臓代(税抜)</div><input type="number" id="se-internal_organ_sales" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">原皮代(税抜)</div><input type="number" id="se-hide_amount" class="fi" oninput="seAutoCalc()" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">消費税8%(枝肉・内臓)</div><input type="number" id="se-tax_carcass_organ" class="fi" readonly style="font-size:12px;padding:4px 8px;background:var(--panel2);color:var(--muted2);cursor:default"></div>
-        <div><div class="fl">消費税10%(原皮)</div><input type="number" id="se-tax_hide" class="fi" readonly style="font-size:12px;padding:4px 8px;background:var(--panel2);color:var(--muted2);cursor:default"></div>
+        <div><div class="fl">消費税10%(原皮) <a href="javascript:void(0)" onclick="seTaxHideReset()" id="se-tax_hide-reset" style="font-size:10px;color:var(--accent2);display:none;white-space:nowrap">↺自動計算に戻す</a></div><input type="number" id="se-tax_hide" class="fi" oninput="seTaxHideOverride()" style="font-size:12px;padding:4px 8px"></div>
         <div><div class="fl">仕入金額</div><input type="number" id="se-total_amount" class="fi" readonly style="font-size:12px;padding:4px 8px;background:var(--panel2);color:var(--muted2);cursor:default"></div>
       </div>
       <div style="font-size:11px;font-weight:600;color:var(--muted2);margin-bottom:6px">控除（税抜）</div>
@@ -12887,6 +12887,13 @@ function renderSlPreview(data) {
   const s = data.sheet;
   // OCR読取の差引支払金額を保存（バランスチェック用・上書き禁止）
   if(s._ocr_net === undefined) s._ocr_net = s.net_payment || s.total_amount || 0;
+  // 消費税10%（原皮）の手動上書きは「別の仕切書」に切り替わった時だけリセットする
+  // （同じ仕切書内の他項目編集による再描画では上書きを維持する）
+  if(window._slTaxHideManualSheet !== s) {
+    window._slTaxHideManualSheet = s;
+    const hEl = document.getElementById('sl-r-tax-hide'); if(hEl) delete hEl.dataset.manual;
+    const rEl = document.getElementById('sl-r-tax-hide-reset'); if(rEl) rEl.style.display = 'none';
+  }
   const details = data.details||[];
   document.getElementById('sl-preview-area').style.display='';
 
@@ -12923,7 +12930,7 @@ function renderSlPreview(data) {
   document.getElementById('sl-r-hide').value          = s.hide_amount || 0;
   document.getElementById('sl-r-org').value           = s.internal_organ_sales || 0;
   if(document.getElementById('sl-r-tax-co'))     document.getElementById('sl-r-tax-co').textContent     = s.tax_carcass_organ ? fM(s.tax_carcass_organ) : '-';
-  if(document.getElementById('sl-r-tax-hide'))   document.getElementById('sl-r-tax-hide').textContent   = s.tax_hide ? fM(s.tax_hide) : '-';
+  // 消費税10%（原皮）は手動上書きしていない限り updateSlSummary() が自動計算値で設定する（下記参照）
   // 控除（保存済みdeduction_itemsがあれば復元、なければOCRマッピング）
   const _savedDed = s.deduction_items ? (() => { try { return JSON.parse(s.deduction_items); } catch(e) { return null; } })() : null;
   window._slDedItems = (_savedDed && _savedDed.length) ? _savedDed : slOcrToDeductionItems(s);
@@ -13203,19 +13210,22 @@ function updateSlSummary() {
   const organ    = s.internal_organ_sales || 0;
   const hide     = s.hide_amount || 0;
 
+  // 消費税10%（原皮）は基本は自動計算（四捨五入）だが、仕切書発行元の端数処理が
+  // 異なる場合などに手動で上書きできる（sl-r-tax-hide欄を直接編集すると上書き扱いになる）
+  const hideTaxEl     = document.getElementById('sl-r-tax-hide');
+  const hideTaxManual = hideTaxEl?.dataset.manual === '1';
+
   let tax8, taxHide10, salesSub, salesTotal;
   if(isSendai) {
     // 仙台中央：枝肉金額等は税込で記載されているため消費税を逆算で控除
     tax8       = Math.round((carcass + organ) / 1.08 * 0.08);
-    // 原皮の消費税は仕切書発行元（買い手）側の計算が切り捨てのため、それに合わせて切り捨てる
-    taxHide10  = Math.floor(hide / 1.1 * 0.1);
+    taxHide10  = hideTaxManual ? (parseFloat(hideTaxEl.value) || 0) : Math.round(hide / 1.1 * 0.1);
     salesTotal = carcass + organ + hide;
     salesSub   = salesTotal - tax8 - taxHide10;
   } else {
     // 伊藤忠・その他：枝肉金額等は税抜で記載されているため消費税を加算
     tax8       = Math.round((carcass + organ) * 0.08);
-    // 原皮の消費税は仕切書発行元（買い手）側の計算が切り捨てのため、それに合わせて切り捨てる
-    taxHide10  = Math.floor(hide * 0.1);
+    taxHide10  = hideTaxManual ? (parseFloat(hideTaxEl.value) || 0) : Math.round(hide * 0.1);
     salesSub   = carcass + organ + hide;
     salesTotal = salesSub + tax8 + taxHide10;
   }
@@ -13259,7 +13269,8 @@ function updateSlSummary() {
 
   const setText = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
   setText('sl-r-tax-co',      tax8       ? fM(tax8)       : '-');
-  setText('sl-r-tax-hide',    taxHide10  ? fM(taxHide10)  : '-');
+  // sl-r-tax-hideは入力欄（手動上書き可）のため、自動計算中でなければ値をそのまま上書きしない
+  if(hideTaxEl && !hideTaxManual) hideTaxEl.value = taxHide10 || '';
   setText('sl-r-sales-sub',   salesSub   ? fM(salesSub)   : '-');
   setText('sl-r-sales-total', salesTotal ? fM(salesTotal) : '-');
   setText('sl-r-ded-sub',     dedSub     ? fM(dedSub)     : '-');
@@ -13301,6 +13312,25 @@ function updateSlSummary() {
       warn.style.display = '';
     } else { warn.style.display = 'none'; }
   }
+}
+
+// 消費税10%（原皮）を手動入力に切り替える（買い手側の端数処理が自動計算と異なる場合用）
+function slTaxHideOverride() {
+  const el = document.getElementById('sl-r-tax-hide');
+  if(!el) return;
+  el.dataset.manual = '1';
+  const resetEl = document.getElementById('sl-r-tax-hide-reset');
+  if(resetEl) resetEl.style.display = '';
+  updateSlSummary();
+}
+// 消費税10%（原皮）の手動上書きを解除し、自動計算に戻す
+function slTaxHideReset() {
+  const el = document.getElementById('sl-r-tax-hide');
+  if(!el) return;
+  delete el.dataset.manual;
+  const resetEl = document.getElementById('sl-r-tax-hide-reset');
+  if(resetEl) resetEl.style.display = 'none';
+  updateSlSummary();
 }
 
 // OCR整合性チェック：単価×枝肉重量 vs OCR読取金額、明細合計 vs total_amount
@@ -14043,6 +14073,9 @@ async function slhToggleDetail(id, e) {
   sv('se-hide_amount', s.hide_amount||'');
   sv('se-tax_carcass_organ', s.tax_carcass_organ||'');
   sv('se-tax_hide', s.tax_hide||'');
+  // 消費税10%（原皮）の手動上書き状態はシート切り替え時にリセット（基本は自動計算に戻す）
+  { const hEl = document.getElementById('se-tax_hide'); if(hEl) delete hEl.dataset.manual; }
+  { const rEl = document.getElementById('se-tax_hide-reset'); if(rEl) rEl.style.display = 'none'; }
   sv('se-total_amount', s.total_amount||'');
   sv('se-slaughter_fee_regular', s.slaughter_fee_regular||'');
   sv('se-slaughter_fee_disease', s.slaughter_fee_disease||'');
@@ -14099,24 +14132,27 @@ function seAutoCalc() {
   const organ   = gN('se-internal_organ_sales');
   const hide    = gN('se-hide_amount');
 
+  // 消費税10%（原皮）は基本は自動計算（四捨五入）だが、仕切書発行元の端数処理が
+  // 異なる場合などに手動で上書きできる（se-tax_hide欄を直接編集すると上書き扱いになる）
+  const hideTaxEl     = document.getElementById('se-tax_hide');
+  const hideTaxManual = hideTaxEl?.dataset.manual === '1';
+
   let tax8, tax10h, salesTotal, salesSubEx;
   if(isSendai) {
     // 仙台中央：枝肉・内臓・原皮は税込 → 逆算で消費税を抽出
     tax8        = Math.round((carcass + organ) / 1.08 * 0.08);
-    // 原皮の消費税は仕切書発行元（買い手）側の計算が切り捨てのため、それに合わせて切り捨てる
-    tax10h      = Math.floor(hide / 1.1 * 0.1);
+    tax10h      = hideTaxManual ? gN('se-tax_hide') : Math.round(hide / 1.1 * 0.1);
     salesTotal  = carcass + organ + hide;            // 既に税込
     salesSubEx  = salesTotal - tax8 - tax10h;        // 税抜合計
   } else {
     // 伊藤忠・その他：枝肉・内臓・原皮は税抜 → 消費税を加算
     tax8        = Math.round((carcass + organ) * 0.08);
-    // 原皮の消費税は仕切書発行元（買い手）側の計算が切り捨てのため、それに合わせて切り捨てる
-    tax10h      = Math.floor(hide * 0.10);
+    tax10h      = hideTaxManual ? gN('se-tax_hide') : Math.round(hide * 0.10);
     salesSubEx  = carcass + organ + hide;
     salesTotal  = salesSubEx + tax8 + tax10h;
   }
   setV('se-tax_carcass_organ', tax8);
-  setV('se-tax_hide', tax10h);
+  if(!hideTaxManual) setV('se-tax_hide', tax10h);
   setV('se-total_amount', salesTotal);
 
   // フォーマットに応じてラベル変更
@@ -14160,6 +14196,25 @@ function seAutoCalc() {
     fmtNote.textContent = isSendai ? '※ 仙台中央フォーマット：枝肉・内臓・原皮は税込入力' : '';
     fmtNote.style.color = 'var(--accent2)';
   }
+}
+
+// 消費税10%（原皮）を手動入力に切り替える（買い手側の端数処理が自動計算と異なる場合用）
+function seTaxHideOverride() {
+  const el = document.getElementById('se-tax_hide');
+  if(!el) return;
+  el.dataset.manual = '1';
+  const resetEl = document.getElementById('se-tax_hide-reset');
+  if(resetEl) resetEl.style.display = '';
+  seAutoCalc();
+}
+// 消費税10%（原皮）の手動上書きを解除し、自動計算に戻す
+function seTaxHideReset() {
+  const el = document.getElementById('se-tax_hide');
+  if(!el) return;
+  delete el.dataset.manual;
+  const resetEl = document.getElementById('se-tax_hide-reset');
+  if(resetEl) resetEl.style.display = 'none';
+  seAutoCalc();
 }
 
 async function slhSaveAll() {

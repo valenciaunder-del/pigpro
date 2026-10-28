@@ -13207,13 +13207,15 @@ function updateSlSummary() {
   if(isSendai) {
     // 仙台中央：枝肉金額等は税込で記載されているため消費税を逆算で控除
     tax8       = Math.round((carcass + organ) / 1.08 * 0.08);
-    taxHide10  = Math.round(hide / 1.1 * 0.1);
+    // 原皮の消費税は仕切書発行元（買い手）側の計算が切り捨てのため、それに合わせて切り捨てる
+    taxHide10  = Math.floor(hide / 1.1 * 0.1);
     salesTotal = carcass + organ + hide;
     salesSub   = salesTotal - tax8 - taxHide10;
   } else {
     // 伊藤忠・その他：枝肉金額等は税抜で記載されているため消費税を加算
     tax8       = Math.round((carcass + organ) * 0.08);
-    taxHide10  = Math.round(hide * 0.1);
+    // 原皮の消費税は仕切書発行元（買い手）側の計算が切り捨てのため、それに合わせて切り捨てる
+    taxHide10  = Math.floor(hide * 0.1);
     salesSub   = carcass + organ + hide;
     salesTotal = salesSub + tax8 + taxHide10;
   }
@@ -14101,13 +14103,15 @@ function seAutoCalc() {
   if(isSendai) {
     // 仙台中央：枝肉・内臓・原皮は税込 → 逆算で消費税を抽出
     tax8        = Math.round((carcass + organ) / 1.08 * 0.08);
-    tax10h      = Math.round(hide / 1.1 * 0.1);
+    // 原皮の消費税は仕切書発行元（買い手）側の計算が切り捨てのため、それに合わせて切り捨てる
+    tax10h      = Math.floor(hide / 1.1 * 0.1);
     salesTotal  = carcass + organ + hide;            // 既に税込
     salesSubEx  = salesTotal - tax8 - tax10h;        // 税抜合計
   } else {
     // 伊藤忠・その他：枝肉・内臓・原皮は税抜 → 消費税を加算
     tax8        = Math.round((carcass + organ) * 0.08);
-    tax10h      = Math.round(hide * 0.10);
+    // 原皮の消費税は仕切書発行元（買い手）側の計算が切り捨てのため、それに合わせて切り捨てる
+    tax10h      = Math.floor(hide * 0.10);
     salesSubEx  = carcass + organ + hide;
     salesTotal  = salesSubEx + tax8 + tax10h;
   }

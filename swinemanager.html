@@ -1386,29 +1386,6 @@ tbody td{padding:8px 10px;white-space:nowrap;}
     </div>
   </div>
 
-  <!-- 仙台中央食肉市場 集計表XLS 専用取込エリア（頭別明細のない集計のみの仕切書） -->
-  <div class="card mb18" style="border-top:3px solid var(--accent3)">
-    <div class="ch">
-      <span class="ct">🏯 仙台中央食肉市場 集計表XLS取込</span>
-      <span style="font-size:11px;color:var(--muted2)">頭別明細のない集計のみの仕切書（枝肉代・内臓・原皮・控除の合計額）をXLSから直接読み取って保存</span>
-    </div>
-    <div class="cb">
-      <div id="sendai-xls-zone"
-        style="border:2px dashed var(--border);border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:all .2s"
-        ondragover="event.preventDefault();this.style.borderColor='var(--accent3)';this.style.background='rgba(251,146,60,.05)'"
-        ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
-        ondrop="onSendaiXlsDrop(event)"
-        onclick="document.getElementById('sendai-xls-input').click()">
-        <div style="font-size:28px;margin-bottom:6px">🏯</div>
-        <div style="font-size:12px;color:var(--muted2)">仙台中央食肉市場の集計表XLSをドロップ</div>
-        <div style="font-size:11px;color:var(--muted)">.xls / .xlsx（1ファイルに複数農場分が含まれていてもOK）</div>
-        <input type="file" id="sendai-xls-input" accept=".xls,.xlsx" style="display:none" onchange="onSendaiXlsSelect(event)">
-      </div>
-      <div id="sendai-xls-status" style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px">待機中</div>
-      <div id="sendai-xls-blocks" style="margin-top:12px;display:flex;flex-direction:column;gap:8px"></div>
-    </div>
-  </div>
-
   <!-- AI解析進捗 -->
   <div id="sl-progress" style="display:none" class="card mb18">
     <div class="ch"><span class="ct">AI解析中...</span></div>
@@ -12402,182 +12379,6 @@ async function processOtasanXls(file, suppressLoading=false) {
   } finally { if(!suppressLoading) hideLoading(); }
 }
 
-// ══════════════════════════════════════════════
-// 仙台中央食肉市場 集計表XLS取込（頭別明細のない集計のみの仕切書）
-// ══════════════════════════════════════════════
-let SENDAI_XLS_BLOCKS = [];
-
-function onSendaiXlsDrop(e) {
-  e.preventDefault();
-  e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = '';
-  const file = [...e.dataTransfer.files].find(f => /\.xlsx?$/i.test(f.name));
-  if(file) processSendaiXls(file);
-}
-function onSendaiXlsSelect(e) {
-  const file = e.target.files[0];
-  if(file) processSendaiXls(file);
-}
-
-// 全角数字→半角数字
-function sendaiZen2Han(str) {
-  return String(str==null?'':str).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0)-0xFEE0));
-}
-
-async function processSendaiXls(file) {
-  const statusEl = document.getElementById('sendai-xls-status');
-  if(statusEl) statusEl.textContent = '読み込み中...';
-  showLoading('仙台中央食肉市場 集計表XLSを解析中...');
-  try {
-    if(!window.XLSX) {
-      await new Promise((res,rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-        s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
-      });
-    }
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type:'array', cellDates: true });
-    const blocks = parseSendaiXlsBlocks(wb);
-    if(!blocks.length) throw new Error('「仙台仕切」シートから仕切書データを見つけられませんでした');
-    SENDAI_XLS_BLOCKS = blocks;
-
-    const wrap = document.getElementById('sendai-xls-blocks');
-    if(wrap) {
-      wrap.innerHTML = blocks.map((b,i) => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--panel2);border-radius:8px;gap:8px">
-          <div style="font-size:12px;color:var(--muted2)">
-            <strong style="color:var(--accent3)">${b.farmLabel}</strong>
-            （PigPro: ${FARMS[b.farm]?.name||b.farm}）
-            ${b.dateStr||'日付不明'}　${b.headCount??'?'}頭${b.discardCount?`（うち廃棄${b.discardCount}頭）`:''}
-            ${b.weightKg?b.weightKg+'kg':''}　差引支払 ¥${b.netTotal?Math.round(b.netTotal).toLocaleString():'-'}
-          </div>
-          <button class="btn bp sm" onclick="loadSendaiXlsBlock(${i})">プレビューに読み込む</button>
-        </div>`).join('');
-    }
-    if(statusEl) statusEl.textContent = `✅ ${blocks.length}件の仕切書を検出しました`;
-    document.getElementById('sendai-xls-zone').style.borderColor = 'var(--accent3)';
-    document.getElementById('sendai-xls-zone').style.background = 'rgba(251,146,60,.05)';
-    notif(`仙台中央食肉市場 集計表XLS: ${blocks.length}件の仕切書を検出しました`);
-  } catch(e) {
-    notif('XLS読み込みエラー: ' + e.message, 'r');
-    if(statusEl) statusEl.textContent = 'エラー: ' + e.message;
-  } finally { hideLoading(); }
-}
-
-// workbook内の「仙台仕切...」シートから、1仕切書=1ブロックとして複数件抽出する。
-// このフォーマットは頭別明細を持たず、項目ごとの合計額のみが記載されている。
-function parseSendaiXlsBlocks(wb) {
-  const candidateSheets = wb.SheetNames.filter(n => n.includes('仙台仕切'));
-  const sheetName = candidateSheets.find(n => n.includes('改定')) || candidateSheets[0];
-  if(!sheetName) return [];
-  const ws = wb.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null, raw:true });
-
-  const kw1 = document.getElementById('sl-map1')?.value || '中田';
-  const kw2 = document.getElementById('sl-map2')?.value || '米谷';
-
-  const blocks = [];
-  for(let i=0; i<rows.length; i++) {
-    const row = rows[i] || [];
-    if(!row.some(c => typeof c === 'string' && c.includes('食肉市場'))) continue;
-
-    let farmLabel = null, blockDate = null, headCount = null, discardCount = 0, weightKg = null;
-    row.forEach(c => {
-      if(c == null) return;
-      if(c instanceof Date && !isNaN(c)) { blockDate = c; return; }
-      if(typeof c !== 'string') return;
-      const mFarm = c.match(/【(.+?)】/);
-      if(mFarm) farmLabel = mFarm[1];
-      const han = sendaiZen2Han(c);
-      const mDiscard = han.match(/(\d+)\s*頭\s*廃棄/);
-      if(mDiscard) { discardCount = parseInt(mDiscard[1]); return; }
-      const mHead = han.match(/^(\d+)\s*頭$/);
-      if(mHead) headCount = parseInt(mHead[1]);
-      const mWeight = han.match(/^([\d.]+)\s*[kｋ][gｇ]$/);
-      if(mWeight) weightKg = parseFloat(mWeight[1]);
-    });
-    if(!farmLabel || headCount == null) continue;
-
-    // 列見出し行（「税込金額」列を含む行）を探す
-    let headerRowIdx = -1, grossColIdx = -1;
-    for(let j=i+1; j<Math.min(i+5, rows.length); j++) {
-      const idx = (rows[j]||[]).findIndex(c => c === '税込金額');
-      if(idx !== -1) { headerRowIdx = j; grossColIdx = idx; break; }
-    }
-    if(headerRowIdx === -1) continue;
-
-    // 明細行をラベルで走査し、「税込金額」列の値だけを拾う（グループ合算済みの値がそのまま使える）
-    const items = {};
-    let totalRowIdx = -1, netTotal = null;
-    for(let j=headerRowIdx+1; j<rows.length; j++) {
-      const r = rows[j] || [];
-      const label = String(r[0] ?? '').trim();
-      if(!label) continue;
-      if(label === '合計') { totalRowIdx = j; netTotal = r[grossColIdx]; break; }
-      const v = r[grossColIdx];
-      if(typeof v === 'number') items[label] = (items[label]||0) + v;
-    }
-    if(totalRowIdx === -1) continue;
-
-    const farm = farmLabel.includes(kw1) ? 'farm1' : farmLabel.includes(kw2) ? 'farm2' : 'farm1';
-    const y = blockDate?.getFullYear(), mo = blockDate ? blockDate.getMonth()+1 : null, d = blockDate?.getDate();
-    const dateStr = (blockDate && y>=2020 && y<=2030) ? `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}` : null;
-
-    // 項目ラベルを売上3項目／非課税控除／10%課税控除（それ以外）に分類
-    let carcass=0, organ=0, hide=0, inspFee=0;
-    const dedItems = [];
-    Object.entries(items).forEach(([label, v]) => {
-      if(label.includes('枝肉')) carcass += v;
-      else if(label.includes('内臓')) organ += v;
-      else if(label.includes('原皮')) hide += v;
-      else if(label.includes('非課税')) inspFee += Math.abs(v);
-      else if(v < 0) dedItems.push({ name: label, amount: Math.abs(v), tax: 'tax10_inc' });
-    });
-    if(inspFee) dedItems.push({ name: '検査料', amount: inspFee, tax: 'non_tax' });
-
-    blocks.push({
-      farmLabel, farm, dateStr,
-      headCount, discardCount, soldCount: Math.max(0, headCount - discardCount),
-      weightKg, carcass, organ, hide, dedItems, netTotal,
-    });
-  }
-  return blocks;
-}
-
-function loadSendaiXlsBlock(idx) {
-  const b = SENDAI_XLS_BLOCKS[idx];
-  if(!b) return;
-  const sheet = {
-    farm: b.farm,
-    farm_name: b.farmLabel,
-    shipped_at: b.dateStr,
-    slaughtered_at: b.dateStr,
-    slaughterhouse: '仙台中央卸売市場株式会社',
-    buyer: '仙台中央卸売市場株式会社',
-    head_count: b.soldCount,
-    received_count: b.headCount,
-    total_carcass_kg: b.weightKg || 0,
-    market_price: null,
-    carcass_amount: b.carcass || 0,
-    internal_organ_sales: b.organ || 0,
-    hide_amount: b.hide || 0,
-    payment_date: null,
-    // バランスチェック用（仕切書に印字された差引支払額と自動計算値を突き合わせる）
-    net_payment: b.netTotal != null ? Math.round(b.netTotal) : null,
-    total_amount: b.netTotal != null ? Math.round(b.netTotal) : null,
-    // renderSlPreview()は s.deduction_items（JSON文字列）があればそれを優先して
-    // window._slDedItems に復元する。未設定だとslOcrToDeductionItems()の
-    // フォールバック（sheet.slaughter_fee_regular等の個別フィールドが前提）が動いて
-    // ここで組み立てた控除項目が上書き消去されてしまうため、必ずJSON文字列で渡す。
-    deduction_items: JSON.stringify(b.dedItems),
-  };
-  SL_DATA = { sheet, details: [], lotBreakdown: [], noDetailOk: true, manualDiscardCount: b.discardCount||0 };
-  renderSlPreview(SL_DATA);
-  document.getElementById('sl-preview-area')?.scrollIntoView({ behavior:'smooth', block:'start' });
-  notif(`${b.farmLabel}（${FARMS[b.farm]?.name||b.farm}）のデータをプレビューに読み込みました。内容を確認して保存してください。`);
-}
-
 async function processOtasanPdfForMerge(file) {
   document.getElementById('ota-pdf-status').textContent = '① PDF読み込み中...';
   showLoading('格付明細書PDFをOCR解析中...');
@@ -13875,9 +13676,7 @@ async function saveSlaughter() {
   const s = SL_DATA.sheet;
 
   // 頭別明細が必須（明細なしでの保存を禁止）
-  // ただし仙台中央食肉市場の「集計表XLS」取込（processSendaiXls）など、
-  // 仕切書自体に頭別明細が存在しないフォーマットはSL_DATA.noDetailOkで明示的に許可する
-  if(!SL_DATA.details?.length && !SL_DATA.noDetailOk) {
+  if(!SL_DATA.details?.length) {
     notif('頭別明細が入力されていません。仕切書の頭別データを確認してから保存してください。', 'r');
     return;
   }
@@ -13942,10 +13741,7 @@ async function saveSlaughter() {
   ).length;
   let discardCount = Math.max(0, receivedCount - soldCount);
   // 明細上に廃棄行の根拠がないのに受付頭数だけ多い場合は、OCRの誤読とみなして無視する
-  // （ただしSL_DATA.noDetailOk＝明細のないフォーマットで、XLS側に明記された廃棄頭数
-  //   （SL_DATA.manualDiscardCount）がある場合はOCR誤読ではなく実データなので無視しない）
-  const hasManualDiscard = SL_DATA.noDetailOk && (SL_DATA.manualDiscardCount||0) > 0;
-  if(discardCount > 0 && explicitDiscardRows === 0 && !hasManualDiscard) {
+  if(discardCount > 0 && explicitDiscardRows === 0) {
     console.warn(`受付頭数(${receivedCount})と販売頭数(${soldCount})に差がありますが、明細内に廃棄行が見つからないためOCR誤読とみなし、受付頭数を販売頭数に補正します。`);
     receivedCount = soldCount;
     discardCount = 0;
@@ -13976,7 +13772,7 @@ async function saveSlaughter() {
   const firstNo  = SL_DATA.details?.length ? Math.min(...SL_DATA.details.map(d=>d.carcass_no).filter(n=>n>0)) : null;
   const lastNo   = SL_DATA.details?.length ? Math.max(...SL_DATA.details.map(d=>d.carcass_no).filter(n=>n>0)) : null;
 
-  if(firstNo === null && !SL_DATA.noDetailOk) {
+  if(firstNo === null) {
     hideLoading();
     notif('枝肉番号が読み取れません。明細データを確認してください。', 'r');
     return;
